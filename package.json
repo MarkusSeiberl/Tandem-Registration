@@ -21,7 +21,8 @@
     "better-sqlite3": "^12.11.1",
     "bonjour-service": "^1.4.2",
     "exceljs": "^4.4.0",
-    "fastify": "^5.10.0"
+    "fastify": "^5.10.0",
+    "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

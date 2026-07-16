@@ -131,11 +131,14 @@ bundled `dist/server.cjs`):
 {
   "assets": [
     "web/guest/dist/**/*",     // guest kiosk app, embedded into the exe
-    "web/manifest/dist/**/*"   // manifest/staff app, embedded into the exe
+    "web/manifest/dist/**/*",  // manifest/staff app, embedded into the exe
+    "assets/**/*"              // Befoerderungsvertrag.pdf contract template
   ],
   "outputPath": "dist"
 }
 ```
+
+Unlike the web frontends, the contract template is read with a single `fs.readFileSync` in `main.ts` (see `contractPdf.ts` usage there), so it does not need the extraction-to-tempdir step `@fastify/static` requires.
 
 No `targets` here — `scripts/build-exe.mjs` passes `--targets
 node${major}-win-x64` computed from the build machine's Node version (see

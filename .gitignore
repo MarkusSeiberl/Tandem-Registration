@@ -23,9 +23,6 @@ blob-report/
 playwright/.cache/
 coverage/
 
-# Reference document, not a build input
-Befoerderungsvertrag.pdf
-
 # Logs
 *.log
 npm-debug.log*

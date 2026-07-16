@@ -35,3 +35,6 @@ npm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Subagent-driven-development scratch (progress ledger, not project artifacts)
+.superpowers/

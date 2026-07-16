@@ -1,0 +1,303 @@
+:root {
+  --text: #2b2b33;
+  --text-h: #08060d;
+  --bg: #f7f6fb;
+  --panel-bg: #ffffff;
+  --border: #d9d7e0;
+  --accent: #6d28d9;
+  --accent-contrast: #ffffff;
+  --error: #b3261e;
+  --row-hover: rgba(109, 40, 217, 0.08);
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+
+  font: 16px/150% var(--sans);
+  color-scheme: light dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #e4e2ea;
+    --text-h: #f7f6fb;
+    --bg: #16171d;
+    --panel-bg: #1f2028;
+    --border: #33343d;
+    --accent: #a78bfa;
+    --accent-contrast: #1a1025;
+    --row-hover: rgba(167, 139, 250, 0.12);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-root {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+h1,
+h2 {
+  font-family: var(--sans);
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+h1 {
+  font-size: 28px;
+  margin: 0 0 16px;
+}
+
+h2 {
+  font-size: 20px;
+  margin: 0 0 12px;
+}
+
+/* Navigation */
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 12px 20px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg);
+}
+
+.tab {
+  font: inherit;
+  font-size: 16px;
+  padding: 10px 18px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+}
+
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.view {
+  flex: 1;
+  padding: 20px;
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Buttons */
+.btn {
+  font: inherit;
+  font-size: 15px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 2px solid var(--accent);
+  cursor: pointer;
+}
+
+.btn.primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.btn.primary:disabled,
+.btn.secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn.secondary {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.hint {
+  color: var(--accent);
+}
+
+.error {
+  color: var(--error);
+}
+
+/* List screen */
+.list-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.date-field input {
+  font: inherit;
+  padding: 8px 10px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text);
+}
+
+.manifest-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.manifest-table th,
+.manifest-table td {
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.manifest-table th {
+  background: var(--row-hover);
+  font-weight: 600;
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row:hover {
+  background: var(--row-hover);
+}
+
+/* Detail screen */
+.guest-data dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0 0 24px;
+}
+
+.detail-row {
+  display: contents;
+}
+
+.guest-data dt {
+  color: var(--text);
+  opacity: 0.7;
+}
+
+.guest-data dd {
+  margin: 0;
+  color: var(--text-h);
+}
+
+.manifest-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 420px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.field input,
+.field select {
+  font: inherit;
+  padding: 8px 10px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text);
+}
+
+/* Stammdaten screen */
+.stammdaten-screen {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.stammdaten-list {
+  flex: 1;
+  min-width: 260px;
+}
+
+.stammdaten-list ul {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+}
+
+.stammdaten-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.stammdaten-list li:last-child {
+  border-bottom: none;
+}
+
+.add-row {
+  display: flex;
+  gap: 8px;
+}
+
+.add-row input {
+  flex: 1;
+  font: inherit;
+  padding: 8px 10px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text);
+}
+
+/* Settings screen */
+.settings-screen .field {
+  max-width: 480px;
+  margin-bottom: 16px;
+}
+
+/* Print: the real A4 sheet layout (`.print-only`, `.no-print`, `@page`, and the
+   `--name-top` etc. coordinate variables) lives in print.css, imported in main.tsx. */

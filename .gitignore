@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build output: the server bundle, tandem.exe, better_sqlite3.node and the
+# bundled web frontends (web/*/dist) all land in a dist/ directory.
+dist/
+*.tsbuildinfo
+
+# Local runtime config, written next to the binary at startup.
+# config.example.json is the committed template.
+config.json
+
+# SQLite database and its WAL/SHM runtime artifacts
+*.db
+*.db-shm
+*.db-wal
+
+# Test output
+.tmp-e2e/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+coverage/
+
+# Reference document, not a build input
+Befoerderungsvertrag.pdf
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

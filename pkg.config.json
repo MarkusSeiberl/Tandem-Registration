@@ -1,0 +1,7 @@
+{
+  "assets": [
+    "web/guest/dist/**/*",
+    "web/manifest/dist/**/*"
+  ],
+  "outputPath": "dist"
+}

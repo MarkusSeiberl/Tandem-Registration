@@ -1,0 +1,36 @@
+{
+  "name": "tandem",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "start": "tsx src/server/main.ts",
+    "build:web": "npm --prefix web/guest run build && npm --prefix web/manifest run build",
+    "build:server": "esbuild src/server/main.ts --bundle --platform=node --format=cjs --target=node22 --external:better-sqlite3 --outfile=dist/server.cjs",
+    "build:exe": "node scripts/check-native-binary.mjs && node scripts/build-exe.mjs && node scripts/copy-native-binary.mjs",
+    "build:all": "npm run build:web && npm run build:server && npm run build:exe",
+    "test:e2e": "playwright test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@fastify/static": "^9.3.0",
+    "better-sqlite3": "^12.11.1",
+    "bonjour-service": "^1.4.2",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.10.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^26.1.1",
+    "@yao-pkg/pkg": "^6.21.0",
+    "esbuild": "^0.28.1",
+    "tsx": "^4.23.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

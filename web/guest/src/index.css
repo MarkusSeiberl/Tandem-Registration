@@ -198,6 +198,89 @@ p {
   margin: 6px 0 0;
 }
 
+/*
+ * Field groups (Person / Körperdaten / Adresse / Kontakt). A bare <fieldset>
+ * carries a browser default border and padding, so both are reset here.
+ */
+.field-group {
+  border: none;
+  padding: 0;
+  margin: 0 0 28px;
+}
+
+.field-group legend {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-h);
+  padding: 0;
+  margin-bottom: 12px;
+}
+
+/* The radio group's caption is a <span>, not a <label> (it labels three inputs,
+   not one), so it has to repeat the `.field label` styling. */
+.field .label {
+  font-size: 18px;
+  margin-bottom: 6px;
+  color: var(--text-h);
+}
+
+/*
+ * Gender radios. The selectors below are deliberately two classes deep: the
+ * generic `.field label` and `.field input` rules above are (0,1,1) and would
+ * otherwise win and blow the radios up to 22px full-width text inputs.
+ */
+.radio-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.radio-row .radio-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 120px;
+  font-size: 20px;
+  margin-bottom: 0;
+  padding: 14px 16px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-bg);
+  cursor: pointer;
+}
+
+.radio-row input[type='radio'] {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.radio-row .radio-option:focus-within {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* PLZ sits next to Wohnort: a postcode is short, a town name is not. */
+.field-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.field-row .field-plz {
+  flex: 0 0 32%;
+}
+
+.field-row .field-city {
+  flex: 1;
+}
+
 /* Sign screen */
 .signature-pad {
   border: 2px solid var(--border);

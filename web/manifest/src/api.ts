@@ -29,6 +29,7 @@ function apiUrl(rootPath: string): string {
   return `${getApiBase()}${rootPath}`
 }
 
+export type Gender = 'male' | 'female' | 'diverse'
 export type PaymentMethod = 'voucher' | 'cash' | 'card'
 export type ExtraBooking = 'none' | 'video' | 'video_photo'
 
@@ -36,9 +37,13 @@ export interface Registration {
   id: number
   first_name: string
   last_name: string
+  gender: Gender | null
   age: number
+  height_cm: number | null
   weight_kg: number
-  address: string
+  street: string
+  postal_code: string
+  city: string
   email: string
   phone: string
   signature_png: string
@@ -47,6 +52,7 @@ export interface Registration {
   load_number: number | null
   price: number | null
   payment_method: PaymentMethod | null
+  voucher_number: string | null
   extra_booking: ExtraBooking | null
   camera_flyer_id: number | null
   created_at: string
@@ -68,6 +74,7 @@ export interface ManifestPatch {
   load_number?: number | null
   price?: number | null
   payment_method?: PaymentMethod
+  voucher_number?: string | null
   extra_booking?: ExtraBooking
   camera_flyer_id?: number | null
 }

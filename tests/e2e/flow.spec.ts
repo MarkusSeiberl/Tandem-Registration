@@ -9,9 +9,13 @@ import ExcelJS from 'exceljs'
 const GUEST = {
   firstName: 'Max',
   lastName: 'Mustermann',
+  gender: 'männlich',
   age: '30',
+  height: '182',
   weight: '85',
-  address: 'Musterstraße 1',
+  street: 'Musterstraße 1',
+  postalCode: '4240',
+  city: 'Freistadt',
   email: 'max@example.at',
   phone: '0660123456',
 }
@@ -31,9 +35,13 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
 
   await page.getByLabel('Vorname').fill(GUEST.firstName)
   await page.getByLabel('Nachname').fill(GUEST.lastName)
+  await page.getByRole('radio', { name: GUEST.gender }).check()
   await page.getByLabel('Alter').fill(GUEST.age)
+  await page.getByLabel('Größe (cm)').fill(GUEST.height)
   await page.getByLabel('Gewicht (kg)').fill(GUEST.weight)
-  await page.getByLabel('Adresse').fill(GUEST.address)
+  await page.getByLabel('Straße und Hausnummer').fill(GUEST.street)
+  await page.getByLabel('PLZ').fill(GUEST.postalCode)
+  await page.getByLabel('Wohnort').fill(GUEST.city)
   await page.getByLabel('E-Mail').fill(GUEST.email)
   await page.getByLabel('Telefon').fill(GUEST.phone)
 
@@ -76,9 +84,23 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   await row.click()
 
   await expect(page.getByRole('heading', { name: 'Manifest' })).toBeVisible()
+
+  // The guest's new fields must have survived the trip to the server.
+  await expect(page.getByText('männlich')).toBeVisible()
+  await expect(page.getByText('182 cm')).toBeVisible()
+  await expect(page.getByText(`${GUEST.postalCode} ${GUEST.city}`)).toBeVisible()
+
   await page.getByLabel('Load-Nr.').fill('5')
   await page.getByLabel('Preis').fill('250')
+
+  // Gutschein-Nr. exists only while Gutschein is the chosen payment method.
+  const voucherField = page.getByLabel('Gutschein-Nr.')
+  await expect(voucherField).toBeHidden()
+  await page.getByLabel('Zahlungsart').selectOption('voucher')
+  await expect(voucherField).toBeVisible()
   await page.getByLabel('Zahlungsart').selectOption('card')
+  await expect(voucherField).toBeHidden()
+
   await page.getByLabel('Zusatzbuchung').selectOption('video_photo')
 
   const [patchResponse] = await Promise.all([
@@ -120,4 +142,18 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
     (r) => r.includes(GUEST.firstName) && r.includes(GUEST.lastName)
   )
   expect(found).toBe(true)
+
+  // Every field the guest typed has to reach the sheet, and the stored enums
+  // have to arrive translated rather than as raw values.
+  const headers = ws.getRow(1).values as any[]
+  const guestRow = ws.getRow(2).values as any[]
+  const cell = (header: string) => guestRow[headers.indexOf(header)]
+
+  expect(cell('Geschlecht')).toBe('männlich')
+  expect(cell('Größe (cm)')).toBe(182)
+  expect(cell('Straße und Hausnummer')).toBe(GUEST.street)
+  expect(cell('PLZ')).toBe(GUEST.postalCode)
+  expect(cell('Wohnort')).toBe(GUEST.city)
+  expect(cell('Zahlungsart')).toBe('Karte')
+  expect(cell('Zusatz')).toBe('Video+Foto')
 })

@@ -39,9 +39,13 @@ export async function getContract(): Promise<string> {
 export interface RegistrationPayload {
   first_name: string
   last_name: string
+  gender: 'male' | 'female' | 'diverse'
   age: number
+  height_cm: number
   weight_kg: number
-  address: string
+  street: string
+  postal_code: string
+  city: string
   email: string
   phone: string
   signature_png: string

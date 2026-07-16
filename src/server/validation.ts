@@ -1,6 +1,11 @@
+export type Gender = 'male' | 'female' | 'diverse'
+export const GENDERS: Gender[] = ['male', 'female', 'diverse']
+
 export interface GuestInput {
-  first_name: string; last_name: string; age: number; weight_kg: number
-  address: string; email: string; phone: string
+  first_name: string; last_name: string; gender: Gender
+  age: number; height_cm: number; weight_kg: number
+  street: string; postal_code: string; city: string
+  email: string; phone: string
   signature_png: string; accepted_terms: true
 }
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
@@ -13,9 +18,15 @@ export function validateGuest(input: any):
     Number.isInteger(v) && v >= lo && v <= hi
   if (!s(input?.first_name)) e.push('Vorname fehlt')
   if (!s(input?.last_name)) e.push('Nachname fehlt')
+  if (!GENDERS.includes(input?.gender)) e.push('Geschlecht fehlt')
   if (!int(input?.age, 1, 120)) e.push('Alter ungültig')
+  if (!int(input?.height_cm, 100, 220)) e.push('Größe ungültig')
   if (!int(input?.weight_kg, 20, 200)) e.push('Gewicht ungültig')
-  if (!s(input?.address)) e.push('Adresse fehlt')
+  if (!s(input?.street)) e.push('Straße und Hausnummer fehlt')
+  // Deliberately only a presence check: guests from outside AT bring 5-digit (DE)
+  // or non-numeric (UK) codes, so any digit-count rule would reject real customers.
+  if (!s(input?.postal_code)) e.push('PLZ fehlt')
+  if (!s(input?.city)) e.push('Wohnort fehlt')
   if (!EMAIL.test(input?.email ?? '')) e.push('E-Mail ungültig')
   if (!s(input?.phone)) e.push('Telefon fehlt')
   if (typeof input?.signature_png !== 'string' ||

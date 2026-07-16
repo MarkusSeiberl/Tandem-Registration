@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { patch, flyers as fetchFlyers, masters as fetchMasters } from './api'
 import type { ExtraBooking, PaymentMethod, Registration, StammdatenItem } from './api'
-import { EXTRA_BOOKINGS, PAYMENT_METHODS } from './labels'
+import { EXTRA_BOOKINGS, PAYMENT_METHODS, genderLabel } from './labels'
 
 export interface DetailProps {
   registration: Registration
@@ -17,6 +17,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   const [loadNumber, setLoadNumber] = useState<number | ''>(registration.load_number ?? '')
   const [price, setPrice] = useState<number | ''>(registration.price ?? '')
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>(registration.payment_method ?? '')
+  const [voucherNumber, setVoucherNumber] = useState<string>(registration.voucher_number ?? '')
   const [extraBooking, setExtraBooking] = useState<ExtraBooking>(registration.extra_booking ?? 'none')
   const [cameraFlyerId, setCameraFlyerId] = useState<number | ''>(registration.camera_flyer_id ?? '')
 
@@ -31,6 +32,8 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
 
   // Kameraflieger only makes sense for bookings that actually include video.
   const showCameraFlyer = extraBooking === 'video' || extraBooking === 'video_photo'
+  // A voucher number only exists when the guest actually paid with one.
+  const showVoucherNumber = paymentMethod === 'voucher'
 
   async function handleSave() {
     setSaving(true)
@@ -42,6 +45,8 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         load_number: loadNumber === '' ? null : loadNumber,
         price: price === '' ? null : price,
         payment_method: paymentMethod === '' ? undefined : paymentMethod,
+        // Clear a stale voucher number if the guest no longer pays by voucher.
+        voucher_number: showVoucherNumber ? (voucherNumber.trim() === '' ? null : voucherNumber.trim()) : null,
         extra_booking: extraBooking,
         // Clear a stale flyer selection if the booking no longer includes video.
         camera_flyer_id: showCameraFlyer ? (cameraFlyerId === '' ? null : cameraFlyerId) : null,
@@ -71,8 +76,16 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             </dd>
           </div>
           <div className="detail-row">
+            <dt>Geschlecht</dt>
+            <dd>{genderLabel(registration.gender)}</dd>
+          </div>
+          <div className="detail-row">
             <dt>Alter</dt>
             <dd>{registration.age}</dd>
+          </div>
+          <div className="detail-row">
+            <dt>Größe</dt>
+            <dd>{registration.height_cm != null ? `${registration.height_cm} cm` : ''}</dd>
           </div>
           <div className="detail-row">
             <dt>Gewicht</dt>
@@ -80,7 +93,11 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
           </div>
           <div className="detail-row">
             <dt>Adresse</dt>
-            <dd>{registration.address}</dd>
+            <dd>
+              {registration.street}
+              <br />
+              {registration.postal_code} {registration.city}
+            </dd>
           </div>
           <div className="detail-row">
             <dt>E-Mail</dt>
@@ -144,6 +161,17 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             ))}
           </select>
         </label>
+
+        {showVoucherNumber && (
+          <label className="field">
+            Gutschein-Nr.
+            <input
+              type="text"
+              value={voucherNumber}
+              onChange={(e) => setVoucherNumber(e.target.value)}
+            />
+          </label>
+        )}
 
         <label className="field">
           Zusatzbuchung

@@ -4,8 +4,10 @@ import { buildServer } from '../src/server/index'
 import os from 'os'
 
 const validBody = () => ({
-  first_name: 'A', last_name: 'B', age: 30, weight_kg: 80,
-  address: 'X', email: 'a@b.de', phone: '1',
+  first_name: 'A', last_name: 'B', gender: 'female', age: 30,
+  height_cm: 170, weight_kg: 80,
+  street: 'X', postal_code: '4240', city: 'Freistadt',
+  email: 'a@b.de', phone: '1',
   signature_png: 'data:image/png;base64,x', accepted_terms: true
 })
 
@@ -20,6 +22,38 @@ test('patch adds manifest fields', async () => {
   expect(res.json().load_number).toBe(3)
   expect(res.json().payment_method).toBe('cash')
   expect(res.json().extra_booking).toBe('video')
+  await app.close()
+})
+
+test('patch stores a voucher number alongside the voucher payment', async () => {
+  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'voucher', voucher_number: 'GS-2026-0042' }
+  })
+  expect(res.statusCode).toBe(200)
+  expect(res.json().payment_method).toBe('voucher')
+  // voucher_number has to be on the PATCH allowlist, or this save is silently dropped.
+  expect(res.json().voucher_number).toBe('GS-2026-0042')
+  await app.close()
+})
+
+test('patch clears the voucher number when payment moves away from voucher', async () => {
+  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'voucher', voucher_number: 'GS-2026-0042' }
+  })
+  // The manifest sends null itself (mirroring how it clears a stale camera_flyer_id).
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'cash', voucher_number: null }
+  })
+  expect(res.statusCode).toBe(200)
+  expect(res.json().payment_method).toBe('cash')
+  expect(res.json().voucher_number).toBeNull()
   await app.close()
 })
 

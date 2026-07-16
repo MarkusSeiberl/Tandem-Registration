@@ -28,10 +28,12 @@ function seed(db: ReturnType<typeof openDb>, date: string) {
   const masterId = db.prepare('INSERT INTO tandem_masters (name,active) VALUES (?,1)').run('Hans').lastInsertRowid
   const flyerId = db.prepare('INSERT INTO camera_flyers (name,active) VALUES (?,1)').run('Peter').lastInsertRowid
   db.prepare(`INSERT INTO registrations
-    (first_name,last_name,age,weight_kg,address,email,phone,signature_png,
+    (first_name,last_name,gender,age,height_cm,weight_kg,
+     street,postal_code,city,email,phone,signature_png,
      accepted_terms,tandem_master_id,load_number,price,payment_method,extra_booking,
      camera_flyer_id,created_at,jump_date)
-    VALUES ('A','B',30,80,'X 1','a@b.de','0660',?,
+    VALUES ('A','B','female',30,170,80,
+     'X 1','4240','Freistadt','a@b.de','0660',?,
      1,?,3,199.5,'cash','video',?,?,?)`)
     .run(SIGNATURE, masterId, flyerId, new Date().toISOString(), date)
   return { masterId, flyerId }
@@ -125,10 +127,12 @@ test('POST /api/export leaves master/flyer as empty string when unmatched', asyn
   const db = openDb(':memory:')
   const date = '2026-07-09'
   db.prepare(`INSERT INTO registrations
-    (first_name,last_name,age,weight_kg,address,email,phone,signature_png,
+    (first_name,last_name,gender,age,height_cm,weight_kg,
+     street,postal_code,city,email,phone,signature_png,
      accepted_terms,tandem_master_id,load_number,price,payment_method,extra_booking,
      camera_flyer_id,created_at,jump_date)
-    VALUES ('NoMatch','B',30,80,'X 1','a@b.de','0660','data:image/png;base64,x',
+    VALUES ('NoMatch','B','female',30,170,80,
+     'X 1','4240','Freistadt','a@b.de','0660','data:image/png;base64,x',
      1,9999,3,199.5,'cash','video',8888,?,?)`)
     .run(new Date().toISOString(), date)
 
@@ -149,6 +153,68 @@ test('POST /api/export leaves master/flyer as empty string when unmatched', asyn
   const row = ws.getRow(2).values as any[]
   expect(row[masterIdx] ?? '').toBe('')
   expect(row[flyerIdx] ?? '').toBe('')
+
+  await app.close()
+})
+
+test('POST /api/export writes German labels, never raw enum values', async () => {
+  const db = openDb(':memory:')
+  const date = '2026-07-09'
+  seed(db, date) // gender 'female', payment 'cash', extra 'video'
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, () => dir)
+
+  await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.readFile(path.join(dir, `Tandem_${date}.xlsx`))
+  const ws = wb.worksheets[0]
+  const headers = ws.getRow(1).values as any[]
+  const cell = (header: string) => (ws.getRow(2).values as any[])[headers.indexOf(header)]
+
+  expect(cell('Geschlecht')).toBe('weiblich')
+  expect(cell('Zahlungsart')).toBe('Bar')
+  expect(cell('Zusatz')).toBe('nur Video')
+
+  // The stored enum values must not reach the sheet in any column.
+  const dumped: any[] = []
+  ws.eachRow(r => dumped.push(r.values))
+  const serialized = JSON.stringify(dumped)
+  for (const raw of ['female', 'cash', 'video_photo', '"video"']) {
+    expect(serialized).not.toContain(raw)
+  }
+
+  await app.close()
+})
+
+test('POST /api/export leaves an unknown enum value as an empty cell', async () => {
+  const db = openDb(':memory:')
+  const date = '2026-07-09'
+  // NULL payment/extra/gender is normal for a freshly registered guest the
+  // manifest has not touched yet.
+  db.prepare(`INSERT INTO registrations
+    (first_name,last_name,age,weight_kg,street,postal_code,city,email,phone,
+     accepted_terms,created_at,jump_date)
+    VALUES ('Neu','Gast',30,80,'X 1','4240','Freistadt','a@b.de','0660',1,?,?)`)
+    .run(new Date().toISOString(), date)
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, () => dir)
+
+  const res = await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+  expect(res.statusCode).toBe(200)
+
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.readFile(path.join(dir, `Tandem_${date}.xlsx`))
+  const ws = wb.worksheets[0]
+  const headers = ws.getRow(1).values as any[]
+  const cell = (header: string) => (ws.getRow(2).values as any[])[headers.indexOf(header)] ?? ''
+
+  expect(cell('Geschlecht')).toBe('')
+  expect(cell('Zahlungsart')).toBe('')
 
   await app.close()
 })

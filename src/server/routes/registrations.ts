@@ -11,9 +11,11 @@ export function registerRegistrationRoutes(app: FastifyInstance, db: Database, s
     if (!r.ok) return reply.code(400).send({ errors: r.errors })
     const v = r.value
     const info = db.prepare(`INSERT INTO registrations
-      (first_name,last_name,age,weight_kg,address,email,phone,signature_png,
+      (first_name,last_name,gender,age,height_cm,weight_kg,
+       street,postal_code,city,email,phone,signature_png,
        accepted_terms,created_at,jump_date)
-      VALUES (@first_name,@last_name,@age,@weight_kg,@address,@email,@phone,
+      VALUES (@first_name,@last_name,@gender,@age,@height_cm,@weight_kg,
+       @street,@postal_code,@city,@email,@phone,
        @signature_png,1,@created_at,@jump_date)`)
       .run({ ...v, created_at: new Date().toISOString(), jump_date: today() })
     sse.broadcast('changed', { id: info.lastInsertRowid })
@@ -29,7 +31,7 @@ export function registerRegistrationRoutes(app: FastifyInstance, db: Database, s
   app.get('/api/events', (req, reply) => sse.handler(req, reply))
 
   const ALLOWED = ['tandem_master_id', 'load_number', 'price', 'payment_method',
-    'extra_booking', 'camera_flyer_id'] as const
+    'voucher_number', 'extra_booking', 'camera_flyer_id'] as const
   const PAY = ['voucher', 'cash', 'card']
   const EXTRA = ['none', 'video', 'video_photo']
 

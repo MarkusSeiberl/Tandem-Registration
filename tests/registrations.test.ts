@@ -4,8 +4,10 @@ import { buildServer } from '../src/server/index'
 import os from 'os'
 
 const validBody = () => ({
-  first_name: 'A', last_name: 'B', age: 30, weight_kg: 80,
-  address: 'X 1', email: 'a@b.de', phone: '0660',
+  first_name: 'A', last_name: 'B', gender: 'female', age: 30,
+  height_cm: 170, weight_kg: 80,
+  street: 'X 1', postal_code: '4240', city: 'Freistadt',
+  email: 'a@b.de', phone: '0660',
   signature_png: 'data:image/png;base64,x', accepted_terms: true
 })
 
@@ -45,6 +47,23 @@ test('create then list returns the record', async () => {
   expect(isNaN(Date.parse(row.created_at))).toBe(false)
   expect(row.first_name).toBe(body.first_name)
   expect(row.email).toBe(body.email)
+  // Every guest field must survive the round-trip into the database, not just
+  // pass validation on the way in.
+  expect(row.gender).toBe('female')
+  expect(row.height_cm).toBe(170)
+  expect(row.street).toBe('X 1')
+  expect(row.postal_code).toBe('4240')
+  expect(row.city).toBe('Freistadt')
+  await app.close()
+})
+
+test('rejects a registration with an unknown gender', async () => {
+  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const res = await app.inject({
+    method: 'POST', url: '/api/registrations',
+    payload: { ...validBody(), gender: 'weiblich' }
+  })
+  expect(res.statusCode).toBe(400)
   await app.close()
 })
 

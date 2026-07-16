@@ -1,7 +1,13 @@
-import type { ExtraBooking, PaymentMethod } from './api'
+import type { ExtraBooking, Gender, PaymentMethod } from './api'
 
 // Canonical enum values (sent to the API) mapped to their German UI labels.
 // Keep the enum values themselves out of the UI — only these labels are shown.
+
+export const GENDERS: { value: Gender; label: string }[] = [
+  { value: 'female', label: 'weiblich' },
+  { value: 'male', label: 'männlich' },
+  { value: 'diverse', label: 'divers' },
+]
 
 export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: 'voucher', label: 'Gutschein' },
@@ -14,6 +20,10 @@ export const EXTRA_BOOKINGS: { value: ExtraBooking; label: string }[] = [
   { value: 'video', label: 'nur Video' },
   { value: 'video_photo', label: 'Video+Foto' },
 ]
+
+export function genderLabel(value: Gender | null | undefined): string {
+  return GENDERS.find((g) => g.value === value)?.label ?? ''
+}
 
 export function paymentLabel(value: PaymentMethod | null | undefined): string {
   return PAYMENT_METHODS.find((m) => m.value === value)?.label ?? ''

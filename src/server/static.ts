@@ -28,7 +28,9 @@ export function registerStatic(app: FastifyInstance, webRoot: string) {
     console.warn(`[static] manifest app not built yet, skipping /manifest static route (missing ${manifestRoot})`)
   }
 
+  // The guest app is the default: the tablet handed to a customer should open
+  // straight into the registration form. Staff reach the manifest via /manifest.
   app.get('/', async (_req, reply) => {
-    reply.redirect('/manifest')
+    reply.redirect('/guest')
   })
 }

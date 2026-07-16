@@ -14,7 +14,7 @@ export function openDb(path: string, nativeBinding?: string): Database.Database 
       first_name TEXT, last_name TEXT, gender TEXT, age INTEGER,
       height_cm INTEGER, weight_kg INTEGER,
       street TEXT, postal_code TEXT, city TEXT,
-      email TEXT, phone TEXT, signature_png TEXT,
+      email TEXT, phone TEXT, contract_pdf_filename TEXT,
       accepted_terms INTEGER,
       tandem_master_id INTEGER, load_number INTEGER, price REAL,
       payment_method TEXT, voucher_number TEXT, extra_booking TEXT,
@@ -48,14 +48,16 @@ function migrate(db: Database.Database): void {
     ['postal_code', 'TEXT'],
     ['city', 'TEXT'],
     ['voucher_number', 'TEXT'],
+    ['contract_pdf_filename', 'TEXT'],
   ]
   for (const [name, type] of added) {
     if (!existing.has(name)) db.exec(`ALTER TABLE registrations ADD COLUMN ${name} ${type}`)
   }
 
-  // `address` was replaced by street/postal_code/city. Dropping it gives a
-  // migrated database the same set of columns as a freshly created one (the
-  // order still differs — ALTER TABLE appends), so `SELECT *` cannot hand the
-  // manifest a stale column that no longer has a UI or an export mapping.
+  // `address` was replaced by street/postal_code/city, and `signature_png` by
+  // contract_pdf_filename (a generated PDF replaces the raw signature image).
+  // Dropping both gives a migrated database the same column set as a freshly
+  // created one.
   if (existing.has('address')) db.exec('ALTER TABLE registrations DROP COLUMN address')
+  if (existing.has('signature_png')) db.exec('ALTER TABLE registrations DROP COLUMN signature_png')
 }

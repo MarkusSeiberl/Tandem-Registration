@@ -35,7 +35,7 @@ test('creates registrations table with correct columns', () => {
     'id', 'first_name', 'last_name', 'gender', 'age',
     'height_cm', 'weight_kg',
     'street', 'postal_code', 'city',
-    'email', 'phone', 'signature_png',
+    'email', 'phone', 'contract_pdf_filename',
     'accepted_terms', 'tandem_master_id', 'load_number',
     'price', 'payment_method', 'voucher_number', 'extra_booking',
     'camera_flyer_id', 'created_at', 'jump_date'
@@ -112,17 +112,18 @@ afterEach(async () => {
   }
 })
 
-test('migrates a legacy database: adds new columns and drops address', async () => {
+test('migrates a legacy database: adds new columns, drops address, drops signature_png', async () => {
   const file = await legacyDbPath()
 
   const db = openDb(file)
   const names = (db.pragma('table_info(registrations)') as Array<{ name: string }>)
     .map(c => c.name)
 
-  for (const added of ['gender', 'height_cm', 'street', 'postal_code', 'city', 'voucher_number']) {
+  for (const added of ['gender', 'height_cm', 'street', 'postal_code', 'city', 'voucher_number', 'contract_pdf_filename']) {
     expect(names).toContain(added)
   }
   expect(names).not.toContain('address')
+  expect(names).not.toContain('signature_png')
   db.close()
 })
 

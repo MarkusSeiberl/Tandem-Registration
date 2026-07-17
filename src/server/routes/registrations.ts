@@ -13,16 +13,27 @@ function safeNamePart(s: string): string {
   return s.trim().replace(/[\\/:*?"<>|]/g, '')
 }
 
-async function uniqueContractFilename(dir: string, base: string): Promise<string> {
+// Claims a filename and writes `pdf` to it atomically: opening with the 'wx'
+// flag fails with EEXIST if the file already exists, so the existence check
+// and the write happen as a single OS-level operation. This closes a TOCTOU
+// race that a separate fs.access()-then-fs.writeFile() pair would leave open
+// (multiple kiosk tablets can hit this server concurrently).
+async function writeContractPdf(dir: string, base: string, pdf: Buffer): Promise<string> {
   let candidate = `${base}.pdf`
   let n = 2
   while (true) {
     try {
-      await fs.access(path.join(dir, candidate))
+      const handle = await fs.open(path.join(dir, candidate), 'wx')
+      try {
+        await handle.writeFile(pdf)
+      } finally {
+        await handle.close()
+      }
+      return candidate
+    } catch (err: any) {
+      if (err.code !== 'EEXIST') throw err
       candidate = `${base} (${n}).pdf`
       n += 1
-    } catch {
-      return candidate
     }
   }
 }
@@ -44,7 +55,6 @@ export function registerRegistrationRoutes(
     await fs.mkdir(vertraegeDir, { recursive: true })
     const dateStamp = jumpDate.replaceAll('-', '.')
     const base = `${dateStamp}_${safeNamePart(v.last_name)}-${safeNamePart(v.first_name)}`
-    const filename = await uniqueContractFilename(vertraegeDir, base)
 
     const pdf = await fillContractPdf(contractTemplate, {
       firstName: v.first_name, lastName: v.last_name,
@@ -55,7 +65,7 @@ export function registerRegistrationRoutes(
       datum: jumpDate.split('-').reverse().join('.'),
       signaturePngDataUrl: v.signature_png,
     })
-    await fs.writeFile(path.join(vertraegeDir, filename), pdf)
+    const filename = await writeContractPdf(vertraegeDir, base, pdf)
 
     const info = db.prepare(`INSERT INTO registrations
       (first_name,last_name,gender,age,height_cm,weight_kg,

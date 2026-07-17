@@ -1,4 +1,7 @@
 import { test, expect } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import { testServer } from './helpers/testServer'
 
 const validBody = () => ({
@@ -83,6 +86,43 @@ test('filters registrations by jump_date', async () => {
   const todayStr = new Date().toISOString().slice(0, 10)
   const todayList = await app.inject({ method:'GET', url:`/api/registrations?date=${todayStr}` })
   expect(todayList.json().length).toBe(1)
+
+  await app.close()
+})
+
+test('two concurrent registrations for the same name on the same day get distinct contract files', async () => {
+  // Isolate this test's exportDir so its "same last/first name" collision
+  // can't be masked (or spuriously caused) by other tests' leftover files
+  // in the shared os.tmpdir().
+  const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-race-'))
+  const { app } = testServer({ exportDir })
+  const body = { ...validBody(), last_name: 'Muster', first_name: 'Max' }
+
+  const [res1, res2] = await Promise.all([
+    app.inject({ method: 'POST', url: '/api/registrations', payload: body }),
+    app.inject({ method: 'POST', url: '/api/registrations', payload: body }),
+  ])
+
+  expect(res1.statusCode).toBe(201)
+  expect(res2.statusCode).toBe(201)
+
+  const rows = (await app.inject({ method: 'GET', url: '/api/registrations' })).json()
+  expect(rows.length).toBe(2)
+
+  const filenames = rows.map((r: any) => r.contract_pdf_filename).sort()
+  expect(filenames.length).toBe(2)
+  expect(filenames[0]).not.toBe(filenames[1])
+
+  const dateStamp = new Date().toISOString().slice(0, 10).replaceAll('-', '.')
+  expect(filenames).toEqual([
+    `${dateStamp}_Muster-Max (2).pdf`,
+    `${dateStamp}_Muster-Max.pdf`,
+  ])
+
+  const vertraegeDir = path.join(exportDir, 'vertaege')
+  for (const filename of filenames) {
+    expect(fs.existsSync(path.join(vertraegeDir, filename))).toBe(true)
+  }
 
   await app.close()
 })

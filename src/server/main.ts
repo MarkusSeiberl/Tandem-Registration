@@ -35,9 +35,14 @@ if (nativeBinding && !fs.existsSync(nativeBinding)) {
   process.exit(1)
 }
 
+const templatePath = isPackaged
+  ? path.join(__dirname, '..', 'assets', 'Befoerderungsvertrag.pdf')
+  : path.join(installDir, 'assets', 'Befoerderungsvertrag.pdf')
+const contractTemplate = fs.readFileSync(templatePath)
+
 const db = openDb(path.join(dir, 'tandem.db'), nativeBinding)
 const cfgRef = { current: loadConfig(dir) }
-const app = buildServer(db, cfgRef, (c) => saveConfig(dir, c))
+const app = buildServer(db, cfgRef, contractTemplate, (c) => saveConfig(dir, c))
 
 app.get('/api/contract', async () => ({ text: cfgRef.current.contractText }))
 

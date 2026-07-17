@@ -1,18 +1,16 @@
 import { test, expect } from 'vitest'
-import { openDb } from '../src/server/db'
-import { buildServer } from '../src/server/index'
-import os from 'os'
+import { testServer } from './helpers/testServer'
 
 const validBody = () => ({
   first_name: 'A', last_name: 'B', gender: 'female', age: 30,
   height_cm: 170, weight_kg: 80,
   street: 'X', postal_code: '4240', city: 'Freistadt',
   email: 'a@b.de', phone: '1',
-  signature_png: 'data:image/png;base64,x', accepted_terms: true
+  signature_png: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', accepted_terms: true
 })
 
 test('patch adds manifest fields', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
   const res = await app.inject({
     method: 'PATCH', url: `/api/registrations/${id}`,
@@ -26,7 +24,7 @@ test('patch adds manifest fields', async () => {
 })
 
 test('patch stores a voucher number alongside the voucher payment', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
   const res = await app.inject({
     method: 'PATCH', url: `/api/registrations/${id}`,
@@ -40,7 +38,7 @@ test('patch stores a voucher number alongside the voucher payment', async () => 
 })
 
 test('patch clears the voucher number when payment moves away from voucher', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
   await app.inject({
     method: 'PATCH', url: `/api/registrations/${id}`,
@@ -58,7 +56,7 @@ test('patch clears the voucher number when payment moves away from voucher', asy
 })
 
 test('patch updates only the provided keys', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
   await app.inject({
     method: 'PATCH', url: `/api/registrations/${id}`,
@@ -75,7 +73,7 @@ test('patch updates only the provided keys', async () => {
 })
 
 test('rejects invalid payment_method with 400', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
   const res = await app.inject({
     method: 'PATCH', url: `/api/registrations/${id}`,
@@ -86,7 +84,7 @@ test('rejects invalid payment_method with 400', async () => {
 })
 
 test('rejects invalid extra_booking with 400', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
   const res = await app.inject({
     method: 'PATCH', url: `/api/registrations/${id}`,
@@ -97,7 +95,7 @@ test('rejects invalid extra_booking with 400', async () => {
 })
 
 test('returns 404 for unknown id', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const res = await app.inject({
     method: 'PATCH', url: '/api/registrations/999999',
     payload: { load_number: 1 }
@@ -107,7 +105,7 @@ test('returns 404 for unknown id', async () => {
 })
 
 test('rejects empty-string payment_method with 400', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
   const res = await app.inject({
     method: 'PATCH', url: `/api/registrations/${id}`,
@@ -118,7 +116,7 @@ test('rejects empty-string payment_method with 400', async () => {
 })
 
 test('rejects null payment_method with 400', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
   const res = await app.inject({
     method: 'PATCH', url: `/api/registrations/${id}`,
@@ -129,7 +127,7 @@ test('rejects null payment_method with 400', async () => {
 })
 
 test('rejects empty-string extra_booking with 400', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
   const res = await app.inject({
     method: 'PATCH', url: `/api/registrations/${id}`,
@@ -140,7 +138,7 @@ test('rejects empty-string extra_booking with 400', async () => {
 })
 
 test('does not broadcast "changed" when patching an unknown id', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   await app.listen({ port: 0, host: '127.0.0.1' })
   const addr = app.server.address()
   const base = typeof addr === 'string' ? addr : `http://127.0.0.1:${addr!.port}`
@@ -177,7 +175,7 @@ test('does not broadcast "changed" when patching an unknown id', async () => {
 })
 
 test('ignores keys not in the allowlist (including id spoofing)', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
   const res = await app.inject({
     method: 'PATCH', url: `/api/registrations/${id}`,
@@ -190,7 +188,7 @@ test('ignores keys not in the allowlist (including id spoofing)', async () => {
 })
 
 test('broadcasts a "changed" SSE event on patch', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   await app.listen({ port: 0, host: '127.0.0.1' })
   const addr = app.server.address()
   const base = typeof addr === 'string' ? addr : `http://127.0.0.1:${addr!.port}`

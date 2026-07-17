@@ -1,14 +1,12 @@
 import { test, expect } from 'vitest'
-import { openDb } from '../src/server/db'
-import { buildServer } from '../src/server/index'
-import os from 'os'
+import { testServer } from './helpers/testServer'
 
 const validBody = () => ({
   first_name: 'A', last_name: 'B', gender: 'female', age: 30,
   height_cm: 170, weight_kg: 80,
   street: 'X 1', postal_code: '4240', city: 'Freistadt',
   email: 'a@b.de', phone: '0660',
-  signature_png: 'data:image/png;base64,x', accepted_terms: true
+  signature_png: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', accepted_terms: true
 })
 
 async function waitForSseChunk(
@@ -34,7 +32,7 @@ async function waitForSseChunk(
 }
 
 test('create then list returns the record', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const body = validBody()
   const create = await app.inject({ method:'POST', url:'/api/registrations', payload: body })
   expect(create.statusCode).toBe(201)
@@ -58,7 +56,7 @@ test('create then list returns the record', async () => {
 })
 
 test('rejects a registration with an unknown gender', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const res = await app.inject({
     method: 'POST', url: '/api/registrations',
     payload: { ...validBody(), gender: 'weiblich' }
@@ -68,14 +66,14 @@ test('rejects a registration with an unknown gender', async () => {
 })
 
 test('rejects invalid', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const res = await app.inject({ method:'POST', url:'/api/registrations', payload:{} })
   expect(res.statusCode).toBe(400)
   await app.close()
 })
 
 test('filters registrations by jump_date', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   const create = await app.inject({ method:'POST', url:'/api/registrations', payload: validBody() })
   expect(create.statusCode).toBe(201)
 
@@ -90,7 +88,7 @@ test('filters registrations by jump_date', async () => {
 })
 
 test('broadcasts a "changed" SSE event when a registration is created', async () => {
-  const app = buildServer(openDb(':memory:'), { current: { exportDir: os.tmpdir(), contractText: '' } })
+  const { app } = testServer()
   await app.listen({ port: 0, host: '127.0.0.1' })
   const addr = app.server.address()
   const base = typeof addr === 'string' ? addr : `http://127.0.0.1:${addr!.port}`

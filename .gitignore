@@ -35,3 +35,8 @@ Thumbs.db
 
 # Subagent-driven-development scratch (progress ledger, not project artifacts)
 .superpowers/
+
+# Stray duplicate of the contract template left at the repo root by an earlier
+# move to assets/ — a Windows file lock prevents deleting it outright. The
+# real, tracked copy is assets/Befoerderungsvertrag.pdf.
+/Befoerderungsvertrag.pdf

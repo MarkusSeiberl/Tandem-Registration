@@ -281,7 +281,7 @@ p {
   flex: 1;
 }
 
-/* Sign screen */
+/* Signature pad (contract screen) */
 .signature-pad {
   border: 2px solid var(--border);
   border-radius: 12px;

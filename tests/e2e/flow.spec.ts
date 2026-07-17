@@ -21,17 +21,13 @@ const GUEST = {
 }
 
 test('guest registration flows through to manifest and xlsx export', async ({ page }) => {
-  // --- Guest kiosk: welcome -> contract -> form -> sign -> done ---
+  // --- Guest kiosk: welcome -> form -> contract (+ signature) -> done ---
   // Trailing slash required: @fastify/static serves the SPA's index.html at
   // the prefix root ('/guest/') but does not redirect the bare prefix
   // ('/guest') to it, so the bare path 404s.
   await page.goto('/guest/')
 
   await page.getByRole('button', { name: 'Anmeldung starten' }).click()
-
-  await expect(page.getByRole('heading', { name: 'Teilnahmebedingungen' })).toBeVisible()
-  await page.getByLabel('Ich akzeptiere die Bedingungen').check()
-  await page.getByRole('button', { name: 'Weiter' }).click()
 
   await page.getByLabel('Vorname').fill(GUEST.firstName)
   await page.getByLabel('Nachname').fill(GUEST.lastName)
@@ -49,8 +45,11 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   await expect(formWeiter).toBeEnabled()
   await formWeiter.click()
 
+  await expect(page.getByRole('heading', { name: 'Teilnahmebedingungen' })).toBeVisible()
+
   // Draw a real multi-segment signature stroke on the canvas so `hasDrawn`
-  // flips true and the PNG isn't blank.
+  // flips true and the PNG isn't blank. Signing this screen submits directly —
+  // there is no separate checkbox or later sign screen anymore.
   const canvas = page.locator('canvas.signature-pad')
   await expect(canvas).toBeVisible()
   const box = await canvas.boundingBox()

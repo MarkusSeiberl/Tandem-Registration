@@ -53,7 +53,7 @@ export function registerRegistrationRoutes(
 
     const vertraegeDir = path.join(cfgRef.current.exportDir, 'vertaege')
     await fs.mkdir(vertraegeDir, { recursive: true })
-    const dateStamp = jumpDate.replaceAll('-', '.')
+    const dateStamp = jumpDate.replace(/-/g, '.')
     const base = `${dateStamp}_${safeNamePart(v.last_name)}-${safeNamePart(v.first_name)}`
 
     const pdf = await fillContractPdf(contractTemplate, {

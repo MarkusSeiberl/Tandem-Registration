@@ -22,24 +22,24 @@ afterEach(async () => {
   }
 })
 
-const SIGNATURE = 'data:image/png;base64,SECRETSIG'
+const CONTRACT_PDF_FILENAME = '2026.07.09_B-A.pdf'
 
 function seed(db: ReturnType<typeof openDb>, date: string) {
   const masterId = db.prepare('INSERT INTO tandem_masters (name,active) VALUES (?,1)').run('Hans').lastInsertRowid
   const flyerId = db.prepare('INSERT INTO camera_flyers (name,active) VALUES (?,1)').run('Peter').lastInsertRowid
   db.prepare(`INSERT INTO registrations
     (first_name,last_name,gender,age,height_cm,weight_kg,
-     street,postal_code,city,email,phone,signature_png,
+     street,postal_code,city,email,phone,contract_pdf_filename,
      accepted_terms,tandem_master_id,load_number,price,payment_method,extra_booking,
      camera_flyer_id,created_at,jump_date)
     VALUES ('A','B','female',30,170,80,
      'X 1','4240','Freistadt','a@b.de','0660',?,
      1,?,3,199.5,'cash','video',?,?,?)`)
-    .run(SIGNATURE, masterId, flyerId, new Date().toISOString(), date)
+    .run(CONTRACT_PDF_FILENAME, masterId, flyerId, new Date().toISOString(), date)
   return { masterId, flyerId }
 }
 
-test('POST /api/export writes an xlsx file with resolved names, no signature', async () => {
+test('POST /api/export writes an xlsx file with resolved names, no contract_pdf_filename', async () => {
   const db = openDb(':memory:')
   const date = '2026-07-09'
   seed(db, date)
@@ -63,7 +63,7 @@ test('POST /api/export writes an xlsx file with resolved names, no signature', a
   await wb.xlsx.readFile(expectedPath)
   const ws = wb.worksheets[0]
   const headers = (ws.getRow(1).values as any[]).slice(1)
-  expect(headers).not.toContain('signature_png')
+  expect(headers).not.toContain('contract_pdf_filename')
 
   const row = ws.getRow(2).values as any[]
   expect(row).toContain('A')
@@ -73,8 +73,7 @@ test('POST /api/export writes an xlsx file with resolved names, no signature', a
   const allValues: any[] = []
   ws.eachRow(r => allValues.push(r.values))
   const serialized = JSON.stringify(allValues)
-  expect(serialized).not.toContain('data:image/png')
-  expect(serialized).not.toContain(SIGNATURE)
+  expect(serialized).not.toContain(CONTRACT_PDF_FILENAME)
 
   await app.close()
 })
@@ -128,11 +127,11 @@ test('POST /api/export leaves master/flyer as empty string when unmatched', asyn
   const date = '2026-07-09'
   db.prepare(`INSERT INTO registrations
     (first_name,last_name,gender,age,height_cm,weight_kg,
-     street,postal_code,city,email,phone,signature_png,
+     street,postal_code,city,email,phone,contract_pdf_filename,
      accepted_terms,tandem_master_id,load_number,price,payment_method,extra_booking,
      camera_flyer_id,created_at,jump_date)
     VALUES ('NoMatch','B','female',30,170,80,
-     'X 1','4240','Freistadt','a@b.de','0660','data:image/png;base64,x',
+     'X 1','4240','Freistadt','a@b.de','0660','2026.07.09_B-NoMatch.pdf',
      1,9999,3,199.5,'cash','video',8888,?,?)`)
     .run(new Date().toISOString(), date)
 

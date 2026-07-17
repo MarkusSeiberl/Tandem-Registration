@@ -1,14 +1,13 @@
 import { useState } from 'react'
 import Welcome from './Welcome'
-import Contract from './Contract'
 import Form from './Form'
 import type { FormValues } from './Form'
-import Sign from './Sign'
+import Contract from './Contract'
 import Done from './Done'
 import HiddenSettings from './HiddenSettings'
 import { submitRegistration } from './api'
 
-type Screen = 'welcome' | 'contract' | 'form' | 'sign' | 'done'
+type Screen = 'welcome' | 'form' | 'contract' | 'done'
 
 function App() {
   const [screen, setScreen] = useState<Screen>('welcome')
@@ -45,24 +44,21 @@ function App() {
     <div className="app-root">
       {screen === 'welcome' && (
         <Welcome
-          onStart={() => setScreen('contract')}
+          onStart={() => setScreen('form')}
           onOpenSettings={() => setSettingsOpen(true)}
         />
-      )}
-      {screen === 'contract' && (
-        <Contract onNext={() => setScreen('form')} onCancel={resetToWelcome} />
       )}
       {screen === 'form' && (
         <Form
           onNext={(values) => {
             setFormValues(values)
-            setScreen('sign')
+            setScreen('contract')
           }}
           onCancel={resetToWelcome}
         />
       )}
-      {screen === 'sign' && (
-        <Sign
+      {screen === 'contract' && (
+        <Contract
           onNext={handleSign}
           onCancel={resetToWelcome}
           submitting={submitting}

@@ -46,7 +46,7 @@ export interface Registration {
   city: string
   email: string
   phone: string
-  signature_png: string
+  contract_pdf_filename: string | null
   accepted_terms: number
   tandem_master_id: number | null
   load_number: number | null
@@ -67,6 +67,7 @@ export interface StammdatenItem {
 export interface Settings {
   exportDir: string
   contractText: string
+  jumpLocation: string
 }
 
 export interface ManifestPatch {
@@ -158,6 +159,10 @@ export async function putSettings(fields: Partial<Settings>): Promise<Settings> 
   })
   if (!res.ok) throw new Error('Einstellungen konnten nicht gespeichert werden')
   return asJson<Settings>(res)
+}
+
+export function contractPdfUrl(id: number): string {
+  return apiUrl(`/api/registrations/${id}/contract.pdf`)
 }
 
 export async function exportDay(date: string): Promise<ExportResult> {

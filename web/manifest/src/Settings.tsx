@@ -3,6 +3,7 @@ import { getSettings, putSettings } from './api'
 
 export default function Settings() {
   const [exportDir, setExportDir] = useState('')
+  const [jumpLocation, setJumpLocation] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -10,7 +11,10 @@ export default function Settings() {
 
   useEffect(() => {
     getSettings()
-      .then((cfg) => setExportDir(cfg.exportDir))
+      .then((cfg) => {
+        setExportDir(cfg.exportDir)
+        setJumpLocation(cfg.jumpLocation)
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Fehler beim Laden'))
       .finally(() => setLoading(false))
   }, [])
@@ -20,8 +24,9 @@ export default function Settings() {
     setError(null)
     setSaved(false)
     try {
-      const cfg = await putSettings({ exportDir })
+      const cfg = await putSettings({ exportDir, jumpLocation })
       setExportDir(cfg.exportDir)
+      setJumpLocation(cfg.jumpLocation)
       setSaved(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen')
@@ -42,6 +47,18 @@ export default function Settings() {
           value={exportDir}
           onChange={(e) => {
             setExportDir(e.target.value)
+            setSaved(false)
+          }}
+        />
+      </label>
+
+      <label className="field">
+        Ort (für Vertragsunterschrift)
+        <input
+          type="text"
+          value={jumpLocation}
+          onChange={(e) => {
+            setJumpLocation(e.target.value)
             setSaved(false)
           }}
         />

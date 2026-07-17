@@ -298,6 +298,3 @@ h2 {
   max-width: 480px;
   margin-bottom: 16px;
 }
-
-/* Print: the real A4 sheet layout (`.print-only`, `.no-print`, `@page`, and the
-   `--name-top` etc. coordinate variables) lives in print.css, imported in main.tsx. */

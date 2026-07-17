@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { patch, flyers as fetchFlyers, masters as fetchMasters } from './api'
+import { patch, flyers as fetchFlyers, masters as fetchMasters, contractPdfUrl } from './api'
 import type { ExtraBooking, PaymentMethod, Registration, StammdatenItem } from './api'
 import { EXTRA_BOOKINGS, PAYMENT_METHODS, genderLabel } from './labels'
 
@@ -206,15 +206,14 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
       {saved && !error && <p className="hint">Gespeichert.</p>}
 
       <div className="actions">
-        {/*
-          The A4 print sheet for `registration` is rendered by App.tsx (see Print.tsx /
-          print.css) as a sibling of the app shell, not here — it must sit outside the
-          `.no-print` subtree so `@media print` can hide the app UI without also hiding
-          the sheet. This button only has to trigger the browser print dialog.
-        */}
-        <button type="button" className="btn secondary" onClick={() => window.print()}>
-          Drucken
-        </button>
+        <a
+          className="btn secondary"
+          href={contractPdfUrl(registration.id)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Vertrag öffnen
+        </a>
         <button type="button" className="btn primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Speichert…' : 'Speichern'}
         </button>

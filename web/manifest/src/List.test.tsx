@@ -26,7 +26,7 @@ function makeRow(overrides: Partial<Registration>): Registration {
     city: 'Salzburg',
     email: 'anna@example.com',
     phone: '0664 1234567',
-    signature_png: '',
+    contract_pdf_filename: null,
     accepted_terms: 1,
     tandem_master_id: null,
     load_number: null,

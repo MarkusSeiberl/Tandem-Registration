@@ -66,141 +66,145 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         ← Zurück
       </button>
 
-      <section className="guest-data">
-        <h2>Gastdaten</h2>
-        <dl>
-          <div className="detail-row">
-            <dt>Name</dt>
-            <dd>
-              {registration.first_name} {registration.last_name}
-            </dd>
-          </div>
-          <div className="detail-row">
-            <dt>Geschlecht</dt>
-            <dd>{genderLabel(registration.gender)}</dd>
-          </div>
-          <div className="detail-row">
-            <dt>Alter</dt>
-            <dd>{registration.age}</dd>
-          </div>
-          <div className="detail-row">
-            <dt>Größe</dt>
-            <dd>{registration.height_cm != null ? `${registration.height_cm} cm` : ''}</dd>
-          </div>
-          <div className="detail-row">
-            <dt>Gewicht</dt>
-            <dd>{registration.weight_kg} kg</dd>
-          </div>
-          <div className="detail-row">
-            <dt>Adresse</dt>
-            <dd>
-              {registration.street}
-              <br />
-              {registration.postal_code} {registration.city}
-            </dd>
-          </div>
-          <div className="detail-row">
-            <dt>E-Mail</dt>
-            <dd>{registration.email}</dd>
-          </div>
-          <div className="detail-row">
-            <dt>Telefon</dt>
-            <dd>{registration.phone}</dd>
-          </div>
-          <div className="detail-row">
-            <dt>Sprungdatum</dt>
-            <dd>{registration.jump_date}</dd>
-          </div>
-        </dl>
-      </section>
+      <div className="detail-grid">
+        <section className="guest-data">
+          <h2>Gastdaten</h2>
+          <dl>
+            <div className="detail-row">
+              <dt>Name</dt>
+              <dd>
+                {registration.first_name} {registration.last_name}
+              </dd>
+            </div>
+            <div className="detail-row">
+              <dt>Geschlecht</dt>
+              <dd>{genderLabel(registration.gender)}</dd>
+            </div>
+            <div className="detail-row">
+              <dt>Alter</dt>
+              <dd className="numeral">{registration.age}</dd>
+            </div>
+            <div className="detail-row">
+              <dt>Größe</dt>
+              <dd className="numeral">{registration.height_cm != null ? `${registration.height_cm} cm` : ''}</dd>
+            </div>
+            <div className="detail-row">
+              <dt>Gewicht</dt>
+              <dd className="numeral">{registration.weight_kg} kg</dd>
+            </div>
+            <div className="detail-row">
+              <dt>Adresse</dt>
+              <dd>
+                {registration.street}
+                <br />
+                {registration.postal_code} {registration.city}
+              </dd>
+            </div>
+            <div className="detail-row">
+              <dt>E-Mail</dt>
+              <dd>{registration.email}</dd>
+            </div>
+            <div className="detail-row">
+              <dt>Telefon</dt>
+              <dd>{registration.phone}</dd>
+            </div>
+            <div className="detail-row">
+              <dt>Sprungdatum</dt>
+              <dd>{registration.jump_date}</dd>
+            </div>
+          </dl>
+        </section>
 
-      <section className="manifest-fields">
-        <h2>Manifest</h2>
+        <section className="manifest-fields">
+          <h2>Manifest</h2>
 
-        <label className="field">
-          Tandemmaster
-          <select
-            value={tandemMasterId}
-            onChange={(e) => setTandemMasterId(e.target.value === '' ? '' : Number(e.target.value))}
-          >
-            <option value="">— auswählen —</option>
-            {masterList.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="field">
-          Load-Nr.
-          <input
-            type="number"
-            value={loadNumber}
-            onChange={(e) => setLoadNumber(e.target.value === '' ? '' : Number(e.target.value))}
-          />
-        </label>
-
-        <label className="field">
-          Preis
-          <input
-            type="number"
-            value={price}
-            onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
-          />
-        </label>
-
-        <label className="field">
-          Zahlungsart
-          <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod | '')}>
-            <option value="">— auswählen —</option>
-            {PAYMENT_METHODS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {showVoucherNumber && (
           <label className="field">
-            Gutschein-Nr.
-            <input
-              type="text"
-              value={voucherNumber}
-              onChange={(e) => setVoucherNumber(e.target.value)}
-            />
-          </label>
-        )}
-
-        <label className="field">
-          Zusatzbuchung
-          <select value={extraBooking} onChange={(e) => setExtraBooking(e.target.value as ExtraBooking)}>
-            {EXTRA_BOOKINGS.map((x) => (
-              <option key={x.value} value={x.value}>
-                {x.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {showCameraFlyer && (
-          <label className="field">
-            Kameraflieger
+            Tandemmaster
             <select
-              value={cameraFlyerId}
-              onChange={(e) => setCameraFlyerId(e.target.value === '' ? '' : Number(e.target.value))}
+              value={tandemMasterId}
+              onChange={(e) => setTandemMasterId(e.target.value === '' ? '' : Number(e.target.value))}
             >
               <option value="">— auswählen —</option>
-              {flyerList.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
+              {masterList.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
                 </option>
               ))}
             </select>
           </label>
-        )}
-      </section>
+
+          <label className="field">
+            Load-Nr.
+            <input
+              type="number"
+              className="numeral"
+              value={loadNumber}
+              onChange={(e) => setLoadNumber(e.target.value === '' ? '' : Number(e.target.value))}
+            />
+          </label>
+
+          <label className="field">
+            Preis
+            <input
+              type="number"
+              className="numeral"
+              value={price}
+              onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
+            />
+          </label>
+
+          <label className="field">
+            Zahlungsart
+            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod | '')}>
+              <option value="">— auswählen —</option>
+              {PAYMENT_METHODS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {showVoucherNumber && (
+            <label className="field">
+              Gutschein-Nr.
+              <input
+                type="text"
+                value={voucherNumber}
+                onChange={(e) => setVoucherNumber(e.target.value)}
+              />
+            </label>
+          )}
+
+          <label className="field">
+            Zusatzbuchung
+            <select value={extraBooking} onChange={(e) => setExtraBooking(e.target.value as ExtraBooking)}>
+              {EXTRA_BOOKINGS.map((x) => (
+                <option key={x.value} value={x.value}>
+                  {x.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {showCameraFlyer && (
+            <label className="field">
+              Kameraflieger
+              <select
+                value={cameraFlyerId}
+                onChange={(e) => setCameraFlyerId(e.target.value === '' ? '' : Number(e.target.value))}
+              >
+                <option value="">— auswählen —</option>
+                {flyerList.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </section>
+      </div>
 
       {error && <p className="error">{error}</p>}
       {saved && !error && <p className="hint">Gespeichert.</p>}
@@ -214,6 +218,16 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         >
           Vertrag öffnen
         </a>
+        {/*
+          The Urkunde print sheet for `registration` is rendered by App.tsx (see
+          Urkunde.tsx / urkunde.css) as a sibling of the app shell, not here — it
+          must sit outside the `.no-print` subtree so `@media print` can hide the
+          app UI without also hiding the sheet. This button only has to trigger
+          the browser print dialog.
+        */}
+        <button type="button" className="btn secondary" onClick={() => window.print()}>
+          Urkunde drucken
+        </button>
         <button type="button" className="btn primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Speichert…' : 'Speichern'}
         </button>

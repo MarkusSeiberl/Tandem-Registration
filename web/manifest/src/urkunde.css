@@ -1,0 +1,96 @@
+/*
+ * Print sheet for the pre-printed paper Urkunde (certificate).
+ *
+ * Layout strategy
+ * ----------------
+ * The exact position of the name/date on the certificate is NOT yet known —
+ * the club will supply final coordinates once they test-print against the
+ * actual paper. Every placement below is therefore expressed as a CSS custom
+ * property so the final numbers are a one-line edit here, with no changes
+ * needed to Urkunde.tsx or any other logic. (Same pattern this project used
+ * for the manifest's original contract print sheet.)
+ *
+ * Print isolation strategy
+ * -------------------------
+ * - `.print-only` elements are `display: none` on screen and only revealed
+ *   inside `@media print`.
+ * - `.no-print` is applied to the whole visible app shell (App.tsx). Under
+ *   `@media print` it is forced to `display: none !important`, so only the
+ *   `.print-only` sheet remains on the page.
+ * - `@page { size: A4 landscape; margin: 0 }` — landscape is the common
+ *   default for certificates; change to `portrait` here if the club's
+ *   Urkunde paper is portrait instead.
+ */
+
+:root {
+  /* LAYOUT TBD — final coordinates measured against the actual Urkunde paper.
+     All values are offsets from the page edge (297mm x 210mm, landscape A4). */
+  --urkunde-name-top: 110mm;
+  --urkunde-name-left: 0;
+  --urkunde-name-width: 297mm;
+  --urkunde-date-top: 150mm;
+  --urkunde-date-left: 0;
+  --urkunde-date-width: 297mm;
+}
+
+/* Hidden on screen; only shown inside @media print below. */
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 0;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block;
+  }
+
+  .urkunde-sheet {
+    position: relative;
+    box-sizing: border-box;
+    width: 297mm;
+    height: 210mm;
+    margin: 0;
+    background: #fff;
+    color: #000;
+    overflow: hidden;
+    page-break-after: avoid;
+  }
+
+  .urkunde-field {
+    position: absolute;
+    width: var(--urkunde-name-width);
+    font-family: var(--sans, system-ui, 'Segoe UI', Roboto, sans-serif);
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .urkunde-name {
+    top: var(--urkunde-name-top);
+    left: var(--urkunde-name-left);
+    width: var(--urkunde-name-width);
+    font-size: 20pt;
+    font-weight: 700;
+  }
+
+  .urkunde-date {
+    top: var(--urkunde-date-top);
+    left: var(--urkunde-date-left);
+    width: var(--urkunde-date-width);
+    font-size: 14pt;
+  }
+}

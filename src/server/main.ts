@@ -1,6 +1,7 @@
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
+import { exec } from 'child_process'
 import { Bonjour } from 'bonjour-service'
 import { openDb } from './db'
 import { loadConfig, saveConfig } from './config'
@@ -109,10 +110,35 @@ async function shutdown(signal: string) {
 process.on('SIGINT', () => shutdown('SIGINT'))
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 
+// Best-effort: open the manifest screen in the default browser. Only done for
+// the packaged .exe — auto-popping a browser window on every `npm start` or
+// e2e test run (which also boots this file via tsx) would be disruptive.
+function openBrowser(url: string) {
+  const cmd =
+    process.platform === 'win32' ? `start "" "${url}"`
+    : process.platform === 'darwin' ? `open "${url}"`
+    : `xdg-open "${url}"`
+  exec(cmd, (err) => {
+    if (err) console.error('[tandem] Konnte Browser nicht automatisch öffnen:', err.message)
+  })
+}
+
 app.listen({ port, host: '0.0.0.0' }).then(() => {
   bonjour = new Bonjour()
   bonjour.publish({ name: 'tandem', type: 'http', port })
-  console.log(`Tandem läuft auf http://tandem.local:${port} (lokales Netzwerk, kein Internet nötig)`)
+  console.log('')
+  console.log('==============================================')
+  console.log('  Tandem läuft und ist einsatzbereit!')
+  console.log('==============================================')
+  console.log('')
+  console.log(`  Gäste-Anmeldung:  http://tandem.local:${port}/guest`)
+  console.log(`  Manifest:         http://tandem.local:${port}/manifest`)
+  console.log('')
+  console.log('  (lokales Netzwerk, kein Internet nötig)')
+  console.log('')
+  console.log('  Zum Beenden dieses Fenster schließen oder STRG+C drücken.')
+  console.log('')
+  if (isPackaged) openBrowser(`http://localhost:${port}/manifest`)
 }).catch((err) => {
   console.error('[tandem] Start fehlgeschlagen:', err.message)
   process.exit(1)

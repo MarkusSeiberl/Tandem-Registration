@@ -24,19 +24,22 @@ const SMALL_FONT_SIZE = 10
 // top at fixed coordinates rather than setting named form field values.
 // Coordinates measured directly against assets/Befoerderungsvertrag.pdf (595x842pt A4).
 const PAGE1 = {
-  name: { x: 105, y: 682 },
-  street: { x: 195, y: 657 },
+  name: { x: 118, y: 690 },
+  street: { x: 203, y: 657 },
   plzCity: { x: 165, y: 632 },
   phone: { x: 95, y: 608, size: SMALL_FONT_SIZE },
   email: { x: 290, y: 608, size: SMALL_FONT_SIZE },
   age: { x: 100, y: 580 },
-  height: { x: 210, y: 580 },
-  weight: { x: 350, y: 580 },
+  height: { x: 190, y: 580 },
+  weight: { x: 315, y: 580 },
 }
 
 const PAGE2 = {
   ort: { x: 85, y: 82 },
-  datum: { x: 245, y: 82, size: SMALL_FONT_SIZE },
+  // The Datum blank is only ~60pt wide (right after the "Datum:" label,
+  // before "Unterschrift:" starts around x=300) — too narrow for a full
+  // dd.mm.yyyy date at 10pt, hence the smaller size here.
+  datum: { x: 240, y: 82, size: 9 },
   signature: { x: 440, y: 84, width: 90, height: 36 },
 }
 
@@ -66,8 +69,8 @@ export async function fillContractPdf(
   draw(page1, data.phone, PAGE1.phone)
   draw(page1, data.email, PAGE1.email)
   draw(page1, String(data.age), PAGE1.age)
-  draw(page1, String(data.heightCm), PAGE1.height)
-  draw(page1, String(data.weightKg), PAGE1.weight)
+  draw(page1, `${data.heightCm} cm`, PAGE1.height)
+  draw(page1, `${data.weightKg} kg`, PAGE1.weight)
 
   draw(page2, data.ort, PAGE2.ort)
   draw(page2, data.datum, PAGE2.datum)

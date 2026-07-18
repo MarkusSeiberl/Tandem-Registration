@@ -114,6 +114,11 @@ export async function patch(id: number, fields: ManifestPatch): Promise<Registra
   return asJson<Registration>(res)
 }
 
+export async function remove(id: number): Promise<void> {
+  const res = await fetch(apiUrl(`/api/registrations/${id}`), { method: 'DELETE' })
+  if (!res.ok) throw new Error('Löschen fehlgeschlagen')
+}
+
 type StammdatenKind = 'masters' | 'flyers'
 
 async function listKind(kind: StammdatenKind): Promise<StammdatenItem[]> {

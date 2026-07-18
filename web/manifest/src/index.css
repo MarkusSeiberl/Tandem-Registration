@@ -1,14 +1,18 @@
 :root {
+  --ink: #0b1220;
+  --ember: #ff6a3d;
+  --sky: #123a6b;
   --text: #2b2b33;
   --text-h: #08060d;
-  --bg: #f7f6fb;
+  --bg: #f3f5f8;
   --panel-bg: #ffffff;
-  --border: #d9d7e0;
-  --accent: #6d28d9;
+  --border: #dde2e8;
+  --accent: #1e9e5b;
   --accent-contrast: #ffffff;
   --error: #b3261e;
-  --row-hover: rgba(109, 40, 217, 0.08);
+  --row-hover: rgba(30, 158, 91, 0.08);
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
 
   font: 16px/150% var(--sans);
   color-scheme: light dark;
@@ -24,12 +28,12 @@
   :root {
     --text: #e4e2ea;
     --text-h: #f7f6fb;
-    --bg: #16171d;
-    --panel-bg: #1f2028;
-    --border: #33343d;
-    --accent: #a78bfa;
-    --accent-contrast: #1a1025;
-    --row-hover: rgba(167, 139, 250, 0.12);
+    --bg: #12161d;
+    --panel-bg: #1b212c;
+    --border: #2b323d;
+    --accent: #34c77b;
+    --accent-contrast: #06150d;
+    --row-hover: rgba(52, 199, 123, 0.1);
   }
 }
 
@@ -47,67 +51,92 @@ body {
   flex-direction: column;
 }
 
-.app-root {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
 h1,
 h2 {
   font-family: var(--sans);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-h);
 }
 
 h1 {
-  font-size: 28px;
+  font-size: 26px;
   margin: 0 0 16px;
 }
 
 h2 {
-  font-size: 20px;
+  font-size: 18px;
   margin: 0 0 12px;
 }
 
-/* Navigation */
-.tabs {
+/* App shell: a left sidebar (desktop convention) instead of top tabs, so the
+   table below gets the full width of a laptop screen instead of competing
+   with a horizontal nav bar for vertical space. */
+.app-root {
+  flex: 1;
   display: flex;
+  flex-direction: row;
+}
+
+.sidebar {
+  flex: none;
+  width: 216px;
+  display: flex;
+  flex-direction: column;
   gap: 4px;
-  padding: 12px 20px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 20px 12px;
   background: var(--panel-bg);
+  border-right: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 20px;
+  font-weight: 700;
+  color: var(--text-h);
 }
 
 .tab {
   font: inherit;
-  font-size: 16px;
-  padding: 10px 18px;
+  font-size: 15px;
+  text-align: left;
+  padding: 12px 14px;
   border: none;
+  border-left: 3px solid transparent;
+  border-radius: 8px;
   background: transparent;
   color: var(--text);
   cursor: pointer;
-  border-bottom: 3px solid transparent;
+}
+
+.tab:hover {
+  background: var(--row-hover);
 }
 
 .tab.active {
   color: var(--accent);
-  border-bottom-color: var(--accent);
+  background: var(--row-hover);
+  border-left-color: var(--accent);
   font-weight: 600;
 }
 
 .view {
   flex: 1;
-  padding: 20px;
-  max-width: 1100px;
+  padding: 28px 32px;
+  max-width: 1400px;
   width: 100%;
   margin: 0 auto;
 }
 
 /* Buttons */
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font: inherit;
   font-size: 15px;
+  text-decoration: none;
   padding: 10px 18px;
   border-radius: 8px;
   border: 2px solid var(--accent);
@@ -145,6 +174,13 @@ h2 {
   color: var(--error);
 }
 
+/* Numeric/tabular data (ages, weights, load numbers, prices) reads like a
+   flight-ops board readout: aligned digits, not proportional body text. */
+.numeral {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
 /* List screen */
 .list-toolbar {
   display: flex;
@@ -170,6 +206,35 @@ h2 {
   color: var(--text);
 }
 
+.btn-icon {
+  padding: 10px;
+  line-height: 0;
+  color: var(--text);
+}
+
+.btn-icon:disabled {
+  color: var(--border);
+}
+
+/* Pushes the entry count to the far right of the toolbar row. */
+.list-count {
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--text);
+  opacity: 0.7;
+  align-self: center;
+}
+
+.col-checkbox {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.col-checkbox input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+}
+
 .manifest-table {
   width: 100%;
   border-collapse: collapse;
@@ -182,11 +247,13 @@ h2 {
 .manifest-table th,
 .manifest-table td {
   text-align: left;
-  padding: 10px 14px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border);
 }
 
 .manifest-table th {
+  position: sticky;
+  top: 0;
   background: var(--row-hover);
   font-weight: 600;
 }
@@ -199,7 +266,60 @@ h2 {
   background: var(--row-hover);
 }
 
-/* Detail screen */
+/* Status pills: a booking's payment method and extras at a glance, modeled
+   on the same red/green dispatch-light language as the guest kiosk's CTA —
+   a colored dot plus the label, not just plain text in a cell. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.pill::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--slate, #8a94a3);
+}
+
+.pill.pill-voucher::before {
+  background: var(--ember);
+}
+
+.pill.pill-video::before {
+  background: var(--sky);
+}
+
+.pill.pill-go::before {
+  background: var(--accent);
+}
+
+/* Detail screen: guest data and manifest fields sit side-by-side on a
+   laptop-width viewport instead of stacked, since a PC user has the
+   horizontal space a tablet guest doesn't. The back button and the trailing
+   error/save/actions row stay full-width above and below this grid. */
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  margin-top: 16px;
+}
+
+@media (min-width: 900px) {
+  .detail-grid {
+    grid-template-columns: minmax(280px, 380px) 1fr;
+    align-items: start;
+  }
+}
+
 .guest-data dl {
   display: grid;
   grid-template-columns: max-content 1fr;

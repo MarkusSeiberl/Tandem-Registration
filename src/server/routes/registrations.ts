@@ -127,4 +127,12 @@ export function registerRegistrationRoutes(
     if (!row) return reply.code(404).send()
     return row
   })
+
+  app.delete('/api/registrations/:id', async (req, reply) => {
+    const id = (req.params as any).id
+    const result = db.prepare('DELETE FROM registrations WHERE id=?').run(id)
+    if (result.changes === 0) return reply.code(404).send()
+    sse.broadcast('changed', { id })
+    return reply.code(204).send()
+  })
 }

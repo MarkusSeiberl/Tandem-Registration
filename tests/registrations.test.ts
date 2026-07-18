@@ -149,3 +149,52 @@ test('broadcasts a "changed" SSE event when a registration is created', async ()
     await app.close()
   }
 })
+
+test('DELETE /api/registrations/:id removes the row', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+
+  const del = await app.inject({ method: 'DELETE', url: `/api/registrations/${id}` })
+  expect(del.statusCode).toBe(204)
+
+  const rows = (await app.inject({ method: 'GET', url: '/api/registrations' })).json()
+  expect(rows.find((r: any) => r.id === id)).toBeUndefined()
+
+  await app.close()
+})
+
+test('DELETE /api/registrations/:id returns 404 for an unknown id', async () => {
+  const { app } = testServer()
+
+  const res = await app.inject({ method: 'DELETE', url: '/api/registrations/999999' })
+  expect(res.statusCode).toBe(404)
+
+  await app.close()
+})
+
+test('DELETE /api/registrations/:id broadcasts a "changed" SSE event', async () => {
+  const { app } = testServer()
+  await app.listen({ port: 0, host: '127.0.0.1' })
+  const addr = app.server.address()
+  const base = typeof addr === 'string' ? addr : `http://127.0.0.1:${addr!.port}`
+
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+
+  const res = await fetch(`${base}/api/events`)
+  const reader = res.body!.getReader()
+
+  try {
+    const del = await app.inject({ method: 'DELETE', url: `/api/registrations/${id}` })
+    expect(del.statusCode).toBe(204)
+
+    const chunk = await waitForSseChunk(reader, 'event: changed')
+    expect(chunk).toContain('event: changed')
+    // id here comes straight from the route param (a string), unlike the
+    // POST handler's numeric lastInsertRowid — matches the PATCH broadcast's
+    // quoting in manifest-update.test.ts.
+    expect(chunk).toContain(`"id":"${id}"`)
+  } finally {
+    await reader.cancel().catch(() => {})
+    await app.close()
+  }
+})

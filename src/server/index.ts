@@ -18,7 +18,7 @@ export function buildServer(
   app.get('/api/health', async () => ({ ok: true }))
   registerRegistrationRoutes(app, db, sse, cfgRef, contractTemplate)
   registerStammdatenRoutes(app, db)
-  registerExportRoutes(app, db, () => cfgRef.current.exportDir)
+  registerExportRoutes(app, db, cfgRef)
   registerSettingsRoutes(app, cfgRef, persist)
   return app
 }

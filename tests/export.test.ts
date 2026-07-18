@@ -15,6 +15,10 @@ async function makeTmpDir() {
   return dir
 }
 
+function makeCfgRef(dir: string, jumpLocation = 'Freistadt') {
+  return { current: { exportDir: dir, contractText: '', jumpLocation } }
+}
+
 afterEach(async () => {
   while (tmpDirs.length) {
     const dir = tmpDirs.pop()!
@@ -23,6 +27,11 @@ afterEach(async () => {
 })
 
 const CONTRACT_PDF_FILENAME = '2026.07.09_B-A.pdf'
+
+// Layout is fixed: 3 meta rows (Datum/Ort/Betriebsleiter) + 1 blank spacer,
+// so the column header row and first data row always land here.
+const HEADER_ROW = 5
+const FIRST_DATA_ROW = 6
 
 function seed(db: ReturnType<typeof openDb>, date: string) {
   const masterId = db.prepare('INSERT INTO tandem_masters (name,active) VALUES (?,1)').run('Hans').lastInsertRowid
@@ -46,7 +55,7 @@ test('POST /api/export writes an xlsx file with resolved names, no contract_pdf_
 
   const dir = await makeTmpDir()
   const app = Fastify()
-  registerExportRoutes(app, db, () => dir)
+  registerExportRoutes(app, db, makeCfgRef(dir))
 
   const res = await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
   expect(res.statusCode).toBe(200)
@@ -62,18 +71,48 @@ test('POST /api/export writes an xlsx file with resolved names, no contract_pdf_
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.readFile(expectedPath)
   const ws = wb.worksheets[0]
-  const headers = (ws.getRow(1).values as any[]).slice(1)
+  const headers = (ws.getRow(HEADER_ROW).values as any[]).slice(1)
   expect(headers).not.toContain('contract_pdf_filename')
+  expect(headers).not.toContain('Alter')
+  expect(headers).not.toContain('Größe (cm)')
+  expect(headers).not.toContain('Gewicht (kg)')
+  expect(headers).toContain('Adresse')
 
-  const row = ws.getRow(2).values as any[]
+  const row = ws.getRow(FIRST_DATA_ROW).values as any[]
   expect(row).toContain('A')
   expect(row).toContain('Hans')
   expect(row).toContain('Peter')
+  expect(row).toContain('X 1, 4240, Freistadt')
 
   const allValues: any[] = []
   ws.eachRow(r => allValues.push(r.values))
   const serialized = JSON.stringify(allValues)
   expect(serialized).not.toContain(CONTRACT_PDF_FILENAME)
+
+  await app.close()
+})
+
+test('POST /api/export writes Datum/Ort/Betriebsleiter meta rows, BL left blank', async () => {
+  const db = openDb(':memory:')
+  const date = '2026-07-09'
+  seed(db, date)
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, makeCfgRef(dir, 'Freistadt'))
+
+  await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.readFile(path.join(dir, `Tandem_${date}.xlsx`))
+  const ws = wb.worksheets[0]
+
+  expect(ws.getRow(1).getCell(1).value).toBe('Datum')
+  expect(ws.getRow(1).getCell(2).value).toBe(date)
+  expect(ws.getRow(2).getCell(1).value).toBe('Ort')
+  expect(ws.getRow(2).getCell(2).value).toBe('Freistadt')
+  expect(ws.getRow(3).getCell(1).value).toBe('Betriebsleiter (BL)')
+  expect(ws.getRow(3).getCell(2).value ?? '').toBe('')
 
   await app.close()
 })
@@ -86,7 +125,7 @@ test('POST /api/export defaults to today and creates the export dir if missing',
   const base = await makeTmpDir()
   const dir = path.join(base, 'nested', 'export')
   const app = Fastify()
-  registerExportRoutes(app, db, () => dir)
+  registerExportRoutes(app, db, makeCfgRef(dir))
 
   const res = await app.inject({ method: 'POST', url: '/api/export' })
   expect(res.statusCode).toBe(200)
@@ -107,7 +146,7 @@ test('POST /api/export overwrites an existing file for the same date', async () 
 
   const dir = await makeTmpDir()
   const app = Fastify()
-  registerExportRoutes(app, db, () => dir)
+  registerExportRoutes(app, db, makeCfgRef(dir))
 
   const filePath = path.join(dir, `Tandem_${date}.xlsx`)
   await fs.writeFile(filePath, 'not a real workbook')
@@ -117,7 +156,7 @@ test('POST /api/export overwrites an existing file for the same date', async () 
 
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.readFile(filePath)
-  expect(wb.worksheets[0].getRow(2).getCell(1).value).toBe('A')
+  expect(wb.worksheets[0].getRow(FIRST_DATA_ROW).getCell(1).value).toBe('A')
 
   await app.close()
 })
@@ -137,7 +176,7 @@ test('POST /api/export leaves master/flyer as empty string when unmatched', asyn
 
   const dir = await makeTmpDir()
   const app = Fastify()
-  registerExportRoutes(app, db, () => dir)
+  registerExportRoutes(app, db, makeCfgRef(dir))
 
   const res = await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
   expect(res.statusCode).toBe(200)
@@ -146,10 +185,10 @@ test('POST /api/export leaves master/flyer as empty string when unmatched', asyn
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.readFile(filePath)
   const ws = wb.worksheets[0]
-  const cols = wb.worksheets[0].getRow(1).values as any[]
+  const cols = ws.getRow(HEADER_ROW).values as any[]
   const masterIdx = cols.findIndex(v => v === 'Tandemmaster')
   const flyerIdx = cols.findIndex(v => v === 'Kameraflieger')
-  const row = ws.getRow(2).values as any[]
+  const row = ws.getRow(FIRST_DATA_ROW).values as any[]
   expect(row[masterIdx] ?? '').toBe('')
   expect(row[flyerIdx] ?? '').toBe('')
 
@@ -163,15 +202,15 @@ test('POST /api/export writes German labels, never raw enum values', async () =>
 
   const dir = await makeTmpDir()
   const app = Fastify()
-  registerExportRoutes(app, db, () => dir)
+  registerExportRoutes(app, db, makeCfgRef(dir))
 
   await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
 
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.readFile(path.join(dir, `Tandem_${date}.xlsx`))
   const ws = wb.worksheets[0]
-  const headers = ws.getRow(1).values as any[]
-  const cell = (header: string) => (ws.getRow(2).values as any[])[headers.indexOf(header)]
+  const headers = ws.getRow(HEADER_ROW).values as any[]
+  const cell = (header: string) => (ws.getRow(FIRST_DATA_ROW).values as any[])[headers.indexOf(header)]
 
   expect(cell('Geschlecht')).toBe('weiblich')
   expect(cell('Zahlungsart')).toBe('Bar')
@@ -201,7 +240,7 @@ test('POST /api/export leaves an unknown enum value as an empty cell', async () 
 
   const dir = await makeTmpDir()
   const app = Fastify()
-  registerExportRoutes(app, db, () => dir)
+  registerExportRoutes(app, db, makeCfgRef(dir))
 
   const res = await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
   expect(res.statusCode).toBe(200)
@@ -209,8 +248,8 @@ test('POST /api/export leaves an unknown enum value as an empty cell', async () 
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.readFile(path.join(dir, `Tandem_${date}.xlsx`))
   const ws = wb.worksheets[0]
-  const headers = ws.getRow(1).values as any[]
-  const cell = (header: string) => (ws.getRow(2).values as any[])[headers.indexOf(header)] ?? ''
+  const headers = ws.getRow(HEADER_ROW).values as any[]
+  const cell = (header: string) => (ws.getRow(FIRST_DATA_ROW).values as any[])[headers.indexOf(header)] ?? ''
 
   expect(cell('Geschlecht')).toBe('')
   expect(cell('Zahlungsart')).toBe('')
@@ -222,7 +261,7 @@ test('POST /api/export rejects a path-traversal date and touches no file outside
   const db = openDb(':memory:')
   const dir = await makeTmpDir()
   const app = Fastify()
-  registerExportRoutes(app, db, () => dir)
+  registerExportRoutes(app, db, makeCfgRef(dir))
 
   const res = await app.inject({ method: 'POST', url: '/api/export?date=../../etc/passwd' })
   expect(res.statusCode).toBe(400)
@@ -241,7 +280,7 @@ test('POST /api/export still works with a valid ?date=YYYY-MM-DD', async () => {
 
   const dir = await makeTmpDir()
   const app = Fastify()
-  registerExportRoutes(app, db, () => dir)
+  registerExportRoutes(app, db, makeCfgRef(dir))
 
   const res = await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
   expect(res.statusCode).toBe(200)

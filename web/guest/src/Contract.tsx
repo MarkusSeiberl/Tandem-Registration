@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { getContract } from './api'
 
 export interface ContractProps {
@@ -11,6 +11,28 @@ export interface ContractProps {
 
 const CANVAS_WIDTH = 700
 const CANVAS_HEIGHT = 280
+
+// Mirrors the bold formatting of the original Befoerderungsvertrag PDF, where
+// these labels/passage are printed bold — the plain-text vertragstext from
+// the server has no markup of its own to carry that.
+const BOLD_PHRASES = [
+  'Absprung:',
+  'Freier Fall:',
+  'Offener Schirm:',
+  'Unmittelbar vor der Landung (Landehaltung): beide Oberschenkel samt Knie 90° anheben, wenn notwendig durch Griff in beide Kniekehlen unterstützen; zusätzlich Unterschenkel mind. 45° nach vorne anheben; Anweisungen des TM befolgen.',
+]
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+const BOLD_PATTERN = new RegExp(`(${BOLD_PHRASES.map(escapeRegExp).join('|')})`, 'g')
+
+function renderWithBoldPhrases(text: string): ReactNode[] {
+  return text
+    .split(BOLD_PATTERN)
+    .map((part, i) => (BOLD_PHRASES.includes(part) ? <strong key={i}>{part}</strong> : part))
+}
 
 export default function Contract({ onNext, onCancel, submitting, errors }: ContractProps) {
   const [text, setText] = useState<string>('')
@@ -103,30 +125,36 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
   return (
     <section className="screen contract-screen">
       <h1>Teilnahmebedingungen</h1>
-      <div className="contract-text" role="region" aria-label="Teilnahmebedingungen">
-        {loading && <p>Lade Vertragstext…</p>}
-        {!loading && loadError && <p className="error">{loadError}</p>}
-        {!loading && !loadError && text.trim().length === 0 && (
-          <p>Es liegt derzeit kein Vertragstext vor. Bitte wende dich an das Personal.</p>
-        )}
-        {!loading && !loadError && text.trim().length > 0 && (
-          <p style={{ whiteSpace: 'pre-wrap' }}>{text}</p>
-        )}
-      </div>
+      <div className="boarding-card">
+        <div className="contract-text" role="region" aria-label="Teilnahmebedingungen">
+          {loading && <p>Lade Vertragstext…</p>}
+          {!loading && loadError && <p className="error">{loadError}</p>}
+          {!loading && !loadError && text.trim().length === 0 && (
+            <p>Es liegt derzeit kein Vertragstext vor. Bitte wende dich an das Personal.</p>
+          )}
+          {!loading && !loadError && text.trim().length > 0 && (
+            <p style={{ whiteSpace: 'pre-wrap' }}>{renderWithBoldPhrases(text)}</p>
+          )}
+        </div>
 
-      <h2>Unterschrift</h2>
-      <p>Mit deiner Unterschrift bestätigst du, den Vertrag gelesen und akzeptiert zu haben.</p>
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-        className="signature-pad"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={stopDrawing}
-        onPointerLeave={stopDrawing}
-        onPointerCancel={stopDrawing}
-      />
+        <div className="perforation" />
+
+        <div className="sign-section">
+          <h2>Unterschrift</h2>
+          <p>Mit deiner Unterschrift bestätigst du, den Vertrag gelesen und akzeptiert zu haben.</p>
+          <canvas
+            ref={canvasRef}
+            width={CANVAS_WIDTH}
+            height={CANVAS_HEIGHT}
+            className="signature-pad"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={stopDrawing}
+            onPointerLeave={stopDrawing}
+            onPointerCancel={stopDrawing}
+          />
+        </div>
+      </div>
 
       {errors && errors.length > 0 && (
         <ul className="error">

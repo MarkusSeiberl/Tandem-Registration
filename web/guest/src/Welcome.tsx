@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import BrandMark from './BrandMark'
 
 export interface WelcomeProps {
   onStart: () => void
@@ -25,7 +26,8 @@ export default function Welcome({ onStart, onOpenSettings }: WelcomeProps) {
   return (
     <section className="screen welcome-screen">
       <button type="button" className="logo-tap" onClick={handleLogoTap} aria-label="HFSC Freistadt">
-        <h1>Willkommen beim HFSC Freistadt – Tandemsprung</h1>
+        <BrandMark size={64} className="welcome-mark" />
+        <h1>Willkommen beim HFSC Freistadt</h1>
       </button>
       <p>Bitte melde dich hier für deinen Tandemsprung an.</p>
       <button type="button" className="btn primary big" onClick={onStart}>

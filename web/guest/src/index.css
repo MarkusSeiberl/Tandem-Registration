@@ -1,13 +1,19 @@
 :root {
-  --text: #2b2b33;
-  --text-h: #08060d;
-  --bg: #f7f6fb;
+  --ink: #0b1220;
+  --sky: #123a6b;
+  --sky-deep: #08192f;
+  --ember: #ff6a3d;
+  --text: #1b2430;
+  --text-h: var(--ink);
+  --bg: #eaf3fc;
   --panel-bg: #ffffff;
-  --border: #d9d7e0;
-  --accent: #6d28d9;
+  --border: #d7e3f0;
+  --accent: #1e9e5b;
+  --accent-dark: #167a45;
   --accent-contrast: #ffffff;
-  --error: #b3261e;
+  --error: #c4342a;
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
 
   font: 20px/150% var(--sans);
   color-scheme: light dark;
@@ -23,11 +29,14 @@
   :root {
     --text: #e4e2ea;
     --text-h: #f7f6fb;
-    --bg: #16171d;
-    --panel-bg: #1f2028;
-    --border: #33343d;
-    --accent: #a78bfa;
-    --accent-contrast: #1a1025;
+    --bg: #0e1420;
+    --panel-bg: #17202b;
+    --border: #2a3644;
+    --accent: #34c77b;
+    --accent-dark: #1e9e5b;
+    --accent-contrast: #06150d;
+    --sky: #1c4e8c;
+    --sky-deep: #060e1a;
   }
 }
 
@@ -35,8 +44,20 @@
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
+  /* Kiosk tablet: a stray swipe must not trigger the browser's pull-to-refresh
+     or rubber-band bounce over the fixed app chrome. */
+  overscroll-behavior-y: contain;
+}
+
+button,
+.logo-tap,
+.radio-option {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 #root {
@@ -53,11 +74,20 @@ body {
 
 h1 {
   font-family: var(--sans);
-  font-weight: 600;
+  font-weight: 800;
+  letter-spacing: -0.01em;
   color: var(--text-h);
   font-size: 40px;
   margin: 0 0 24px;
   line-height: 120%;
+}
+
+h2 {
+  font-family: var(--sans);
+  font-weight: 700;
+  color: var(--text-h);
+  font-size: 22px;
+  margin: 0 0 8px;
 }
 
 p {
@@ -77,11 +107,35 @@ p {
   width: 100%;
 }
 
+/* Welcome screen: full-bleed "altitude" gradient (deep sky at the top fading
+   to the horizon), CTA pinned in the lower, thumb-reachable third of the
+   tablet rather than centered with the rest of the copy. */
+.welcome-screen {
+  max-width: none;
+  justify-content: space-between;
+  background: linear-gradient(180deg, var(--sky-deep) 0%, var(--sky) 45%, var(--bg) 100%);
+  padding-top: max(56px, env(safe-area-inset-top));
+  padding-bottom: max(56px, env(safe-area-inset-bottom));
+}
+
+.welcome-screen h1,
+.welcome-screen p {
+  color: #fff;
+}
+
 .welcome-screen p {
   font-size: 24px;
 }
 
+.welcome-mark {
+  margin-bottom: 20px;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.3));
+}
+
 .logo-tap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   background: none;
   border: none;
   padding: 0;
@@ -99,6 +153,11 @@ p {
   border: 2px solid var(--accent);
   cursor: pointer;
   touch-action: manipulation;
+  transition: transform 0.08s ease;
+}
+
+.btn:active {
+  transform: scale(0.97);
 }
 
 .btn.primary {
@@ -123,6 +182,30 @@ p {
   margin-top: 32px;
 }
 
+/* The "go" light: a soft pulse on the one button that starts the whole
+   flow, echoing the dispatch light by a jump-plane's door. Reduced motion
+   turns it into a plain steady button. */
+.welcome-screen .btn.big {
+  margin-top: auto;
+  animation: pulse-go 2.4s ease-in-out infinite;
+}
+
+@keyframes pulse-go {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(30, 158, 91, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 16px rgba(30, 158, 91, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-screen .btn.big {
+    animation: none;
+  }
+}
+
 .actions {
   display: flex;
   gap: 16px;
@@ -131,7 +214,79 @@ p {
   margin-top: 24px;
 }
 
-/* Contract screen */
+/* Step ticks: a small progress readout for the Form -> Contract -> Done
+   sequence, so a guest mid-flow always knows how much is left. */
+.step-ticks {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding-top: 20px;
+}
+
+.step-tick {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.step-tick.done {
+  background: var(--accent);
+}
+
+.step-tick.active {
+  background: var(--ember);
+  transform: scale(1.3);
+}
+
+/* Contract screen: the vertragstext and signature pad sit inside one
+   ticket-like card with a perforated divider, echoing the tear-off
+   Gutschein box on the club's own paper contract. */
+.boarding-card {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--panel-bg);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.boarding-card .contract-text {
+  border: none;
+  border-radius: 0;
+  margin: 0;
+}
+
+.boarding-card .perforation {
+  position: relative;
+  height: 0;
+  border-top: 2px dashed var(--border);
+}
+
+.boarding-card .perforation::before,
+.boarding-card .perforation::after {
+  content: '';
+  position: absolute;
+  top: -10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bg);
+}
+
+.boarding-card .perforation::before {
+  left: -10px;
+}
+
+.boarding-card .perforation::after {
+  right: -10px;
+}
+
+.boarding-card .sign-section {
+  padding: 24px;
+  text-align: left;
+}
+
 .contract-text {
   width: 100%;
   max-height: 40vh;
@@ -143,19 +298,6 @@ p {
   padding: 20px 24px;
   margin-bottom: 24px;
   font-size: 18px;
-}
-
-.checkbox-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 22px;
-  cursor: pointer;
-}
-
-.checkbox-row input {
-  width: 28px;
-  height: 28px;
 }
 
 /* Form screen */
@@ -185,6 +327,13 @@ p {
   border-radius: 10px;
   background: var(--panel-bg);
   color: var(--text);
+}
+
+/* Age/height/weight read like instrument figures, not free text. */
+.field input[type='number'] {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
 }
 
 .field input:focus {
@@ -266,11 +415,17 @@ p {
   outline-offset: 1px;
 }
 
-/* PLZ sits next to Wohnort: a postcode is short, a town name is not. */
+/* Two fields side by side: Größe/Gewicht split evenly, PLZ/Wohnort don't
+   (a postcode is short, a town name is not). */
 .field-row {
   display: flex;
   gap: 16px;
   align-items: flex-start;
+}
+
+.field-row .field {
+  flex: 1;
+  min-width: 0;
 }
 
 .field-row .field-plz {
@@ -292,8 +447,13 @@ p {
 }
 
 /* Done screen */
+.done-mark {
+  margin-bottom: 8px;
+}
+
 .done-screen h1 {
   font-size: 48px;
+  color: var(--accent);
 }
 
 /* Hidden settings overlay */

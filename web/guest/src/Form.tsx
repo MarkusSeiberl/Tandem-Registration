@@ -204,16 +204,18 @@ export default function Form({ onNext, onCancel }: FormProps) {
         <fieldset className="field-group">
           <legend>Körperdaten</legend>
 
-          <div className="field">
-            <label htmlFor="height_cm">Größe (cm)</label>
-            <input id="height_cm" type="number" inputMode="numeric" min={100} max={220} {...field('height')} />
-            {showError('height') && <p className="error">{showError('height')}</p>}
-          </div>
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="height_cm">Größe (cm)</label>
+              <input id="height_cm" type="number" inputMode="numeric" min={100} max={220} {...field('height')} />
+              {showError('height') && <p className="error">{showError('height')}</p>}
+            </div>
 
-          <div className="field">
-            <label htmlFor="weight_kg">Gewicht (kg)</label>
-            <input id="weight_kg" type="number" inputMode="numeric" min={20} max={200} {...field('weight')} />
-            {showError('weight') && <p className="error">{showError('weight')}</p>}
+            <div className="field">
+              <label htmlFor="weight_kg">Gewicht (kg)</label>
+              <input id="weight_kg" type="number" inputMode="numeric" min={20} max={200} {...field('weight')} />
+              {showError('weight') && <p className="error">{showError('weight')}</p>}
+            </div>
           </div>
         </fieldset>
 

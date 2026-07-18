@@ -9,6 +9,16 @@ import { submitRegistration } from './api'
 
 type Screen = 'welcome' | 'form' | 'contract' | 'done'
 
+// A guest mid-flow always knows how much of Form -> Contract is left.
+function StepTicks({ step }: { step: 0 | 1 }) {
+  return (
+    <div className="step-ticks" aria-hidden="true">
+      <span className={`step-tick ${step > 0 ? 'done' : 'active'}`} />
+      <span className={`step-tick ${step === 1 ? 'active' : ''}`} />
+    </div>
+  )
+}
+
 function App() {
   const [screen, setScreen] = useState<Screen>('welcome')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -49,21 +59,27 @@ function App() {
         />
       )}
       {screen === 'form' && (
-        <Form
-          onNext={(values) => {
-            setFormValues(values)
-            setScreen('contract')
-          }}
-          onCancel={resetToWelcome}
-        />
+        <>
+          <StepTicks step={0} />
+          <Form
+            onNext={(values) => {
+              setFormValues(values)
+              setScreen('contract')
+            }}
+            onCancel={resetToWelcome}
+          />
+        </>
       )}
       {screen === 'contract' && (
-        <Contract
-          onNext={handleSign}
-          onCancel={resetToWelcome}
-          submitting={submitting}
-          errors={submitErrors}
-        />
+        <>
+          <StepTicks step={1} />
+          <Contract
+            onNext={handleSign}
+            onCancel={resetToWelcome}
+            submitting={submitting}
+            errors={submitErrors}
+          />
+        </>
       )}
       {screen === 'done' && <Done onTimeout={resetToWelcome} />}
 

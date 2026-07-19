@@ -163,6 +163,23 @@ test('DELETE /api/registrations/:id removes the row', async () => {
   await app.close()
 })
 
+test('DELETE /api/registrations/:id also removes the generated contract PDF', async () => {
+  const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-del-'))
+  const { app } = testServer({ exportDir })
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+
+  const rows = (await app.inject({ method: 'GET', url: '/api/registrations' })).json()
+  const filename = rows.find((r: any) => r.id === id).contract_pdf_filename
+  const pdfPath = path.join(exportDir, 'vertaege', filename)
+  expect(fs.existsSync(pdfPath)).toBe(true)
+
+  const del = await app.inject({ method: 'DELETE', url: `/api/registrations/${id}` })
+  expect(del.statusCode).toBe(204)
+  expect(fs.existsSync(pdfPath)).toBe(false)
+
+  await app.close()
+})
+
 test('DELETE /api/registrations/:id returns 404 for an unknown id', async () => {
   const { app } = testServer()
 

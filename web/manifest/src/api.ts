@@ -68,6 +68,7 @@ export interface Settings {
   exportDir: string
   contractText: string
   jumpLocation: string
+  backupDir: string
 }
 
 export interface ManifestPatch {
@@ -83,6 +84,10 @@ export interface ManifestPatch {
 export interface ExportResult {
   path: string
   count: number
+}
+
+export interface BackupResult {
+  path: string
 }
 
 async function asJson<T>(res: Response): Promise<T> {
@@ -176,4 +181,10 @@ export async function exportDay(date: string): Promise<ExportResult> {
   })
   if (!res.ok) throw new Error(await errorMessage(res, 'Export fehlgeschlagen'))
   return asJson<ExportResult>(res)
+}
+
+export async function createBackup(): Promise<BackupResult> {
+  const res = await fetch(apiUrl('/api/backup'), { method: 'POST' })
+  if (!res.ok) throw new Error(await errorMessage(res, 'Backup fehlgeschlagen'))
+  return asJson<BackupResult>(res)
 }

@@ -5,6 +5,7 @@ export interface Config {
   exportDir: string
   contractText: string
   jumpLocation: string
+  backupDir: string
 }
 
 const CONTRACT_TEXT = `Der Tandempassagier erklärt seinen Beitritt beim HFSC-Freistadt als unterstützendes Mitglied. Mit dieser Mitgliedschaft sind keine finanziellen Verpflichtungen verbunden. Die Mitgliedschaft endet automatisch mit Ende des Jahres der Unterfertigung. Bei allen Beförderungen von Personen und Sachen mit dem vom HFSC-Freistadt gehaltenen und betriebenen Tandemfallschirmen fungiert ausschließlich der HFSC-Freistadt als Beförderer und ist damit Vertragspartner des oben namentlich angeführten Tandempassagiers. Die Durchführung von Tandemfallschirmsprüngen erfolgt nicht gewerblich, sondern nur im Rahmen der Mitgliederwerbung und zur Popularisierung des Fallschirmsports. Ein allenfalls für die Beförderung vereinbarter Kosten(Mitglieds-)beitrag fließt ungekürzt und unmittelbar dem gemeinnützigen HFSC-Freistadt zu, der damit alleiniger Vertragspartner des Tandempassagiers im Beförderungsvertrag ist. Der jeweilige Tandemmaster bzw. die Person, welche die Vereinbarungen im Zusammenhang mit der Beförderung mit dem Tandempassagier trifft, handelt als Vertreter des HFSC-Freistadt und damit nicht im eigenen Namen.
@@ -48,7 +49,7 @@ Ich bestätige durch den TM eine umfassende Einweisung für den Tandem-Passagier
 
 export function loadConfig(dir: string): Config {
   const p = path.join(dir, 'config.json')
-  const def: Config = { exportDir: dir, contractText: CONTRACT_TEXT, jumpLocation: '' }
+  const def: Config = { exportDir: dir, contractText: CONTRACT_TEXT, jumpLocation: '', backupDir: '' }
   try {
     return { ...def, ...JSON.parse(fs.readFileSync(p, 'utf8')) }
   } catch {

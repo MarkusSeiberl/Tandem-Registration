@@ -15,6 +15,7 @@ export function testServer(cfgOverrides: Partial<Config> = {}) {
       exportDir: os.tmpdir(),
       contractText: '',
       jumpLocation: '',
+      backupDir: '',
       ...cfgOverrides,
     },
   }

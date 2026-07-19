@@ -1,19 +1,25 @@
 import { useEffect, useState } from 'react'
-import { getSettings, putSettings } from './api'
+import { createBackup, getSettings, putSettings } from './api'
 
 export default function Settings() {
   const [exportDir, setExportDir] = useState('')
   const [jumpLocation, setJumpLocation] = useState('')
+  const [backupDir, setBackupDir] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+
+  const [backingUp, setBackingUp] = useState(false)
+  const [backupMessage, setBackupMessage] = useState<string | null>(null)
+  const [backupError, setBackupError] = useState<string | null>(null)
 
   useEffect(() => {
     getSettings()
       .then((cfg) => {
         setExportDir(cfg.exportDir)
         setJumpLocation(cfg.jumpLocation)
+        setBackupDir(cfg.backupDir)
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Fehler beim Laden'))
       .finally(() => setLoading(false))
@@ -24,14 +30,29 @@ export default function Settings() {
     setError(null)
     setSaved(false)
     try {
-      const cfg = await putSettings({ exportDir, jumpLocation })
+      const cfg = await putSettings({ exportDir, jumpLocation, backupDir })
       setExportDir(cfg.exportDir)
       setJumpLocation(cfg.jumpLocation)
+      setBackupDir(cfg.backupDir)
       setSaved(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleBackup() {
+    setBackingUp(true)
+    setBackupError(null)
+    setBackupMessage(null)
+    try {
+      const result = await createBackup()
+      setBackupMessage(`Backup erstellt: ${result.path}`)
+    } catch (err) {
+      setBackupError(err instanceof Error ? err.message : 'Backup fehlgeschlagen')
+    } finally {
+      setBackingUp(false)
     }
   }
 
@@ -64,6 +85,18 @@ export default function Settings() {
         />
       </label>
 
+      <label className="field">
+        Backup-Verzeichnis (leer = Export-Verzeichnis)
+        <input
+          type="text"
+          value={backupDir}
+          onChange={(e) => {
+            setBackupDir(e.target.value)
+            setSaved(false)
+          }}
+        />
+      </label>
+
       {error && <p className="error">{error}</p>}
       {saved && !error && <p className="hint">Gespeichert.</p>}
 
@@ -72,6 +105,21 @@ export default function Settings() {
           {saving ? 'Speichert…' : 'Speichern'}
         </button>
       </div>
+
+      <section className="backup-section">
+        <h2>Datenbank-Backup</h2>
+        <p className="hint">
+          Erstellt eine Sicherungskopie der Datenbank im Backup-Verzeichnis. Verzeichnis vorher
+          speichern.
+        </p>
+        {backupError && <p className="error">{backupError}</p>}
+        {backupMessage && !backupError && <p className="hint">{backupMessage}</p>}
+        <div className="actions">
+          <button type="button" className="btn secondary" onClick={handleBackup} disabled={backingUp}>
+            {backingUp ? 'Erstellt…' : 'Backup erstellen'}
+          </button>
+        </div>
+      </section>
     </div>
   )
 }

@@ -16,7 +16,7 @@ async function makeTmpDir() {
 }
 
 function makeCfgRef(dir: string, jumpLocation = 'Freistadt') {
-  return { current: { exportDir: dir, contractText: '', jumpLocation } }
+  return { current: { exportDir: dir, contractText: '', jumpLocation, backupDir: '' } }
 }
 
 afterEach(async () => {

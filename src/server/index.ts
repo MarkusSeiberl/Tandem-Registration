@@ -5,6 +5,7 @@ import { registerRegistrationRoutes } from './routes/registrations'
 import { registerStammdatenRoutes } from './routes/stammdaten'
 import { registerExportRoutes } from './routes/export'
 import { registerSettingsRoutes } from './routes/settings'
+import { registerBackupRoutes } from './routes/backup'
 import type { Config } from './config'
 
 export function buildServer(
@@ -19,6 +20,7 @@ export function buildServer(
   registerRegistrationRoutes(app, db, sse, cfgRef, contractTemplate)
   registerStammdatenRoutes(app, db)
   registerExportRoutes(app, db, cfgRef)
+  registerBackupRoutes(app, db, cfgRef)
   registerSettingsRoutes(app, cfgRef, persist)
   return app
 }

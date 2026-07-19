@@ -4,6 +4,7 @@ import type { Registration } from './api'
 import { useEvents } from './useEvents'
 import { extraBookingLabel, paymentLabel } from './labels'
 import { today } from './date'
+import TrashIcon from './TrashIcon'
 
 export interface ListProps {
   onSelect: (registration: Registration) => void
@@ -16,20 +17,6 @@ function paymentPillClass(method: Registration['payment_method']): string {
   if (method === 'voucher') return 'pill pill-voucher'
   if (method === 'cash') return 'pill pill-go'
   return 'pill'
-}
-
-function TrashIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
 }
 
 export default function List({ onSelect }: ListProps) {

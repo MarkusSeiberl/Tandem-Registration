@@ -8,6 +8,7 @@ import {
   masters as fetchMasters,
 } from './api'
 import type { StammdatenItem } from './api'
+import TrashIcon from './TrashIcon'
 
 interface StammdatenListProps {
   title: string
@@ -47,11 +48,12 @@ function StammdatenList({ title, addLabel, load, add, remove }: StammdatenListPr
     }
   }
 
-  async function handleRemove(id: number) {
+  async function handleRemove(item: StammdatenItem) {
+    if (!window.confirm(`"${item.name}" entfernen?`)) return
     setBusy(true)
     setError(null)
     try {
-      await remove(id)
+      await remove(item.id)
       refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Löschen fehlgeschlagen')
@@ -68,8 +70,15 @@ function StammdatenList({ title, addLabel, load, add, remove }: StammdatenListPr
         {items.map((item) => (
           <li key={item.id}>
             <span>{item.name}</span>
-            <button type="button" className="btn secondary" onClick={() => handleRemove(item.id)} disabled={busy}>
-              Entfernen
+            <button
+              type="button"
+              className="btn secondary btn-icon"
+              onClick={() => handleRemove(item)}
+              disabled={busy}
+              aria-label={`${item.name} entfernen`}
+              title="Entfernen"
+            >
+              <TrashIcon />
             </button>
           </li>
         ))}

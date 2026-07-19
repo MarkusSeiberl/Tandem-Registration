@@ -1,0 +1,14 @@
+{
+  "name": "Tandem Anmeldung",
+  "short_name": "Anmeldung",
+  "description": "Anmeldung für den Tandemsprung beim HFSC Skydive Freistadt.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#eaf3fc",
+  "theme_color": "#1e9e5b",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

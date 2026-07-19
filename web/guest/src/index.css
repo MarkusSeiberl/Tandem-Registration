@@ -345,13 +345,6 @@ p {
   color: var(--text);
 }
 
-/* Age/height/weight read like instrument figures, not free text. */
-.field input[type='number'] {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-}
-
 .field input:focus {
   outline: 3px solid var(--accent);
   outline-offset: 1px;

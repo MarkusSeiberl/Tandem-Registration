@@ -17,14 +17,10 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${E2E_PORT}`,
   },
   webServer: {
-    // Start each run from a clean data/export dir, and do it HERE (not in a
-    // globalSetup) so the ordering is deterministic: Playwright starts the
-    // webServer BEFORE running globalSetup, so cleaning the dir in globalSetup
-    // would rmSync it out from under the already-running server (the guest
-    // db and the day's export must land in a dir that outlives the server).
-    // Cleaning in the server's own launch command guarantees the dir is fresh
-    // before better-sqlite3 opens <DIR>/tandem.db.
-    command: `rm -rf ${JSON.stringify(E2E_DIR)} && mkdir -p ${JSON.stringify(E2E_DIR)} && npx tsx src/server/main.ts`,
+    // serve.ts clears + recreates the data/export dir and then boots the server
+    // in one Node process (portable across Windows/Unix — see serve.ts for why
+    // the old inline `rm -rf && mkdir -p` shell command was replaced).
+    command: `npx tsx ${JSON.stringify('./tests/e2e/serve.ts')}`,
     url: `http://127.0.0.1:${E2E_PORT}/api/health`,
     timeout: 60_000,
     reuseExistingServer: false,

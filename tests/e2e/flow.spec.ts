@@ -47,6 +47,14 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
 
   await expect(page.getByRole('heading', { name: 'Teilnahmebedingungen' })).toBeVisible()
 
+  // Proof-of-reading gate: before scrolling, the hint is shown and "Weiter"
+  // stays locked. Scrolling the contract text to the end clears the hint.
+  await expect(page.locator('.scroll-hint')).toBeVisible()
+  await page.locator('.contract-text').evaluate((el) => {
+    el.scrollTo(0, el.scrollHeight)
+  })
+  await expect(page.locator('.scroll-hint')).toBeHidden()
+
   // Draw a real multi-segment signature stroke on the canvas so `hasDrawn`
   // flips true and the PNG isn't blank. Signing this screen submits directly —
   // there is no separate checkbox or later sign screen anymore.
@@ -114,12 +122,13 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   await page.getByRole('button', { name: /Zurück/ }).click()
 
   // Re-fetch confirms the PATCH actually persisted server-side, not just
-  // local component state.
+  // local component state. Column order: 0 checkbox, 1 Name, 2 Alter,
+  // 3 Gewicht, 4 Tandemmaster, 5 Load-Nr.
   const updatedRow = page.locator('tr.clickable-row', { hasText: fullName })
   await expect(updatedRow).toBeVisible()
   await expect(updatedRow).toContainText('Karte')
   await expect(updatedRow).toContainText('Video+Foto')
-  await expect(updatedRow.locator('td').nth(4)).toHaveText('5')
+  await expect(updatedRow.locator('td').nth(5)).toHaveText('5')
 
   // --- Export the day and verify the real xlsx on disk ---
   const [exportResponse] = await Promise.all([
@@ -143,16 +152,16 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   expect(found).toBe(true)
 
   // Every field the guest typed has to reach the sheet, and the stored enums
-  // have to arrive translated rather than as raw values.
-  const headers = ws.getRow(1).values as any[]
-  const guestRow = ws.getRow(2).values as any[]
+  // have to arrive translated rather than as raw values. The sheet leads with
+  // 3 meta rows (Datum/Ort/Betriebsleiter) + 1 spacer, so the column header
+  // row is row 5 and the first data row is row 6; address is one combined
+  // "Straße und Hausnummer, PLZ, Wohnort" column.
+  const headers = ws.getRow(5).values as any[]
+  const guestRow = ws.getRow(6).values as any[]
   const cell = (header: string) => guestRow[headers.indexOf(header)]
 
   expect(cell('Geschlecht')).toBe('männlich')
-  expect(cell('Größe (cm)')).toBe(182)
-  expect(cell('Straße und Hausnummer')).toBe(GUEST.street)
-  expect(cell('PLZ')).toBe(GUEST.postalCode)
-  expect(cell('Wohnort')).toBe(GUEST.city)
+  expect(cell('Adresse')).toBe(`${GUEST.street}, ${GUEST.postalCode}, ${GUEST.city}`)
   expect(cell('Zahlungsart')).toBe('Karte')
   expect(cell('Zusatz')).toBe('Video+Foto')
 })

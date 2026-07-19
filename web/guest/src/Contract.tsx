@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import type { PointerEvent as ReactPointerEvent, ReactNode, UIEvent as ReactUIEvent } from 'react'
 import { getContract } from './api'
 
 export interface ContractProps {
@@ -43,6 +43,12 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
   const drawingRef = useRef(false)
   const [hasDrawn, setHasDrawn] = useState(false)
 
+  // Proof-of-reading gate: the guest must scroll the contract text to the end
+  // before "Weiter" unlocks (in addition to signing). A contract short enough
+  // to fit without scrolling counts as read immediately (see the effect below).
+  const textRef = useRef<HTMLDivElement | null>(null)
+  const [scrolledToEnd, setScrolledToEnd] = useState(false)
+
   useEffect(() => {
     let cancelled = false
     getContract()
@@ -59,6 +65,26 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
       cancelled = true
     }
   }, [])
+
+  // Once the FINAL text is rendered (not the "Lade…" placeholder), open the
+  // gate immediately if it already fits without scrolling (short contract, load
+  // error, or empty text — nothing to scroll through); otherwise keep it closed
+  // until the guest scrolls to the end (handleScroll). Skipping the loading
+  // render matters: the short placeholder box "fits" and would wrongly open the
+  // gate before the real, scrollable contract has been measured. These deps
+  // don't change after load, so a later scroll (handleScroll → true) is never
+  // undone by this effect re-running.
+  useEffect(() => {
+    if (loading) return
+    const el = textRef.current
+    if (!el) return
+    setScrolledToEnd(el.scrollHeight - el.clientHeight <= 2)
+  }, [text, loading, loadError])
+
+  function handleScroll(e: ReactUIEvent<HTMLDivElement>) {
+    const el = e.currentTarget
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 2) setScrolledToEnd(true)
+  }
 
   function getContext(): CanvasRenderingContext2D | null {
     return canvasRef.current?.getContext('2d') ?? null
@@ -126,7 +152,13 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
     <section className="screen contract-screen">
       <h1>Teilnahmebedingungen</h1>
       <div className="boarding-card">
-        <div className="contract-text" role="region" aria-label="Teilnahmebedingungen">
+        <div
+          ref={textRef}
+          className="contract-text"
+          role="region"
+          aria-label="Teilnahmebedingungen"
+          onScroll={handleScroll}
+        >
           {loading && <p>Lade Vertragstext…</p>}
           {!loading && loadError && <p className="error">{loadError}</p>}
           {!loading && !loadError && text.trim().length === 0 && (
@@ -138,6 +170,12 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
         </div>
 
         <div className="perforation" />
+
+        {!scrolledToEnd && (
+          <p className="scroll-hint">
+            Bitte den gesamten Vertrag lesen — nach unten scrollen, um fortzufahren.
+          </p>
+        )}
 
         <div className="sign-section">
           <h2>Unterschrift</h2>
@@ -176,7 +214,7 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
         <button
           type="button"
           className="btn primary"
-          disabled={!hasDrawn || submitting}
+          disabled={!hasDrawn || !scrolledToEnd || submitting}
           onClick={handleNext}
         >
           {submitting ? 'Wird gesendet…' : 'Weiter'}

@@ -287,6 +287,16 @@ p {
   text-align: left;
 }
 
+/* Shown until the guest scrolls the contract text to the end (read gate). */
+.scroll-hint {
+  margin: 0;
+  padding: 12px 24px;
+  font-size: 16px;
+  color: var(--ember);
+  background: rgba(255, 106, 61, 0.08);
+  text-align: left;
+}
+
 .contract-text {
   width: 100%;
   max-height: 40vh;

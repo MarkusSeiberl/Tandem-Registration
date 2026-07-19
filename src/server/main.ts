@@ -123,22 +123,58 @@ function openBrowser(url: string) {
   })
 }
 
+// The machine's non-internal IPv4 addresses — the reliable way for other
+// devices (incl. Android, which does not resolve mDNS .local names) to reach
+// the server. A machine with Hyper-V/WSL/VPN adapters lists several; the
+// operator picks the one on the same Wi-Fi/LAN as the tablets.
+function lanIPv4(): string[] {
+  const out: string[] = []
+  for (const nis of Object.values(os.networkInterfaces())) {
+    for (const ni of nis ?? []) {
+      if (ni.family === 'IPv4' && !ni.internal) out.push(ni.address)
+    }
+  }
+  return out
+}
+
 app.listen({ port, host: '0.0.0.0' }).then(() => {
   bonjour = new Bonjour()
-  bonjour.publish({ name: 'tandem', type: 'http', port })
+  // Advertise an A record for `tandem.local` itself (host), not just a
+  // `_http._tcp` service under the machine's own hostname — otherwise nothing
+  // maps the name `tandem.local` to an IP and browsers can't resolve it. Note
+  // mDNS/.local is still unreliable across firewalls, virtual adapters and
+  // Android, so the banner below leads with localhost + the raw LAN IP.
+  bonjour.publish({ name: 'tandem', type: 'http', port, host: 'tandem.local' })
+
+  const p = port === 80 ? '' : `:${port}`
   console.log('')
   console.log('==============================================')
   console.log('  Tandem läuft und ist einsatzbereit!')
   console.log('==============================================')
   console.log('')
-  console.log(`  Gäste-Anmeldung:  http://tandem.local:${port}/guest`)
-  console.log(`  Manifest:         http://tandem.local:${port}/manifest`)
+  console.log('  Auf DIESEM Rechner:')
+  console.log(`    Gäste-Anmeldung:  http://localhost${p}/guest`)
+  console.log(`    Manifest:         http://localhost${p}/manifest`)
+  console.log('')
+  console.log('  Von anderen Geräten im selben WLAN/LAN:')
+  const ips = lanIPv4()
+  if (ips.length === 0) {
+    console.log('    (keine Netzwerk-Adresse gefunden — mit WLAN/LAN verbinden)')
+  } else {
+    for (const ip of ips) {
+      console.log(`    http://${ip}${p}/guest   bzw.   http://${ip}${p}/manifest`)
+    }
+  }
+  console.log(`    (falls unterstützt auch: http://tandem.local${p}/guest)`)
+  console.log('')
+  console.log('  Hinweis: Beim ersten Start die Windows-Firewall-Abfrage')
+  console.log('  fuer "tandem" im PRIVATEN Netzwerk zulassen.')
   console.log('')
   console.log('  (lokales Netzwerk, kein Internet nötig)')
   console.log('')
   console.log('  Zum Beenden dieses Fenster schließen oder STRG+C drücken.')
   console.log('')
-  if (isPackaged) openBrowser(`http://localhost:${port}/manifest`)
+  if (isPackaged) openBrowser(`http://localhost${p}/manifest`)
 }).catch((err) => {
   console.error('[tandem] Start fehlgeschlagen:', err.message)
   process.exit(1)

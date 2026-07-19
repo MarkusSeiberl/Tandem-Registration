@@ -263,11 +263,30 @@ undefined and better-sqlite3 resolves normally from `node_modules`.)
   the prompt is suppressed.
 - `DIR` env var overrides where `tandem.db` and `config.json` are read from
   and written to; defaults to the exe's own folder.
-- Tablets on the same Wi-Fi/LAN browse to `http://tandem.local/guest`
-  (kiosk / registration form) and the front-desk PC/staff device to
-  `http://tandem.local/manifest` (or `manifest` on the host PC itself). If
-  mDNS resolution doesn't work on a given tablet, use the PC's static/DHCP
-  IP instead, e.g. `http://192.168.1.50/guest`.
+- **Reaching the server / why `tandem.local` is unreliable.** On startup the
+  console prints the URLs that actually work: `http://localhost:PORT/...` on
+  the host itself, and `http://<LAN-IP>:PORT/...` for other devices (the app
+  lists every non-internal IPv4 it finds — pick the one on the same Wi-Fi as
+  the tablets). **Prefer the LAN IP** — it is the only method that works on
+  every device. `tandem.local` (mDNS) is offered as a "if supported" extra and
+  frequently does NOT resolve because:
+  - **Android** does not resolve typed `.local` mDNS hostnames in the browser
+    at all. iOS/iPadOS, macOS and modern Windows do.
+  - **Virtual adapters** (Hyper-V, WSL, VirtualBox/VMware, VPNs) make the host
+    multi-homed; the mDNS multicast may leave via a virtual interface instead
+    of the real LAN (you'll see `192.168.x.1`-style addresses in the startup
+    list next to the real one).
+  - **Windows Firewall** must allow inbound **UDP 5353** (mDNS), not just the
+    HTTP port, for other devices to receive the advertisement.
+  - A leftover advertisement from a previous run can trigger `Service name is
+    already in use on the network` from `bonjour-service`; the HTTP server
+    still runs fine, but name resolution gets flaky. `localhost` / the LAN IP
+    are unaffected.
+
+  The server does advertise an A record for `tandem.local` itself (via the
+  `host: 'tandem.local'` option on `bonjour.publish`), so it can work on a
+  clean single-NIC network with iOS/macOS/Windows clients — but do not rely on
+  it for a mixed tablet fleet; use the printed LAN IP.
 
 ## What's verified on Linux vs. what needs Windows
 

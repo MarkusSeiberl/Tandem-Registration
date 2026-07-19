@@ -331,6 +331,12 @@ p {
 }
 
 .field input {
+  /* width:100% + min-width:0 keep every input at its field's width and stop
+     an input's intrinsic min-content from forcing its fieldset/row wider than
+     the form (that made Straße und Hausnummer and the PLZ/Wohnort row overflow
+     past the other fields). */
+  width: 100%;
+  min-width: 0;
   font-size: 22px;
   padding: 14px 16px;
   border: 2px solid var(--border);
@@ -362,6 +368,10 @@ p {
  * carries a browser default border and padding, so both are reset here.
  */
 .field-group {
+  /* min-width:0 lets the fieldset shrink to the form width instead of holding
+     its widest child's min-content (a <fieldset> defaults to
+     min-inline-size:min-content). */
+  min-width: 0;
   border: none;
   padding: 0;
   margin: 0 0 28px;

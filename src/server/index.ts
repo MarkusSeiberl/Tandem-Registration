@@ -12,12 +12,13 @@ export function buildServer(
   db: Database,
   cfgRef: { current: Config },
   contractTemplate: Buffer,
-  persist?: (c: Config) => void
+  persist?: (c: Config) => void,
+  notify?: (guestName: string) => void
 ): FastifyInstance {
   const app = Fastify({ bodyLimit: 5 * 1024 * 1024 }) // signatures
   const sse = new SseHub()
   app.get('/api/health', async () => ({ ok: true }))
-  registerRegistrationRoutes(app, db, sse, cfgRef, contractTemplate)
+  registerRegistrationRoutes(app, db, sse, cfgRef, contractTemplate, notify)
   registerStammdatenRoutes(app, db)
   registerExportRoutes(app, db, cfgRef)
   registerBackupRoutes(app, db, cfgRef)

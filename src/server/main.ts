@@ -7,6 +7,7 @@ import { openDb } from './db'
 import { loadConfig, saveConfig } from './config'
 import { buildServer } from './index'
 import { registerStatic } from './static'
+import { notifyRegistration } from './notify'
 
 const isPackaged = typeof (process as unknown as { pkg?: unknown }).pkg !== 'undefined'
 
@@ -43,7 +44,11 @@ const contractTemplate = fs.readFileSync(templatePath)
 
 const db = openDb(path.join(dir, 'tandem.db'), nativeBinding)
 const cfgRef = { current: loadConfig(dir) }
-const app = buildServer(db, cfgRef, contractTemplate, (c) => saveConfig(dir, c))
+// Only the shipped exe pops desktop toasts — a dev `npm start`, the e2e run
+// (also boots this file) and unit tests (which use buildServer directly, never
+// passing a notifier) stay quiet.
+const notify = isPackaged ? notifyRegistration : undefined
+const app = buildServer(db, cfgRef, contractTemplate, (c) => saveConfig(dir, c), notify)
 
 app.get('/api/contract', async () => ({ text: cfgRef.current.contractText }))
 

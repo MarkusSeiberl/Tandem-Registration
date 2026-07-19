@@ -9,7 +9,10 @@ const templateBytes = fs.readFileSync(
   path.join(__dirname, '..', '..', 'assets', 'Befoerderungsvertrag.pdf')
 )
 
-export function testServer(cfgOverrides: Partial<Config> = {}) {
+export function testServer(
+  cfgOverrides: Partial<Config> = {},
+  notify?: (guestName: string) => void
+) {
   const cfgRef = {
     current: {
       exportDir: os.tmpdir(),
@@ -19,5 +22,5 @@ export function testServer(cfgOverrides: Partial<Config> = {}) {
       ...cfgOverrides,
     },
   }
-  return { app: buildServer(openDb(':memory:'), cfgRef, templateBytes), cfgRef }
+  return { app: buildServer(openDb(':memory:'), cfgRef, templateBytes, undefined, notify), cfgRef }
 }

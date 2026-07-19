@@ -43,7 +43,8 @@ export function registerRegistrationRoutes(
   db: Database,
   sse: SseHub,
   cfgRef: { current: Config },
-  contractTemplate: Buffer
+  contractTemplate: Buffer,
+  notify?: (guestName: string) => void
 ) {
   app.post('/api/registrations', async (req, reply) => {
     const r = validateGuest(req.body)
@@ -76,6 +77,9 @@ export function registerRegistrationRoutes(
        @contract_pdf_filename,1,@created_at,@jump_date)`)
       .run({ ...v, contract_pdf_filename: filename, created_at: new Date().toISOString(), jump_date: jumpDate })
     sse.broadcast('changed', { id: info.lastInsertRowid })
+    // Best-effort desktop notification on the server machine; never blocks the
+    // response or fails the registration.
+    notify?.(`${v.first_name} ${v.last_name}`)
     return reply.code(201).send({ id: info.lastInsertRowid })
   })
 

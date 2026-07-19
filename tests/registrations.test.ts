@@ -1,4 +1,4 @@
-import { test, expect } from 'vitest'
+import { test, expect, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -55,6 +55,25 @@ test('create then list returns the record', async () => {
   expect(row.street).toBe('X 1')
   expect(row.postal_code).toBe('4240')
   expect(row.city).toBe('Freistadt')
+  await app.close()
+})
+
+test('notifies with the guest full name after a successful registration', async () => {
+  const notify = vi.fn()
+  const { app } = testServer({}, notify)
+  const create = await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })
+  expect(create.statusCode).toBe(201)
+  expect(notify).toHaveBeenCalledTimes(1)
+  expect(notify).toHaveBeenCalledWith('A B')
+  await app.close()
+})
+
+test('does not notify when a registration is rejected', async () => {
+  const notify = vi.fn()
+  const { app } = testServer({}, notify)
+  const res = await app.inject({ method: 'POST', url: '/api/registrations', payload: {} })
+  expect(res.statusCode).toBe(400)
+  expect(notify).not.toHaveBeenCalled()
   await app.close()
 })
 

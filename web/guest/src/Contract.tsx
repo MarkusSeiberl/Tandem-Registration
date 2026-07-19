@@ -91,8 +91,16 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
   }
 
   function point(e: ReactPointerEvent<HTMLCanvasElement>): { x: number; y: number } {
-    const rect = e.currentTarget.getBoundingClientRect()
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    const canvas = e.currentTarget
+    const rect = canvas.getBoundingClientRect()
+    // Map the touch/pointer from displayed (CSS) pixels to the canvas'
+    // backing-store coordinates. On narrow screens (e.g. iPhone) CSS scales the
+    // 700x280 canvas down, so without this scale the drawn point lands shifted
+    // toward the left/top. On a full-size canvas rect matches width/height and
+    // the scale is 1.
+    const scaleX = rect.width ? canvas.width / rect.width : 1
+    const scaleY = rect.height ? canvas.height / rect.height : 1
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY }
   }
 
   function handlePointerDown(e: ReactPointerEvent<HTMLCanvasElement>) {

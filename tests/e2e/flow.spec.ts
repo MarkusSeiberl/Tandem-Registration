@@ -110,15 +110,20 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   await expect(voucherField).toBeVisible()
   await expect(voucherService).toBeVisible()
 
-  // A voucher used exactly as issued costs nothing, so there is no till to ask
-  // about; upgrading to video+photo leaves 20 € that has to land somewhere.
+  // A voucher used exactly as issued costs nothing, so the till is locked and
+  // says why; upgrading to video+photo leaves 20 € that has to land somewhere.
   await voucherService.selectOption('jump_video')
-  await expect(voucherTill).toBeHidden()
+  await expect(voucherTill).toBeDisabled()
+  await expect(page.locator('.voucher-status'))
+    .toHaveText('Gutschein deckt alles ab — nichts zu kassieren.')
   await page.getByLabel('Gebuchte Leistung').selectOption('video_photo')
-  await expect(voucherTill).toBeVisible()
+  await expect(voucherTill).toBeEnabled()
+  await expect(page.locator('.voucher-status')).toHaveText('Noch 20 € offen — bitte Kassa wählen.')
   await expect(page.locator('.price-total .numeral')).toHaveText('20 €')
 
+  // Leaving the voucher takes the whole block with it, in one visible step.
   await page.getByLabel('Zahlungsart').selectOption('card')
+  await expect(page.getByRole('group', { name: 'Gutschein' })).toBeHidden()
   await expect(voucherField).toBeHidden()
   await expect(voucherTill).toBeHidden()
 

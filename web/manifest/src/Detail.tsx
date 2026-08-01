@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  patch, flyers as fetchFlyers, masters as fetchMasters, contractPdfUrl, getSettings,
+  patch, remove, flyers as fetchFlyers, masters as fetchMasters, contractPdfUrl, getSettings,
 } from './api'
 import type {
   CollectedVia, ExtraBooking, PaymentMethod, Prices, Registration, StammdatenItem,
@@ -11,6 +11,7 @@ import {
   genderLabel,
 } from './labels'
 import { atLeast, formatEuro, priceLines, serviceOfVoucher } from './pricing'
+import TrashIcon from './TrashIcon'
 
 export interface DetailProps {
   registration: Registration
@@ -39,6 +40,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   const [cameraFlyerId, setCameraFlyerId] = useState<number | ''>(registration.camera_flyer_id ?? '')
 
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
@@ -72,8 +74,16 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   const computed = lines.reduce((sum, l) => sum + l.amount, 0)
   const due = priceOverride && price !== '' ? price : computed
   // A voucher moves no money by itself, so the till it lands in is only a
-  // question once the guest actually owes something on top of it.
+  // question once the guest actually owes something on top of it. The field stays
+  // in place either way and says which of the two it is — a field that vanishes
+  // while you are looking somewhere else is the thing this screen got wrong.
   const showVoucherPayment = showVoucherNumber && due > 0
+  const voucherStatus = showVoucherPayment
+    ? `Noch ${formatEuro(due)} offen — bitte Kassa wählen.`
+    : 'Gutschein deckt alles ab — nichts zu kassieren.'
+  // Money is owed and nobody recorded where it went: that till will not add up at
+  // closing. Worth a warning, not worth blocking a half-finished row from saving.
+  const tillMissing = showVoucherPayment && voucherPaymentMethod === ''
 
   async function handleSave() {
     setSaving(true)
@@ -112,6 +122,25 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
       setError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    const confirmed = window.confirm(
+      `Registrierung von ${registration.first_name} ${registration.last_name} löschen?`
+    )
+    if (!confirmed) return
+    setDeleting(true)
+    setError(null)
+    try {
+      await remove(registration.id)
+      // The list re-fetches on the server's "changed" event, so going back is all
+      // that is left to do here.
+      onBack()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Löschen fehlgeschlagen')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -210,62 +239,74 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             </select>
           </label>
 
-          {showVoucherPayment && (
-            <label className="field">
-              Zuzahlung bezahlt mit
-              <select
-                value={voucherPaymentMethod}
-                onChange={(e) => setVoucherPaymentMethod(e.target.value as CollectedVia | '')}
-              >
-                <option value="">— auswählen —</option>
-                {COLLECTED_VIA.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-              <span className="field-hint">
-                Zählt am Abend in die Bar- bzw. Kartensumme.
-              </span>
-            </label>
-          )}
-
+          {/*
+            One block, tied to the payment method right above it: everything the
+            voucher needs appears and disappears together, and the till comes
+            after the two fields that decide its amount.
+          */}
           {showVoucherNumber && (
-            <label className="field">
-              Gutschein-Nr.
-              <input
-                type="text"
-                value={voucherNumber}
-                onChange={(e) => setVoucherNumber(e.target.value)}
-              />
-            </label>
-          )}
+            <fieldset className="voucher-group">
+              <legend>Gutschein</legend>
 
-          {showVoucherNumber && (
-            <label className="field">
-              Gutschein-Leistung
-              <select
-                value={voucherService}
-                onChange={(e) => {
-                  const next = e.target.value as VoucherService | ''
-                  setVoucherService(next)
-                  // The guest flies at least what the voucher covers, so raise
-                  // the booking to match — otherwise the voucher would be worth
-                  // more than the service and the difference would read as 0.
-                  setExtraBooking((current) => atLeast(current, serviceOfVoucher(next)))
-                }}
-              >
-                <option value="">— auswählen —</option>
-                {VOUCHER_SERVICES.map((v) => (
-                  <option key={v.value} value={v.value}>
-                    {v.label}
-                  </option>
-                ))}
-              </select>
-              <span className="field-hint">
-                Was der Gutschein abdeckt. Wird vom Preis abgezogen.
-              </span>
-            </label>
+              <label className="field">
+                Gutschein-Nr.
+                <input
+                  type="text"
+                  value={voucherNumber}
+                  onChange={(e) => setVoucherNumber(e.target.value)}
+                />
+              </label>
+
+              <label className="field">
+                Gutschein-Leistung
+                <select
+                  name="voucher_service"
+                  value={voucherService}
+                  onChange={(e) => {
+                    const next = e.target.value as VoucherService | ''
+                    setVoucherService(next)
+                    // The guest flies at least what the voucher covers, so raise
+                    // the booking to match — otherwise the voucher would be worth
+                    // more than the service and the difference would read as 0.
+                    setExtraBooking((current) => atLeast(current, serviceOfVoucher(next)))
+                  }}
+                >
+                  <option value="">— auswählen —</option>
+                  {VOUCHER_SERVICES.map((v) => (
+                    <option key={v.value} value={v.value}>
+                      {v.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="field-hint">
+                  Was der Gutschein abdeckt. Wird vom Preis abgezogen.
+                </span>
+              </label>
+
+              <p className={tillMissing ? 'voucher-status warn' : 'voucher-status'}>
+                {voucherStatus}
+              </p>
+
+              <label className="field">
+                Zuzahlung bezahlt mit
+                <select
+                  name="voucher_payment_method"
+                  disabled={!showVoucherPayment}
+                  value={showVoucherPayment ? voucherPaymentMethod : ''}
+                  onChange={(e) => setVoucherPaymentMethod(e.target.value as CollectedVia | '')}
+                >
+                  <option value="">— auswählen —</option>
+                  {COLLECTED_VIA.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="field-hint">
+                  Zählt am Abend in die Bar- bzw. Kartensumme.
+                </span>
+              </label>
+            </fieldset>
           )}
 
           <label className="field">
@@ -306,22 +347,27 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             <span className="field-hint">Eingetragenes Gewicht: {registration.weight_kg} kg</span>
           </label>
 
-          {showCameraFlyer && (
-            <label className="field">
-              Kameraflieger
-              <select
-                value={cameraFlyerId}
-                onChange={(e) => setCameraFlyerId(e.target.value === '' ? '' : Number(e.target.value))}
-              >
-                <option value="">— auswählen —</option>
-                {flyerList.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          {/*
+            Always in place, only usable when a video is actually flown — the
+            field kept appearing and disappearing as the booking changed, which
+            reflowed the form under the operator's hand.
+          */}
+          <label className="field">
+            Kameraflieger
+            <select
+              disabled={!showCameraFlyer}
+              value={showCameraFlyer ? cameraFlyerId : ''}
+              onChange={(e) => setCameraFlyerId(e.target.value === '' ? '' : Number(e.target.value))}
+            >
+              <option value="">— auswählen —</option>
+              {flyerList.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            {!showCameraFlyer && <span className="field-hint">Kein Video gebucht.</span>}
+          </label>
 
           <div className="price-box">
             {/*
@@ -401,6 +447,16 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         </button>
         <button type="button" className="btn primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Speichert…' : 'Speichern'}
+        </button>
+        {/* Set apart from the rest so it is never the button next to Speichern. */}
+        <button
+          type="button"
+          className="btn danger detail-delete"
+          onClick={handleDelete}
+          disabled={deleting}
+        >
+          <TrashIcon />
+          {deleting ? 'Löscht…' : 'Registrierung löschen'}
         </button>
       </div>
     </div>

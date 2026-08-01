@@ -166,6 +166,11 @@ h2 {
   margin-top: 16px;
 }
 
+/* Pushed to the far end of the action row, away from Speichern. */
+.detail-delete {
+  margin-left: auto;
+}
+
 .hint {
   color: var(--accent);
 }
@@ -217,6 +222,25 @@ h2 {
 .list-toolbar .btn {
   padding-top: 0;
   padding-bottom: 0;
+}
+
+/* Delete: outlined in the error colour, never filled — it should read as
+   available, not as the obvious next step beside Speichern. */
+.btn.danger {
+  background: transparent;
+  color: var(--error);
+  border-color: var(--error);
+  gap: 8px;
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: var(--error);
+  color: var(--accent-contrast);
+}
+
+.btn.danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Row-level actions: small enough to sit inside a table row without stretching
@@ -475,6 +499,50 @@ h2 {
   font-size: 12px;
   color: var(--text);
   opacity: 0.65;
+}
+
+/* A locked field is still readable, but clearly not waiting for input. */
+.field select:disabled,
+.field input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--bg);
+}
+
+/* Everything the voucher needs, in one box hanging off the Zahlungsart above it:
+   the block comes and goes as a unit instead of three fields appearing one by
+   one in places the operator is not looking. */
+.voucher-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+}
+
+.voucher-group legend {
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+/* Says why the till below it is asked for — or why it is locked. */
+.voucher-status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  opacity: 0.75;
+}
+
+/* Money owed with no till recorded: the evening's cash count will not add up. */
+.voucher-status.warn {
+  color: var(--ember);
+  font-weight: 600;
+  opacity: 1;
 }
 
 /* The money summary at the bottom of the manifest fields: the breakdown the

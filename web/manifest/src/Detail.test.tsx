@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Detail from './Detail'
 import * as api from './api'
@@ -7,6 +7,7 @@ import type { Registration } from './api'
 
 vi.mock('./api', () => ({
   patch: vi.fn(),
+  remove: vi.fn(),
   masters: vi.fn(),
   flyers: vi.fn(),
   getSettings: vi.fn(),
@@ -62,9 +63,15 @@ function total(): string {
 
 function renderDetail(registration = makeRegistration()) {
   const onSaved = vi.fn()
-  render(<Detail registration={registration} onBack={() => {}} onSaved={onSaved} />)
-  return { onSaved }
+  const onBack = vi.fn()
+  render(<Detail registration={registration} onBack={onBack} onSaved={onSaved} />)
+  return { onSaved, onBack }
 }
+
+// The voucher fields live in one labelled group, so a test can assert on the
+// block as a whole rather than on three fields that happen to be near each other.
+const voucherGroup = () => screen.getByRole('group', { name: 'Gutschein' })
+const status = () => document.querySelector('.voucher-status')
 
 describe('Detail', () => {
   beforeEach(() => {
@@ -182,7 +189,7 @@ describe('Detail', () => {
     })
   })
 
-  it('does not ask for a till when the voucher covers everything', async () => {
+  it('locks the till, saying why, when the voucher covers everything', async () => {
     const user = userEvent.setup()
     renderDetail()
     await screen.findByText('Zu kassieren')
@@ -190,9 +197,64 @@ describe('Detail', () => {
     await user.selectOptions(screen.getByLabelText('Zahlungsart'), 'voucher')
     await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump_video')
 
-    // Nothing to collect — no money changes hands, so no till to record.
+    // Nothing to collect — no money changes hands, so there is no till to record.
+    // The field stays in place and says so instead of vanishing.
     expect(total()).toBe('0 €')
-    expect(screen.queryByLabelText(/Zuzahlung bezahlt mit/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/Zuzahlung bezahlt mit/)).toBeDisabled()
+    expect(status()).toHaveTextContent('Gutschein deckt alles ab — nichts zu kassieren.')
+  })
+
+  it('keeps the whole voucher block together, with the till after what sets it', async () => {
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    expect(screen.queryByRole('group', { name: 'Gutschein' })).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Zahlungsart'), 'voucher')
+
+    const group = voucherGroup()
+    expect(within(group).getByLabelText('Gutschein-Nr.')).toBeInTheDocument()
+    // The till has to come after the fields that decide its amount — above them
+    // it appeared where nobody was looking.
+    const selects = within(group).getAllByRole('combobox').map((s) => s.getAttribute('name'))
+    expect(selects).toEqual(['voucher_service', 'voucher_payment_method'])
+
+    await user.selectOptions(screen.getByLabelText('Zahlungsart'), 'cash')
+    expect(screen.queryByRole('group', { name: 'Gutschein' })).not.toBeInTheDocument()
+  })
+
+  it('names the open amount as the reason the till is asked for', async () => {
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await user.selectOptions(screen.getByLabelText('Zahlungsart'), 'voucher')
+    await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump_video')
+    await user.selectOptions(screen.getByLabelText(/Gebuchte Leistung/), 'video_photo')
+
+    expect(status()).toHaveTextContent('Noch 20 € offen — bitte Kassa wählen.')
+    expect(screen.getByLabelText(/Zuzahlung bezahlt mit/)).toBeEnabled()
+  })
+
+  it('warns while an open top-up has no till, without blocking the save', async () => {
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await user.selectOptions(screen.getByLabelText('Zahlungsart'), 'voucher')
+    await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump')
+    await user.selectOptions(screen.getByLabelText(/Gebuchte Leistung/), 'video')
+
+    // Money is owed and nobody said where it went — that till will not add up.
+    expect(status()).toHaveClass('warn')
+
+    // A half-finished row still has to be storable.
+    await user.click(screen.getByRole('button', { name: 'Speichern' }))
+    expect(api.patch).toHaveBeenCalled()
+
+    await user.selectOptions(screen.getByLabelText(/Zuzahlung bezahlt mit/), 'cash')
+    expect(status()).not.toHaveClass('warn')
   })
 
   it('clears a stale till when the top-up disappears', async () => {
@@ -231,13 +293,16 @@ describe('Detail', () => {
     // Nothing booked on top — the video still gets filmed, so a flyer is needed.
     await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump_video')
 
-    expect(await screen.findByLabelText('Kameraflieger')).toBeInTheDocument()
+    expect(await screen.findByLabelText(/Kameraflieger/)).toBeEnabled()
   })
 
-  it('hides the Kameraflieger when no video is involved at all', async () => {
+  it('locks the Kameraflieger, saying why, when no video is involved at all', async () => {
     renderDetail()
     await screen.findByText('Zu kassieren')
-    expect(screen.queryByLabelText('Kameraflieger')).not.toBeInTheDocument()
+
+    // Kept in place so the form does not reflow when a video is added later.
+    expect(screen.getByLabelText(/Kameraflieger/)).toBeDisabled()
+    expect(screen.getByText('Kein Video gebucht.')).toBeInTheDocument()
   })
 
   it('shows the entered weight as a hint without deriving the surcharge from it', async () => {
@@ -282,6 +347,48 @@ describe('Detail', () => {
     await user.click(screen.getByRole('button', { name: 'Speichern' }))
 
     expect(vi.mocked(api.patch).mock.calls[1][1]).toMatchObject({ price: 310 })
+  })
+
+  it('deletes the registration after asking, and returns to the list', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.mocked(api.remove).mockResolvedValue(undefined)
+    const { onBack } = renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await user.click(screen.getByRole('button', { name: 'Registrierung löschen' }))
+
+    expect(confirm).toHaveBeenCalledWith('Registrierung von Anna Muster löschen?')
+    expect(api.remove).toHaveBeenCalledWith(1)
+    expect(onBack).toHaveBeenCalled()
+    confirm.mockRestore()
+  })
+
+  it('deletes nothing when the question is answered with no', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const { onBack } = renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await user.click(screen.getByRole('button', { name: 'Registrierung löschen' }))
+
+    expect(api.remove).not.toHaveBeenCalled()
+    expect(onBack).not.toHaveBeenCalled()
+    confirm.mockRestore()
+  })
+
+  it('stays on the screen and reports a failed delete', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.mocked(api.remove).mockRejectedValue(new Error('Löschen fehlgeschlagen'))
+    const { onBack } = renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await user.click(screen.getByRole('button', { name: 'Registrierung löschen' }))
+
+    expect(await screen.findByText('Löschen fehlgeschlagen')).toBeInTheDocument()
+    expect(onBack).not.toHaveBeenCalled()
+    confirm.mockRestore()
   })
 
   it('clears the voucher service when the guest no longer pays by voucher', async () => {

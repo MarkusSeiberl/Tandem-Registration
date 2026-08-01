@@ -6,6 +6,7 @@ import os from 'os'
 import path from 'path'
 import { openDb } from '../src/server/db'
 import { registerExportRoutes } from '../src/server/routes/export'
+import { DEFAULT_PAYOUTS, DEFAULT_PRICES } from '../src/server/config'
 
 const tmpDirs: string[] = []
 
@@ -16,7 +17,12 @@ async function makeTmpDir() {
 }
 
 function makeCfgRef(dir: string, jumpLocation = 'Freistadt') {
-  return { current: { exportDir: dir, contractText: '', jumpLocation, backupDir: '' } }
+  return {
+    current: {
+      exportDir: dir, contractText: '', jumpLocation, backupDir: '',
+      prices: { ...DEFAULT_PRICES }, payouts: { ...DEFAULT_PAYOUTS },
+    },
+  }
 }
 
 afterEach(async () => {
@@ -214,7 +220,7 @@ test('POST /api/export writes German labels, never raw enum values', async () =>
 
   expect(cell('Geschlecht')).toBe('weiblich')
   expect(cell('Zahlungsart')).toBe('Bar')
-  expect(cell('Zusatz')).toBe('nur Video')
+  expect(cell('Leistung')).toBe('Sprung+Video')
 
   // The stored enum values must not reach the sheet in any column.
   const dumped: any[] = []
@@ -253,6 +259,159 @@ test('POST /api/export leaves an unknown enum value as an empty cell', async () 
 
   expect(cell('Geschlecht')).toBe('')
   expect(cell('Zahlungsart')).toBe('')
+
+  await app.close()
+})
+
+test('POST /api/export labels the voucher service and the weight surcharge', async () => {
+  const db = openDb(':memory:')
+  const date = '2026-07-09'
+  db.prepare(`INSERT INTO registrations
+    (first_name,last_name,age,weight_kg,street,postal_code,city,email,phone,
+     accepted_terms,price,payment_method,voucher_number,voucher_service,
+     extra_booking,weight_surcharge,created_at,jump_date)
+    VALUES ('Gut','Schein',30,95,'X 1','4240','Freistadt','a@b.de','0660',1,
+     60,'voucher','GS-1','jump_video','video_photo','over_90',?,?)`)
+    .run(new Date().toISOString(), date)
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, makeCfgRef(dir))
+
+  await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.readFile(path.join(dir, `Tandem_${date}.xlsx`))
+  const ws = wb.worksheets[0]
+  const headers = ws.getRow(HEADER_ROW).values as any[]
+  const cell = (header: string) => (ws.getRow(FIRST_DATA_ROW).values as any[])[headers.indexOf(header)]
+
+  expect(cell('Gutschein-Leistung')).toBe('Sprung+Video')
+  expect(cell('Zuschlag')).toBe('ab 90 kg')
+  expect(cell('Preis')).toBe(60)
+
+  const dumped: any[] = []
+  ws.eachRow(r => dumped.push(r.values))
+  expect(JSON.stringify(dumped)).not.toContain('jump_video')
+  expect(JSON.stringify(dumped)).not.toContain('over_90')
+
+  await app.close()
+})
+
+test('POST /api/export sums the takings by the till the money landed in', async () => {
+  const db = openDb(':memory:')
+  const date = '2026-07-09'
+  const insert = db.prepare(`INSERT INTO registrations
+    (first_name,last_name,age,weight_kg,street,postal_code,city,email,phone,
+     accepted_terms,price,payment_method,voucher_payment_method,created_at,jump_date)
+    VALUES (?,'B',30,80,'X 1','4240','Freistadt','a@b.de','0660',1,?,?,?,?,?)`)
+  const now = new Date().toISOString()
+  insert.run('Bar1', 410, 'cash', null, now, date)
+  insert.run('Bar2', 270, 'cash', null, now, date)
+  insert.run('Karte', 390, 'card', null, now, date)
+  // Voucher rows carry only the top-up — and that top-up was handed over in cash
+  // or on a card like any other, so it belongs in that till.
+  insert.run('GutscheinBar', 100, 'voucher', 'cash', now, date)
+  insert.run('GutscheinKarte', 60, 'voucher', 'card', now, date)
+  // Not yet manifested: the amount belongs to the day but to no till yet.
+  insert.run('Offen', 270, null, null, now, date)
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, makeCfgRef(dir))
+
+  await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.readFile(path.join(dir, `Tandem_${date}.xlsx`))
+  const ws = wb.worksheets[0]
+
+  const totals = new Map<string, any>()
+  ws.eachRow(r => {
+    const label = r.getCell(1).value
+    if (typeof label === 'string' && (label.startsWith('Summe') || label === 'Gesamt' ||
+        label.startsWith('davon'))) {
+      totals.set(label, r.getCell(2).value)
+    }
+  })
+
+  expect(totals.get('Summe Bar')).toBe(780)
+  expect(totals.get('Summe Karte')).toBe(450)
+  expect(totals.get('Summe ohne Zahlungsart')).toBe(270)
+  expect(totals.get('Gesamt')).toBe(1500)
+  expect(totals.get('davon Gutschein-Zuzahlung')).toBe(160)
+
+  // The three tills have to account for every euro of the day.
+  expect(totals.get('Summe Bar') + totals.get('Summe Karte') + totals.get('Summe ohne Zahlungsart'))
+    .toBe(totals.get('Gesamt'))
+
+  await app.close()
+})
+
+test('POST /api/export labels the till a voucher top-up was paid into', async () => {
+  const db = openDb(':memory:')
+  const date = '2026-07-09'
+  db.prepare(`INSERT INTO registrations
+    (first_name,last_name,age,weight_kg,street,postal_code,city,email,phone,
+     accepted_terms,price,payment_method,voucher_payment_method,created_at,jump_date)
+    VALUES ('Gut','Schein',30,80,'X 1','4240','Freistadt','a@b.de','0660',1,
+     100,'voucher','cash',?,?)`)
+    .run(new Date().toISOString(), date)
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, makeCfgRef(dir))
+
+  await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.readFile(path.join(dir, `Tandem_${date}.xlsx`))
+  const ws = wb.worksheets[0]
+  const headers = ws.getRow(HEADER_ROW).values as any[]
+  const cell = (header: string) => (ws.getRow(FIRST_DATA_ROW).values as any[])[headers.indexOf(header)]
+
+  expect(cell('Zahlungsart')).toBe('Gutschein')
+  expect(cell('Zuzahlung mit')).toBe('Bar')
+
+  await app.close()
+})
+
+test('POST /api/export appends what each tandemmaster and video flyer earned', async () => {
+  const db = openDb(':memory:')
+  const date = '2026-07-09'
+  const hans = db.prepare('INSERT INTO tandem_masters (name,active) VALUES (?,1)').run('Hans').lastInsertRowid
+  const anna = db.prepare('INSERT INTO tandem_masters (name,active) VALUES (?,1)').run('Anna').lastInsertRowid
+  const peter = db.prepare('INSERT INTO camera_flyers (name,active) VALUES (?,1)').run('Peter').lastInsertRowid
+  const insert = db.prepare(`INSERT INTO registrations
+    (first_name,last_name,age,weight_kg,street,postal_code,city,email,phone,
+     accepted_terms,price,payment_method,extra_booking,tandem_master_id,camera_flyer_id,
+     created_at,jump_date)
+    VALUES (?,'B',30,80,'X 1','4240','Freistadt','a@b.de','0660',1,?,?,?,?,?,?,?)`)
+  const now = new Date().toISOString()
+  insert.run('Eins', 270, 'cash', 'none', hans, null, now, date)
+  insert.run('Zwei', 370, 'cash', 'video', hans, peter, now, date)
+  insert.run('Drei', 390, 'card', 'video_photo', anna, peter, now, date)
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, makeCfgRef(dir))
+
+  await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.readFile(path.join(dir, `Tandem_${date}.xlsx`))
+  const ws = wb.worksheets[0]
+
+  const lines: [any, any, any][] = []
+  ws.eachRow(r => lines.push([r.getCell(1).value, r.getCell(2).value, r.getCell(3).value]))
+
+  expect(lines).toContainEqual(['Vergütung Tandemmaster', null, null])
+  expect(lines).toContainEqual(['Hans', '2 × 45,00 €', 90])
+  expect(lines).toContainEqual(['Anna', '1 × 45,00 €', 45])
+  expect(lines).toContainEqual(['Vergütung Videoflieger', null, null])
+  expect(lines).toContainEqual(['Peter', '1 × 60,00 € + 1 × 80,00 €', 140])
+  // Both sections close with their own Summe.
+  expect(lines.filter(l => l[0] === 'Summe').map(l => l[2])).toEqual([135, 140])
 
   await app.close()
 })

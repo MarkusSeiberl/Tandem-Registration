@@ -138,12 +138,12 @@ Regeln:
 einer Leerzeile, je Sektion:
 
 ```
-VERGÜTUNG TANDEMMASTER
+Vergütung Tandemmaster
 Seiberl Markus     3 × 45,00 €                  135,00 €
 Gruber Hans        1 × 45,00 €                   45,00 €
 Summe                                           180,00 €
 
-VERGÜTUNG VIDEOFLIEGER
+Vergütung Videoflieger
 Hofer Lisa         1 × 60,00 € + 1 × 80,00 €    140,00 €
 Summe                                           140,00 €
 ```

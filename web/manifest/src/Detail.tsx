@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react'
-import { patch, flyers as fetchFlyers, masters as fetchMasters, contractPdfUrl } from './api'
-import type { ExtraBooking, PaymentMethod, Registration, StammdatenItem } from './api'
-import { EXTRA_BOOKINGS, PAYMENT_METHODS, genderLabel } from './labels'
+import {
+  patch, flyers as fetchFlyers, masters as fetchMasters, contractPdfUrl, getSettings,
+} from './api'
+import type {
+  CollectedVia, ExtraBooking, PaymentMethod, Prices, Registration, StammdatenItem,
+  VoucherService, WeightSurcharge,
+} from './api'
+import {
+  COLLECTED_VIA, EXTRA_BOOKINGS, PAYMENT_METHODS, VOUCHER_SERVICES, WEIGHT_SURCHARGES,
+  genderLabel,
+} from './labels'
+import { atLeast, formatEuro, priceLines, serviceOfVoucher } from './pricing'
 
 export interface DetailProps {
   registration: Registration
@@ -13,12 +22,20 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   const [masterList, setMasterList] = useState<StammdatenItem[]>([])
   const [flyerList, setFlyerList] = useState<StammdatenItem[]>([])
 
+  const [prices, setPrices] = useState<Prices | null>(null)
+
   const [tandemMasterId, setTandemMasterId] = useState<number | ''>(registration.tandem_master_id ?? '')
   const [loadNumber, setLoadNumber] = useState<number | ''>(registration.load_number ?? '')
   const [price, setPrice] = useState<number | ''>(registration.price ?? '')
+  const [priceOverride, setPriceOverride] = useState<boolean>(!!registration.price_override)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>(registration.payment_method ?? '')
+  const [voucherPaymentMethod, setVoucherPaymentMethod] =
+    useState<CollectedVia | ''>(registration.voucher_payment_method ?? '')
   const [voucherNumber, setVoucherNumber] = useState<string>(registration.voucher_number ?? '')
+  const [voucherService, setVoucherService] = useState<VoucherService | ''>(registration.voucher_service ?? '')
   const [extraBooking, setExtraBooking] = useState<ExtraBooking>(registration.extra_booking ?? 'none')
+  const [weightSurcharge, setWeightSurcharge] =
+    useState<WeightSurcharge>(registration.weight_surcharge ?? 'none')
   const [cameraFlyerId, setCameraFlyerId] = useState<number | ''>(registration.camera_flyer_id ?? '')
 
   const [saving, setSaving] = useState(false)
@@ -28,12 +45,35 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   useEffect(() => {
     fetchMasters().then(setMasterList).catch(() => {})
     fetchFlyers().then(setFlyerList).catch(() => {})
+    // The amounts live in the settings so the club can change them between
+    // seasons; the breakdown below is only a preview of what the server will
+    // compute on save.
+    getSettings().then((cfg) => setPrices(cfg.prices)).catch(() => {})
   }, [])
 
-  // Kameraflieger only makes sense for bookings that actually include video.
-  const showCameraFlyer = extraBooking === 'video' || extraBooking === 'video_photo'
-  // A voucher number only exists when the guest actually paid with one.
+  // A voucher number and the covered service only exist when the guest actually
+  // paid with one.
   const showVoucherNumber = paymentMethod === 'voucher'
+  // Kameraflieger is needed whenever video is filmed — that includes a guest
+  // whose voucher already covers the video, who books nothing on top.
+  const voucherCoversVideo = showVoucherNumber &&
+    (voucherService === 'jump_video' || voucherService === 'jump_video_photo')
+  const showCameraFlyer =
+    extraBooking === 'video' || extraBooking === 'video_photo' || voucherCoversVideo
+
+  const lines = prices
+    ? priceLines({
+        payment_method: paymentMethod,
+        voucher_service: showVoucherNumber ? voucherService : null,
+        extra_booking: extraBooking,
+        weight_surcharge: weightSurcharge,
+      }, prices)
+    : []
+  const computed = lines.reduce((sum, l) => sum + l.amount, 0)
+  const due = priceOverride && price !== '' ? price : computed
+  // A voucher moves no money by itself, so the till it lands in is only a
+  // question once the guest actually owes something on top of it.
+  const showVoucherPayment = showVoucherNumber && due > 0
 
   async function handleSave() {
     setSaving(true)
@@ -43,14 +83,29 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
       const updated = await patch(registration.id, {
         tandem_master_id: tandemMasterId === '' ? null : tandemMasterId,
         load_number: loadNumber === '' ? null : loadNumber,
-        price: price === '' ? null : price,
+        // Without an override the price is left to the server, which derives it
+        // from the price table — sending our preview back would let two manifest
+        // clients with stale settings disagree.
+        ...(priceOverride
+          ? { price: price === '' ? null : price }
+          : { price_override: 0 as const }),
         payment_method: paymentMethod === '' ? undefined : paymentMethod,
         // Clear a stale voucher number if the guest no longer pays by voucher.
         voucher_number: showVoucherNumber ? (voucherNumber.trim() === '' ? null : voucherNumber.trim()) : null,
+        voucher_service: showVoucherNumber ? (voucherService === '' ? null : voucherService) : null,
+        // Likewise drop the till once there is nothing left to collect.
+        voucher_payment_method: showVoucherPayment
+          ? (voucherPaymentMethod === '' ? null : voucherPaymentMethod)
+          : null,
         extra_booking: extraBooking,
+        weight_surcharge: weightSurcharge,
         // Clear a stale flyer selection if the booking no longer includes video.
         camera_flyer_id: showCameraFlyer ? (cameraFlyerId === '' ? null : cameraFlyerId) : null,
       })
+      // The server owns the number; adopt whatever it stored so the field cannot
+      // drift from the sheet.
+      setPrice(updated.price ?? '')
+      setPriceOverride(!!updated.price_override)
       onSaved(updated)
       setSaved(true)
     } catch (err) {
@@ -144,16 +199,6 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
           </label>
 
           <label className="field">
-            Preis
-            <input
-              type="number"
-              className="numeral"
-              value={price}
-              onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
-            />
-          </label>
-
-          <label className="field">
             Zahlungsart
             <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod | '')}>
               <option value="">— auswählen —</option>
@@ -164,6 +209,26 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
               ))}
             </select>
           </label>
+
+          {showVoucherPayment && (
+            <label className="field">
+              Zuzahlung bezahlt mit
+              <select
+                value={voucherPaymentMethod}
+                onChange={(e) => setVoucherPaymentMethod(e.target.value as CollectedVia | '')}
+              >
+                <option value="">— auswählen —</option>
+                {COLLECTED_VIA.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <span className="field-hint">
+                Zählt am Abend in die Bar- bzw. Kartensumme.
+              </span>
+            </label>
+          )}
 
           {showVoucherNumber && (
             <label className="field">
@@ -176,8 +241,35 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             </label>
           )}
 
+          {showVoucherNumber && (
+            <label className="field">
+              Gutschein-Leistung
+              <select
+                value={voucherService}
+                onChange={(e) => {
+                  const next = e.target.value as VoucherService | ''
+                  setVoucherService(next)
+                  // The guest flies at least what the voucher covers, so raise
+                  // the booking to match — otherwise the voucher would be worth
+                  // more than the service and the difference would read as 0.
+                  setExtraBooking((current) => atLeast(current, serviceOfVoucher(next)))
+                }}
+              >
+                <option value="">— auswählen —</option>
+                {VOUCHER_SERVICES.map((v) => (
+                  <option key={v.value} value={v.value}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+              <span className="field-hint">
+                Was der Gutschein abdeckt. Wird vom Preis abgezogen.
+              </span>
+            </label>
+          )}
+
           <label className="field">
-            Zusatzbuchung
+            Gebuchte Leistung
             <select value={extraBooking} onChange={(e) => setExtraBooking(e.target.value as ExtraBooking)}>
               {EXTRA_BOOKINGS.map((x) => (
                 <option key={x.value} value={x.value}>
@@ -185,6 +277,33 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
                 </option>
               ))}
             </select>
+            <span className="field-hint">
+              {showVoucherNumber
+                ? 'Was der Gast insgesamt bekommt. Der Gutschein wird davon abgezogen.'
+                : 'Zusätzlich zum Sprung.'}
+            </span>
+          </label>
+
+          <label className="field">
+            Gewichtszuschlag
+            <select
+              value={weightSurcharge}
+              onChange={(e) => setWeightSurcharge(e.target.value as WeightSurcharge)}
+            >
+              {WEIGHT_SURCHARGES.map((w) => (
+                <option key={w.value} value={w.value}>
+                  {w.label}
+                  {prices && w.value !== 'none'
+                    ? ` (${formatEuro(w.value === 'over_90' ? prices.weight_over_90 : prices.weight_over_100)})`
+                    : ''}
+                </option>
+              ))}
+            </select>
+            {/*
+              Shown for orientation only — the surcharge is never derived from the
+              entered weight, because the manifest waives it as an exception.
+            */}
+            <span className="field-hint">Eingetragenes Gewicht: {registration.weight_kg} kg</span>
           </label>
 
           {showCameraFlyer && (
@@ -203,6 +322,58 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
               </select>
             </label>
           )}
+
+          <div className="price-box">
+            {/*
+              Until the price table has arrived there is nothing honest to show —
+              a 0 € total would be read as "guest owes nothing".
+            */}
+            {!prices && <p className="hint">Preise werden geladen…</p>}
+
+            {prices && (
+              <>
+                <div className="price-breakdown">
+                  {lines.map((l) => (
+                    <div className="price-line" key={l.label}>
+                      <span>{l.label}</span>
+                      <span className="numeral">{formatEuro(l.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="price-line price-total">
+                  <span>Zu kassieren</span>
+                  <span className="numeral">{formatEuro(due)}</span>
+                </div>
+              </>
+            )}
+
+            <label className="price-override-toggle">
+              <input
+                type="checkbox"
+                checked={priceOverride}
+                onChange={(e) => {
+                  setPriceOverride(e.target.checked)
+                  // Start the manual field from the amount currently computed, so
+                  // a small correction is a small edit — and so a price stored
+                  // before the selection changed cannot silently come back.
+                  if (e.target.checked) setPrice(computed)
+                }}
+              />
+              abweichender Preis
+            </label>
+
+            {priceOverride && (
+              <label className="field">
+                Preis (EUR)
+                <input
+                  type="number"
+                  className="numeral"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                />
+              </label>
+            )}
+          </div>
         </section>
       </div>
 

@@ -32,6 +32,25 @@ function apiUrl(rootPath: string): string {
 export type Gender = 'male' | 'female' | 'diverse'
 export type PaymentMethod = 'voucher' | 'cash' | 'card'
 export type ExtraBooking = 'none' | 'video' | 'video_photo'
+export type VoucherService = 'jump' | 'jump_video' | 'jump_video_photo'
+// How a voucher guest paid the difference — a voucher itself moves no money.
+export type CollectedVia = 'cash' | 'card'
+export type WeightSurcharge = 'none' | 'over_90' | 'over_100'
+
+export interface Prices {
+  jump: number
+  video: number
+  video_photo: number
+  weight_over_90: number
+  weight_over_100: number
+}
+
+// Was der Verein pro Sprung an Tandemmaster und Videoflieger auszahlt.
+export interface Payouts {
+  tandem_master: number
+  video: number
+  video_photo: number
+}
 
 export interface Registration {
   id: number
@@ -52,11 +71,17 @@ export interface Registration {
   load_number: number | null
   price: number | null
   payment_method: PaymentMethod | null
+  voucher_payment_method: CollectedVia | null
   voucher_number: string | null
+  voucher_service: VoucherService | null
   extra_booking: ExtraBooking | null
+  weight_surcharge: WeightSurcharge | null
+  price_override: number | null
   camera_flyer_id: number | null
   created_at: string
   jump_date: string
+  // NULL heißt: noch nicht kassiert. Sonst der Zeitpunkt, den der Server gesetzt hat.
+  paid_at: string | null
 }
 
 export interface StammdatenItem {
@@ -69,16 +94,26 @@ export interface Settings {
   contractText: string
   jumpLocation: string
   backupDir: string
+  prices: Prices
+  payouts: Payouts
 }
 
 export interface ManifestPatch {
   tandem_master_id?: number | null
   load_number?: number | null
+  // Only sent for a manual correction — otherwise the server derives the price
+  // from the price table and `price_override: 0` hands control back to it.
   price?: number | null
+  price_override?: 0 | 1
   payment_method?: PaymentMethod
+  voucher_payment_method?: CollectedVia | null
   voucher_number?: string | null
+  voucher_service?: VoucherService | null
   extra_booking?: ExtraBooking
+  weight_surcharge?: WeightSurcharge
   camera_flyer_id?: number | null
+  // Ein Schalter, kein Zeitpunkt — den Zeitstempel setzt der Server.
+  paid?: boolean
 }
 
 export interface ExportResult {

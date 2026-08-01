@@ -219,6 +219,39 @@ h2 {
   padding-bottom: 0;
 }
 
+/* Row-level actions: small enough to sit inside a table row without stretching
+   it, but still a full tap target on the manifest tablet. */
+.btn.small {
+  padding: 5px 12px;
+  font-size: 13px;
+  border-width: 1px;
+}
+
+.btn.small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* "Kassiert" — outlined in the accent until used, filled on hover, so the open
+   table reads as a row of things still to do. */
+.btn.collect {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.btn.collect:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* The undo beside a collected row — available, but never competing with it. */
+.btn.ghost {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}
+
 .btn-icon {
   padding: 10px;
   line-height: 0;
@@ -238,9 +271,32 @@ h2 {
   align-self: center;
 }
 
+/* The day's takings, next to the entry count — same number the export's
+   "Gesamt" row carries, so it can be read off without exporting. */
+.list-total {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-h);
+  align-self: center;
+  font-family: var(--mono);
+}
+
+/* What is still to be collected is the number the manifest works against, so it
+   gets the ember accent; the collected sum beside it stays neutral. */
+.list-total-open {
+  color: var(--ember);
+}
+
 .col-checkbox {
   width: 1%;
   white-space: nowrap;
+}
+
+/* Holds the one-tap action that moves a row between the two tables. */
+.col-action {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .col-checkbox input[type='checkbox'] {
@@ -269,6 +325,34 @@ h2 {
   top: 0;
   background: var(--row-hover);
   font-weight: 600;
+}
+
+.manifest-table + .manifest-table {
+  margin-top: 28px;
+}
+
+.manifest-table caption {
+  caption-side: top;
+  text-align: left;
+  padding-bottom: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+/* The collected table is the archive of the day: still readable, but held back
+   so the eye stays on the rows that are not finished yet. */
+.manifest-table-paid {
+  opacity: 0.72;
+}
+
+.manifest-table-paid caption {
+  font-weight: 600;
+}
+
+.manifest-table-paid:hover,
+.manifest-table-paid:focus-within {
+  opacity: 1;
 }
 
 .clickable-row {
@@ -313,6 +397,12 @@ h2 {
 
 .pill.pill-go::before {
   background: var(--accent);
+}
+
+/* Weight surcharge — the one pill that always means extra money owed, so it
+   borrows the kiosk's warning color rather than a neutral dot. */
+.pill.pill-surcharge::before {
+  background: #c9922b;
 }
 
 /* Detail screen: guest data and manifest fields sit side-by-side on a
@@ -376,6 +466,62 @@ h2 {
   border-radius: 8px;
   background: var(--panel-bg);
   color: var(--text);
+}
+
+/* Sits under a field to explain what it means without competing with the label
+   above it — used for the voucher/extra distinction and the guest's weight next
+   to the (deliberately independent) surcharge picker. */
+.field-hint {
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.65;
+}
+
+/* The money summary at the bottom of the manifest fields: the breakdown the
+   server will charge, its total, and the escape hatch for an exception. */
+.price-box {
+  margin-top: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.price-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 14px;
+}
+
+.price-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  opacity: 0.75;
+}
+
+.price-total {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.price-override-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.price-override-toggle input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
 }
 
 /* Stammdaten screen */

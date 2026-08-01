@@ -3,6 +3,7 @@ import path from 'path'
 import os from 'os'
 import { openDb } from '../../src/server/db'
 import { buildServer } from '../../src/server/index'
+import { DEFAULT_PAYOUTS, DEFAULT_PRICES } from '../../src/server/config'
 import type { Config } from '../../src/server/config'
 
 const templateBytes = fs.readFileSync(
@@ -19,6 +20,8 @@ export function testServer(
       contractText: '',
       jumpLocation: '',
       backupDir: '',
+      prices: { ...DEFAULT_PRICES },
+      payouts: { ...DEFAULT_PAYOUTS },
       ...cfgOverrides,
     },
   }

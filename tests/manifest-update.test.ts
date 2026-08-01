@@ -72,6 +72,271 @@ test('patch updates only the provided keys', async () => {
   await app.close()
 })
 
+test('patch recomputes the price from the price table', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'cash', extra_booking: 'video', weight_surcharge: 'over_90' }
+  })
+  expect(res.statusCode).toBe(200)
+  expect(res.json().price).toBe(410)
+  await app.close()
+})
+
+test('a voucher is deducted from the service the guest flies', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: {
+      payment_method: 'voucher', voucher_number: 'GS-1', voucher_service: 'jump',
+      extra_booking: 'video', weight_surcharge: 'none'
+    }
+  })
+  expect(res.statusCode).toBe(200)
+  expect(res.json().voucher_service).toBe('jump')
+  expect(res.json().price).toBe(100)
+  await app.close()
+})
+
+test('upgrading a voucher costs only the difference', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: {
+      payment_method: 'voucher', voucher_service: 'jump_video', extra_booking: 'video_photo'
+    }
+  })
+  expect(res.json().price).toBe(20)
+  await app.close()
+})
+
+test('changing only the voucher service reprices the row', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'voucher', voucher_service: 'jump', extra_booking: 'video_photo' }
+  })
+  // 390 - 270 = 120 before; the corrected voucher covers video too.
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { voucher_service: 'jump_video' }
+  })
+  expect(res.json().price).toBe(20)
+  await app.close()
+})
+
+test('the recomputation uses the fields already stored, not only the ones sent', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'cash', extra_booking: 'video' }
+  })
+  // Only the surcharge changes — the stored 'video' must still be priced in.
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { weight_surcharge: 'over_100' }
+  })
+  expect(res.json().price).toBe(270 + 100 + 60)
+  await app.close()
+})
+
+test('a price sent by the manifest is kept and marks the row as overridden', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'cash', extra_booking: 'video', price: 300 }
+  })
+  expect(res.json().price).toBe(300)
+  expect(res.json().price_override).toBe(1)
+
+  // A later change to a priced field must not overwrite the manual correction.
+  const after = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { weight_surcharge: 'over_90' }
+  })
+  expect(after.json().price).toBe(300)
+  await app.close()
+})
+
+test('clearing the override hands the price back to the price table', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'cash', extra_booking: 'video', price: 300 }
+  })
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { price_override: 0, extra_booking: 'video_photo' }
+  })
+  expect(res.json().price_override).toBe(0)
+  expect(res.json().price).toBe(390)
+  await app.close()
+})
+
+test('the price follows the amounts configured in the settings', async () => {
+  const { app, cfgRef } = testServer()
+  cfgRef.current.prices = { ...cfgRef.current.prices, jump: 300, weight_over_100: 80 }
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'card', weight_surcharge: 'over_100' }
+  })
+  expect(res.json().price).toBe(380)
+  await app.close()
+})
+
+test('patch stores how a voucher top-up was paid', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: {
+      payment_method: 'voucher', voucher_service: 'jump', extra_booking: 'video',
+      voucher_payment_method: 'cash'
+    }
+  })
+  expect(res.statusCode).toBe(200)
+  expect(res.json().voucher_payment_method).toBe('cash')
+  expect(res.json().price).toBe(100)
+  await app.close()
+})
+
+test('rejects an invalid or voucher-valued top-up method with 400, but accepts null', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  for (const bad of ['paypal', 'voucher', '']) {
+    const res = await app.inject({
+      method: 'PATCH', url: `/api/registrations/${id}`,
+      payload: { voucher_payment_method: bad }
+    })
+    expect(res.statusCode).toBe(400)
+  }
+  const cleared = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { voucher_payment_method: null }
+  })
+  expect(cleared.statusCode).toBe(200)
+  expect(cleared.json().voucher_payment_method).toBeNull()
+  await app.close()
+})
+
+test('a fresh registration starts out as not yet collected', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({ method: 'GET', url: '/api/registrations' })
+  expect(res.json().find((r: any) => r.id === id).paid_at).toBeNull()
+  await app.close()
+})
+
+test('patch paid:true stamps the collection time on the server', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const before = Date.now()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`, payload: { paid: true },
+  })
+  expect(res.statusCode).toBe(200)
+  const paidAt = res.json().paid_at
+  // The client sends a flag, never a timestamp — several tablets with drifting
+  // clocks would otherwise decide the order of the day.
+  expect(Date.parse(paidAt)).toBeGreaterThanOrEqual(before - 1000)
+  expect(Date.parse(paidAt)).toBeLessThanOrEqual(Date.now() + 1000)
+  await app.close()
+})
+
+test('patch paid:false puts the row back into the open table', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  await app.inject({ method: 'PATCH', url: `/api/registrations/${id}`, payload: { paid: true } })
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`, payload: { paid: false },
+  })
+  expect(res.json().paid_at).toBeNull()
+  await app.close()
+})
+
+test('marking an already collected row again keeps the original timestamp', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const first = (await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`, payload: { paid: true },
+  })).json().paid_at
+  const again = (await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`, payload: { paid: true },
+  })).json().paid_at
+  expect(again).toBe(first)
+  await app.close()
+})
+
+test('collecting a row leaves its price alone', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { extra_booking: 'video', weight_surcharge: 'over_90' },
+  })
+  const res = await app.inject({ method: 'PATCH', url: `/api/registrations/${id}`, payload: { paid: true } })
+  expect(res.json().price).toBe(410)
+  await app.close()
+})
+
+test('a client cannot write paid_at directly', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`, payload: { paid_at: '1999-01-01T00:00:00.000Z' },
+  })
+  expect(res.json().paid_at).toBeNull()
+  await app.close()
+})
+
+test('rejects a non-boolean paid with 400', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`, payload: { paid: 'ja' },
+  })
+  expect(res.statusCode).toBe(400)
+  expect(res.json().error).toBe('Kassiert-Status ungültig')
+  await app.close()
+})
+
+test('rejects invalid weight_surcharge with 400', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { weight_surcharge: 'over_150' }
+  })
+  expect(res.statusCode).toBe(400)
+  await app.close()
+})
+
+test('rejects invalid voucher_service with 400 but accepts null', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const bad = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { voucher_service: 'jump_champagne' }
+  })
+  expect(bad.statusCode).toBe(400)
+
+  const cleared = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { voucher_service: null }
+  })
+  expect(cleared.statusCode).toBe(200)
+  expect(cleared.json().voucher_service).toBeNull()
+  await app.close()
+})
+
 test('rejects invalid payment_method with 400', async () => {
   const { app } = testServer()
   const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()

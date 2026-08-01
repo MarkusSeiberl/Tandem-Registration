@@ -1,6 +1,18 @@
 import ExcelJS from 'exceljs'
+import type { PayoutSection } from './payouts'
 
-export const DEFAULT_COLUMNS = [
+// `numFmt` marks a column whose values stay real numbers in the sheet (so the
+// club can sum them itself) and only get their currency suffix from the cell
+// format. Everything else is written as-is.
+export const EURO_FORMAT = '#,##0.00 "€"'
+
+export interface Column {
+  key: string
+  header: string
+  numFmt?: string
+}
+
+export const DEFAULT_COLUMNS: Column[] = [
   { key: 'first_name', header: 'Vorname' },
   { key: 'last_name', header: 'Nachname' },
   { key: 'gender', header: 'Geschlecht' },
@@ -9,16 +21,24 @@ export const DEFAULT_COLUMNS = [
   { key: 'phone', header: 'Telefon' },
   { key: 'tandem_master_id', header: 'Tandemmaster' },
   { key: 'load_number', header: 'Load-Nr.' },
-  { key: 'price', header: 'Preis' },
+  { key: 'price', header: 'Preis', numFmt: EURO_FORMAT },
   { key: 'payment_method', header: 'Zahlungsart' },
+  { key: 'voucher_payment_method', header: 'Zuzahlung mit' },
   { key: 'voucher_number', header: 'Gutschein-Nr.' },
-  { key: 'extra_booking', header: 'Zusatz' },
+  { key: 'voucher_service', header: 'Gutschein-Leistung' },
+  { key: 'extra_booking', header: 'Leistung' },
+  { key: 'weight_surcharge', header: 'Zuschlag' },
   { key: 'camera_flyer_id', header: 'Kameraflieger' },
 ]
 
 export interface MetaRow {
   label: string
   value: string
+}
+
+export interface TotalRow {
+  label: string
+  amount: number
 }
 
 const HEADER_FILL: ExcelJS.Fill = {
@@ -31,10 +51,18 @@ const THIN_BOTTOM_BORDER: Partial<ExcelJS.Borders> = {
   bottom: { style: 'thin', color: { argb: 'FFDDE2E8' } },
 }
 
+// The payout block writes name / calculation / amount into the first three
+// columns. Those hold guest data in the rows above, which is narrower than a
+// calculation like "1 × 60,00 € + 1 × 80,00 €" — the columns are widened to fit
+// both rather than clipping the arithmetic the block exists to show.
+const PAYOUT_COLUMN_WIDTHS = [26, 30, 14]
+
 export async function buildWorkbook(
   rows: any[],
-  columns: { key: string; header: string }[] = DEFAULT_COLUMNS,
-  meta: MetaRow[] = []
+  columns: Column[] = DEFAULT_COLUMNS,
+  meta: MetaRow[] = [],
+  totals: TotalRow[] = [],
+  payouts: PayoutSection[] = []
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Tandem')
@@ -55,9 +83,51 @@ export async function buildWorkbook(
   for (const r of rows) {
     const row = ws.addRow(columns.map(c => r[c.key] ?? ''))
     row.eachCell(cell => { cell.border = THIN_BOTTOM_BORDER })
+    columns.forEach((c, i) => {
+      // Only format a cell that actually holds a number — an empty price would
+      // otherwise render as the string '' with a currency suffix attached.
+      if (c.numFmt && typeof row.getCell(i + 1).value === 'number') {
+        row.getCell(i + 1).numFmt = c.numFmt
+      }
+    })
+  }
+
+  // Summenblock: the reason the sheet exists at the end of a jump day — what was
+  // taken in, split by how it was paid. Written two columns wide so it reads next
+  // to the rows above without disturbing their layout.
+  if (totals.length) {
+    ws.addRow([])
+    for (const t of totals) {
+      const row = ws.addRow([t.label, t.amount])
+      row.getCell(1).font = { bold: true }
+      row.getCell(2).font = { bold: true }
+      row.getCell(2).numFmt = EURO_FORMAT
+    }
+  }
+
+  // Vergütungsblock: what the club owes its crew for the day. Each line carries
+  // the arithmetic beside the amount, so a figure can be checked without counting
+  // the guest rows again.
+  for (const section of payouts) {
+    ws.addRow([])
+    ws.addRow([section.title]).getCell(1).font = { bold: true }
+    for (const entry of section.entries) {
+      const row = ws.addRow([entry.name, entry.calculation, entry.amount])
+      row.getCell(3).numFmt = EURO_FORMAT
+    }
+    const total = ws.addRow(['Summe', '', section.total])
+    total.getCell(1).font = { bold: true }
+    total.getCell(3).font = { bold: true }
+    total.getCell(3).numFmt = EURO_FORMAT
   }
 
   columns.forEach((_, i) => { ws.getColumn(i + 1).width = 18 })
+  if (payouts.length) {
+    PAYOUT_COLUMN_WIDTHS.forEach((width, i) => {
+      const column = ws.getColumn(i + 1)
+      column.width = Math.max(column.width ?? 0, width)
+    })
+  }
 
   return Buffer.from(await wb.xlsx.writeBuffer())
 }

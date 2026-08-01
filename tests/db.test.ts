@@ -37,8 +37,10 @@ test('creates registrations table with correct columns', () => {
     'street', 'postal_code', 'city',
     'email', 'phone', 'contract_pdf_filename',
     'accepted_terms', 'tandem_master_id', 'load_number',
-    'price', 'payment_method', 'voucher_number', 'extra_booking',
-    'camera_flyer_id', 'created_at', 'jump_date'
+    'price', 'payment_method', 'voucher_payment_method',
+    'voucher_number', 'voucher_service',
+    'extra_booking', 'weight_surcharge', 'price_override',
+    'camera_flyer_id', 'created_at', 'jump_date', 'paid_at'
   ]
 
   expect(columnNames).toEqual(expectedColumns)
@@ -119,11 +121,36 @@ test('migrates a legacy database: adds new columns, drops address, drops signatu
   const names = (db.pragma('table_info(registrations)') as Array<{ name: string }>)
     .map(c => c.name)
 
-  for (const added of ['gender', 'height_cm', 'street', 'postal_code', 'city', 'voucher_number', 'contract_pdf_filename']) {
+  for (const added of ['gender', 'height_cm', 'street', 'postal_code', 'city', 'voucher_number',
+    'contract_pdf_filename', 'voucher_service', 'weight_surcharge', 'price_override',
+    'voucher_payment_method', 'paid_at']) {
     expect(names).toContain(added)
   }
   expect(names).not.toContain('address')
   expect(names).not.toContain('signature_png')
+  db.close()
+})
+
+test('migration defaults an existing row to no surcharge and no price override', async () => {
+  const file = await legacyDbPath()
+
+  const db = openDb(file)
+  const row = db.prepare('SELECT weight_surcharge, price_override, voucher_service FROM registrations').get() as any
+  // ALTER TABLE ... DEFAULT backfills existing rows, so a legacy row is priced
+  // exactly like a new one instead of tripping over a NULL enum.
+  expect(row.weight_surcharge).toBe('none')
+  expect(row.price_override).toBe(0)
+  expect(row.voucher_service).toBeNull()
+  db.close()
+})
+
+test('a migrated row starts out as not yet collected', async () => {
+  const file = await legacyDbPath()
+
+  const db = openDb(file)
+  // NULL is the open state. A backfilled timestamp would move every old row
+  // straight into the "kassiert" table without anyone having taken the money.
+  expect((db.prepare('SELECT paid_at FROM registrations').get() as any).paid_at).toBeNull()
   db.close()
 })
 

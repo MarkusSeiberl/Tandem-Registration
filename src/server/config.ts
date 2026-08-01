@@ -1,11 +1,51 @@
 import fs from 'fs'
 import path from 'path'
 
+// Every amount the club charges, in EUR. Kept in config.json (and editable from
+// the manifest settings screen) because the club raises prices between seasons.
+export interface Prices {
+  jump: number
+  video: number
+  video_photo: number
+  weight_over_90: number
+  weight_over_100: number
+}
+
+export const PRICE_KEYS = [
+  'jump', 'video', 'video_photo', 'weight_over_90', 'weight_over_100',
+] as const
+
+export const DEFAULT_PRICES: Prices = {
+  jump: 270,
+  video: 100,
+  video_photo: 120,
+  weight_over_90: 40,
+  weight_over_100: 60,
+}
+
+// What the club pays out per jump, in EUR. Separate from `Prices` because these
+// amounts never touch what a guest owes — they are the club's side of the day.
+export interface Payouts {
+  tandem_master: number
+  video: number
+  video_photo: number
+}
+
+export const PAYOUT_KEYS = ['tandem_master', 'video', 'video_photo'] as const
+
+export const DEFAULT_PAYOUTS: Payouts = {
+  tandem_master: 45,
+  video: 60,
+  video_photo: 80,
+}
+
 export interface Config {
   exportDir: string
   contractText: string
   jumpLocation: string
   backupDir: string
+  prices: Prices
+  payouts: Payouts
 }
 
 const CONTRACT_TEXT = `Der Tandempassagier erklärt seinen Beitritt beim HFSC-Freistadt als unterstützendes Mitglied. Mit dieser Mitgliedschaft sind keine finanziellen Verpflichtungen verbunden. Die Mitgliedschaft endet automatisch mit Ende des Jahres der Unterfertigung. Bei allen Beförderungen von Personen und Sachen mit dem vom HFSC-Freistadt gehaltenen und betriebenen Tandemfallschirmen fungiert ausschließlich der HFSC-Freistadt als Beförderer und ist damit Vertragspartner des oben namentlich angeführten Tandempassagiers. Die Durchführung von Tandemfallschirmsprüngen erfolgt nicht gewerblich, sondern nur im Rahmen der Mitgliederwerbung und zur Popularisierung des Fallschirmsports. Ein allenfalls für die Beförderung vereinbarter Kosten(Mitglieds-)beitrag fließt ungekürzt und unmittelbar dem gemeinnützigen HFSC-Freistadt zu, der damit alleiniger Vertragspartner des Tandempassagiers im Beförderungsvertrag ist. Der jeweilige Tandemmaster bzw. die Person, welche die Vereinbarungen im Zusammenhang mit der Beförderung mit dem Tandempassagier trifft, handelt als Vertreter des HFSC-Freistadt und damit nicht im eigenen Namen.
@@ -49,9 +89,21 @@ Ich bestätige durch den TM eine umfassende Einweisung für den Tandem-Passagier
 
 export function loadConfig(dir: string): Config {
   const p = path.join(dir, 'config.json')
-  const def: Config = { exportDir: dir, contractText: CONTRACT_TEXT, jumpLocation: '', backupDir: '' }
+  const def: Config = {
+    exportDir: dir, contractText: CONTRACT_TEXT, jumpLocation: '', backupDir: '',
+    prices: { ...DEFAULT_PRICES }, payouts: { ...DEFAULT_PAYOUTS },
+  }
   try {
-    return { ...def, ...JSON.parse(fs.readFileSync(p, 'utf8')) }
+    const stored = JSON.parse(fs.readFileSync(p, 'utf8'))
+    // `prices` and `payouts` are merged per key, not replaced: a config.json
+    // written before either block existed has no block at all, and one written by
+    // an older version could be missing a single amount. Either way every key must
+    // end up with a number.
+    return {
+      ...def, ...stored,
+      prices: { ...DEFAULT_PRICES, ...(stored?.prices ?? {}) },
+      payouts: { ...DEFAULT_PAYOUTS, ...(stored?.payouts ?? {}) },
+    }
   } catch {
     return def
   }

@@ -17,9 +17,13 @@ export function openDb(path: string, nativeBinding?: string): Database.Database 
       email TEXT, phone TEXT, contract_pdf_filename TEXT,
       accepted_terms INTEGER,
       tandem_master_id INTEGER, load_number INTEGER, price REAL,
-      payment_method TEXT, voucher_number TEXT, extra_booking TEXT,
+      payment_method TEXT, voucher_payment_method TEXT,
+      voucher_number TEXT, voucher_service TEXT,
+      extra_booking TEXT, weight_surcharge TEXT DEFAULT 'none',
+      price_override INTEGER DEFAULT 0,
       camera_flyer_id INTEGER,
-      created_at TEXT, jump_date TEXT
+      created_at TEXT, jump_date TEXT,
+      paid_at TEXT
     );
     CREATE TABLE IF NOT EXISTS tandem_masters (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, active INTEGER DEFAULT 1);
@@ -49,6 +53,13 @@ function migrate(db: Database.Database): void {
     ['city', 'TEXT'],
     ['voucher_number', 'TEXT'],
     ['contract_pdf_filename', 'TEXT'],
+    ['voucher_service', 'TEXT'],
+    ['weight_surcharge', "TEXT DEFAULT 'none'"],
+    ['price_override', 'INTEGER DEFAULT 0'],
+    ['voucher_payment_method', 'TEXT'],
+    // NULL means "not collected yet" — no default, so existing rows stay open
+    // instead of appearing as paid without anyone having taken the money.
+    ['paid_at', 'TEXT'],
   ]
   for (const [name, type] of added) {
     if (!existing.has(name)) db.exec(`ALTER TABLE registrations ADD COLUMN ${name} ${type}`)

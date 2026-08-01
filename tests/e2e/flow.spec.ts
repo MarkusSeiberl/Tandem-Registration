@@ -98,17 +98,36 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   await expect(page.getByText(`${GUEST.postalCode} ${GUEST.city}`)).toBeVisible()
 
   await page.getByLabel('Load-Nr.').fill('5')
-  await page.getByLabel('Preis').fill('250')
 
-  // Gutschein-Nr. exists only while Gutschein is the chosen payment method.
+  // Gutschein-Nr. and the covered service exist only while Gutschein is the
+  // chosen payment method.
   const voucherField = page.getByLabel('Gutschein-Nr.')
+  const voucherService = page.getByLabel('Gutschein-Leistung')
+  const voucherTill = page.getByLabel('Zuzahlung bezahlt mit')
   await expect(voucherField).toBeHidden()
+  await expect(voucherService).toBeHidden()
   await page.getByLabel('Zahlungsart').selectOption('voucher')
   await expect(voucherField).toBeVisible()
+  await expect(voucherService).toBeVisible()
+
+  // A voucher used exactly as issued costs nothing, so there is no till to ask
+  // about; upgrading to video+photo leaves 20 € that has to land somewhere.
+  await voucherService.selectOption('jump_video')
+  await expect(voucherTill).toBeHidden()
+  await page.getByLabel('Gebuchte Leistung').selectOption('video_photo')
+  await expect(voucherTill).toBeVisible()
+  await expect(page.locator('.price-total .numeral')).toHaveText('20 €')
+
   await page.getByLabel('Zahlungsart').selectOption('card')
   await expect(voucherField).toBeHidden()
+  await expect(voucherTill).toBeHidden()
 
-  await page.getByLabel('Zusatzbuchung').selectOption('video_photo')
+  await page.getByLabel('Gebuchte Leistung').selectOption('video_photo')
+  await page.getByLabel('Gewichtszuschlag').selectOption('over_90')
+
+  // 270 jump + 120 video+photo + 40 surcharge, computed from the price table.
+  const total = page.locator('.price-total .numeral')
+  await expect(total).toHaveText('430 €')
 
   const [patchResponse] = await Promise.all([
     page.waitForResponse(
@@ -127,8 +146,24 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   const updatedRow = page.locator('tr.clickable-row', { hasText: fullName })
   await expect(updatedRow).toBeVisible()
   await expect(updatedRow).toContainText('Karte')
-  await expect(updatedRow).toContainText('Video+Foto')
+  await expect(updatedRow).toContainText('Sprung+Video+Foto')
+  await expect(updatedRow).toContainText('ab 90 kg')
+  await expect(updatedRow).toContainText('430 €')
   await expect(updatedRow.locator('td').nth(5)).toHaveText('5')
+
+  // --- Collect the money: the row moves from the open table to the paid one ---
+  const openTable = page.locator('table.manifest-table-open')
+  const paidTable = page.locator('table.manifest-table-paid')
+  await expect(openTable.locator('tr.clickable-row', { hasText: fullName })).toBeVisible()
+
+  await updatedRow.getByRole('button', { name: /Kassiert/ }).click()
+
+  await expect(paidTable.locator('tr.clickable-row', { hasText: fullName })).toBeVisible()
+  await expect(openTable.locator('tr.clickable-row', { hasText: fullName })).toHaveCount(0)
+
+  // The move survives a reload, so it was stored and not just held in the page.
+  await page.reload()
+  await expect(paidTable.locator('tr.clickable-row', { hasText: fullName })).toBeVisible()
 
   // --- Export the day and verify the real xlsx on disk ---
   const [exportResponse] = await Promise.all([
@@ -163,5 +198,30 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   expect(cell('Geschlecht')).toBe('männlich')
   expect(cell('Adresse')).toBe(`${GUEST.street}, ${GUEST.postalCode}, ${GUEST.city}`)
   expect(cell('Zahlungsart')).toBe('Karte')
-  expect(cell('Zusatz')).toBe('Video+Foto')
+  expect(cell('Leistung')).toBe('Sprung+Video+Foto')
+  expect(cell('Zuschlag')).toBe('ab 90 kg')
+  expect(cell('Preis')).toBe(430)
+
+  // The point of the sheet at the end of a jump day: what was taken in. This
+  // guest paid by card, so the whole 430 lands in the card total.
+  const totals = new Map<string, unknown>()
+  ws.eachRow((r) => {
+    const label = r.getCell(1).value
+    if (typeof label === 'string' && (label.startsWith('Summe') || label === 'Gesamt')) {
+      totals.set(label, r.getCell(2).value)
+    }
+  })
+  expect(totals.get('Summe Karte')).toBe(430)
+  expect(totals.get('Summe ohne Zahlungsart')).toBe(0)
+  expect(totals.get('Gesamt')).toBe(430)
+
+  // What the club owes its crew, with the arithmetic beside each amount. Nobody
+  // was assigned to this jump, so both lines are the "ohne …" reminders — the
+  // block must still show them rather than lose the jump.
+  const payoutLines: [unknown, unknown, unknown][] = []
+  ws.eachRow((r) => payoutLines.push([r.getCell(1).value, r.getCell(2).value, r.getCell(3).value]))
+  expect(payoutLines).toContainEqual(['Vergütung Tandemmaster', null, null])
+  expect(payoutLines).toContainEqual(['ohne Tandemmaster', '1 × 45,00 €', 45])
+  expect(payoutLines).toContainEqual(['Vergütung Videoflieger', null, null])
+  expect(payoutLines).toContainEqual(['ohne Kameraflieger', '1 × 80,00 €', 80])
 })

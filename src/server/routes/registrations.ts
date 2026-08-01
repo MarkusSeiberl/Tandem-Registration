@@ -5,6 +5,10 @@ import path from 'path'
 import { validateGuest } from '../validation'
 import { SseHub } from '../sse'
 import { fillContractPdf } from '../contractPdf'
+import {
+  computePrice, COLLECTED_VIA, EXTRA_BOOKINGS, PAYMENT_METHODS, VOUCHER_SERVICES,
+  WEIGHT_SURCHARGES,
+} from '../pricing'
 import type { Config } from '../config'
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -68,14 +72,22 @@ export function registerRegistrationRoutes(
     })
     const filename = await writeContractPdf(vertraegeDir, base, pdf)
 
+    // The guest never picks anything priced, so a fresh row starts at the plain
+    // jump price. The manifest recomputes it as soon as it saves an extra, a
+    // surcharge or a voucher.
     const info = db.prepare(`INSERT INTO registrations
       (first_name,last_name,gender,age,height_cm,weight_kg,
        street,postal_code,city,email,phone,contract_pdf_filename,
-       accepted_terms,created_at,jump_date)
+       accepted_terms,created_at,jump_date,
+       extra_booking,weight_surcharge,price,price_override)
       VALUES (@first_name,@last_name,@gender,@age,@height_cm,@weight_kg,
        @street,@postal_code,@city,@email,@phone,
-       @contract_pdf_filename,1,@created_at,@jump_date)`)
-      .run({ ...v, contract_pdf_filename: filename, created_at: new Date().toISOString(), jump_date: jumpDate })
+       @contract_pdf_filename,1,@created_at,@jump_date,
+       'none','none',@price,0)`)
+      .run({
+        ...v, contract_pdf_filename: filename, created_at: new Date().toISOString(),
+        jump_date: jumpDate, price: computePrice({}, cfgRef.current.prices),
+      })
     sse.broadcast('changed', { id: info.lastInsertRowid })
     // Best-effort desktop notification on the server machine; never blocks the
     // response or fails the registration.
@@ -107,29 +119,72 @@ export function registerRegistrationRoutes(
 
   app.get('/api/events', (req, reply) => sse.handler(req, reply))
 
-  const ALLOWED = ['tandem_master_id', 'load_number', 'price', 'payment_method',
-    'voucher_number', 'extra_booking', 'camera_flyer_id'] as const
-  const PAY = ['voucher', 'cash', 'card']
-  const EXTRA = ['none', 'video', 'video_photo']
+  const ALLOWED = ['tandem_master_id', 'load_number', 'price', 'price_override',
+    'payment_method', 'voucher_payment_method', 'voucher_number', 'voucher_service',
+    'extra_booking', 'weight_surcharge', 'camera_flyer_id', 'paid_at'] as const
+  // Changing any of these changes what the guest owes, so a non-overridden price
+  // has to be recomputed in the same statement.
+  const PRICING_FIELDS = [
+    'payment_method', 'voucher_service', 'extra_booking', 'weight_surcharge',
+  ] as const
 
   app.patch('/api/registrations/:id', async (req, reply) => {
     const id = (req.params as any).id
-    const body = (req.body as any) ?? {}
-    const keys = ALLOWED.filter(k => k in body)
-    if ('payment_method' in body && !PAY.includes(body.payment_method))
+    const body = { ...((req.body as any) ?? {}) }
+    // The manifest marks a row collected with a flag; the timestamp is the
+    // server's to write. A tablet whose clock is off must not be able to decide
+    // when the money came in — and `paid_at` from a client is ignored entirely.
+    const paid = body.paid
+    delete body.paid
+    delete body.paid_at
+    if (paid !== undefined && typeof paid !== 'boolean')
+      return reply.code(400).send({ error: 'Kassiert-Status ungültig' })
+    if ('payment_method' in body && !PAYMENT_METHODS.includes(body.payment_method))
       return reply.code(400).send({ error: 'Zahlungsart ungültig' })
-    if ('extra_booking' in body && !EXTRA.includes(body.extra_booking))
+    if ('extra_booking' in body && !EXTRA_BOOKINGS.includes(body.extra_booking))
       return reply.code(400).send({ error: 'Zusatzbuchung ungültig' })
+    if ('weight_surcharge' in body && !WEIGHT_SURCHARGES.includes(body.weight_surcharge))
+      return reply.code(400).send({ error: 'Gewichtszuschlag ungültig' })
+    // Unlike the two above, these are cleared (null) whenever the guest stops
+    // paying by voucher, so null is a legal value here.
+    if ('voucher_service' in body && body.voucher_service !== null &&
+        !VOUCHER_SERVICES.includes(body.voucher_service))
+      return reply.code(400).send({ error: 'Gutschein-Leistung ungültig' })
+    if ('voucher_payment_method' in body && body.voucher_payment_method !== null &&
+        !COLLECTED_VIA.includes(body.voucher_payment_method))
+      return reply.code(400).send({ error: 'Zahlungsart der Zuzahlung ungültig' })
+
+    const current = db.prepare('SELECT * FROM registrations WHERE id=?').get(id) as any
+    if (!current) return reply.code(404).send()
+
+    // Collecting a row that is already collected keeps the original time — the
+    // stamp records when the money arrived, not when someone last tapped.
+    if (paid === true && !current.paid_at) body.paid_at = new Date().toISOString()
+    else if (paid === false) body.paid_at = null
+
+    // A price sent by the manifest is always a manual correction — the computed
+    // amount never travels over the wire. Sending price_override:0 hands control
+    // back to the price table.
+    if ('price' in body) body.price_override = 1
+    // SQLite has no boolean type and better-sqlite3 refuses to bind one, so the
+    // flag is normalised whether the manifest sends true/false or 1/0.
+    if ('price_override' in body) body.price_override = body.price_override ? 1 : 0
+    const overridden = 'price_override' in body ? !!body.price_override : !!current.price_override
+    if (!overridden && PRICING_FIELDS.some(k => k in body)) {
+      body.price = computePrice({ ...current, ...body }, cfgRef.current.prices)
+    }
+
+    const keys = ALLOWED.filter(k => k in body)
     if (keys.length) {
       const set = keys.map(k => `${k}=@${k}`).join(', ')
-      const result = db.prepare(`UPDATE registrations SET ${set} WHERE id=@id`).run({ ...body, id })
+      const params: Record<string, unknown> = { id }
+      for (const k of keys) params[k] = body[k]
+      const result = db.prepare(`UPDATE registrations SET ${set} WHERE id=@id`).run(params)
       if (result.changes === 0) return reply.code(404).send()
       sse.broadcast('changed', { id })
       return db.prepare('SELECT * FROM registrations WHERE id=?').get(id)
     }
-    const row = db.prepare('SELECT * FROM registrations WHERE id=?').get(id)
-    if (!row) return reply.code(404).send()
-    return row
+    return current
   })
 
   app.delete('/api/registrations/:id', async (req, reply) => {

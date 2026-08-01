@@ -23,11 +23,16 @@ function makeRegistration(overrides: Partial<Registration> = {}): Registration {
     load_number: null,
     price: null,
     payment_method: null,
+    voucher_payment_method: null,
     voucher_number: null,
+    voucher_service: null,
     extra_booking: null,
+    weight_surcharge: 'none',
+    price_override: 0,
     camera_flyer_id: null,
     created_at: '2026-07-09T10:00:00.000Z',
     jump_date: '2026-07-09',
+    paid_at: null,
     ...overrides,
   }
 }

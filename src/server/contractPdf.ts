@@ -25,12 +25,12 @@ const SMALL_FONT_SIZE = 10
 // Coordinates measured directly against assets/Befoerderungsvertrag.pdf (595x842pt A4).
 const PAGE1 = {
   name: { x: 118, y: 690 },
-  street: { x: 203, y: 657 },
+  street: { x: 203, y: 660 },
   plzCity: { x: 165, y: 632 },
   phone: { x: 95, y: 608, size: SMALL_FONT_SIZE },
   email: { x: 290, y: 608, size: SMALL_FONT_SIZE },
-  age: { x: 100, y: 580 },
-  height: { x: 190, y: 580 },
+  age: { x: 90, y: 580 },
+  height: { x: 180, y: 580 },
   weight: { x: 315, y: 580 },
 }
 
@@ -39,7 +39,7 @@ const PAGE2 = {
   // The Datum blank is only ~60pt wide (right after the "Datum:" label,
   // before "Unterschrift:" starts around x=300) — too narrow for a full
   // dd.mm.yyyy date at 10pt, hence the smaller size here.
-  datum: { x: 240, y: 82, size: 9 },
+  datum: { x: 220, y: 82, size: 9 },
   signature: { x: 440, y: 84, width: 90, height: 36 },
 }
 

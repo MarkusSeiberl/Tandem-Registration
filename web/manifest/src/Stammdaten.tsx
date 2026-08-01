@@ -8,6 +8,7 @@ import {
   masters as fetchMasters,
 } from './api'
 import type { StammdatenItem } from './api'
+import Betraege from './Betraege'
 import TrashIcon from './TrashIcon'
 
 interface StammdatenListProps {
@@ -116,6 +117,8 @@ export default function Stammdaten() {
         add={addFlyer}
         remove={deleteFlyer}
       />
+      {/* The amounts sit under the crew they are paid to and charged for. */}
+      <Betraege />
     </div>
   )
 }

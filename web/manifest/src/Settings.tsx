@@ -1,72 +1,12 @@
 import { useEffect, useState } from 'react'
 import { createBackup, getSettings, putSettings } from './api'
-import type { Payouts, Prices } from './api'
 
-// Every amount the manifest can charge, in the order the settings screen shows
-// them. `key` matches the Config.prices field the server validates.
-const PRICE_FIELDS: { key: keyof Prices; label: string }[] = [
-  { key: 'jump', label: 'Tandemsprung' },
-  { key: 'video', label: 'Video' },
-  { key: 'video_photo', label: 'Video + Foto' },
-  { key: 'weight_over_90', label: 'Zuschlag ab 90 kg' },
-  { key: 'weight_over_100', label: 'Zuschlag ab 100 kg' },
-]
-
-// What the club pays out per jump. Separate from the prices above: these amounts
-// leave the till, they never reach the guest.
-const PAYOUT_FIELDS: { key: keyof Payouts; label: string }[] = [
-  { key: 'tandem_master', label: 'Tandemmaster pro Sprung' },
-  { key: 'video', label: 'Videoflieger Video' },
-  { key: 'video_photo', label: 'Videoflieger Video + Foto' },
-]
-
-const EMPTY_PRICES: Prices = {
-  jump: 0, video: 0, video_photo: 0, weight_over_90: 0, weight_over_100: 0,
-}
-
-const EMPTY_PAYOUTS: Payouts = { tandem_master: 0, video: 0, video_photo: 0 }
-
-// Turns the typed strings of one block back into numbers, refusing anything that
-// would silently save as 0 €.
-function toAmounts<T extends Record<keyof T, number>>(
-  fields: { key: keyof T; label: string }[],
-  inputs: Record<keyof T, string>,
-  empty: T,
-  noun: string
-): T {
-  const out = { ...empty }
-  for (const { key, label } of fields) {
-    const raw = inputs[key]
-    const value = Number(raw)
-    if (raw.trim() === '' || !Number.isFinite(value) || value < 0) {
-      throw new Error(`${noun} „${label}" ungültig`)
-    }
-    out[key] = value as T[keyof T]
-  }
-  return out
-}
-
-function toInputs<T extends Record<keyof T, number>>(
-  fields: { key: keyof T; label: string }[],
-  values: T
-): Record<keyof T, string> {
-  const out = {} as Record<keyof T, string>
-  for (const { key } of fields) out[key] = String(values[key])
-  return out
-}
-
+// Where the manifest writes and what it prints on a contract. The amounts it
+// charges and pays out live on the Stammdaten screen, beside the crew.
 export default function Settings() {
   const [exportDir, setExportDir] = useState('')
   const [jumpLocation, setJumpLocation] = useState('')
   const [backupDir, setBackupDir] = useState('')
-  // Held as strings so the field can be emptied while typing without snapping
-  // back to 0; converted on save.
-  const [priceInputs, setPriceInputs] = useState<Record<keyof Prices, string>>({
-    jump: '', video: '', video_photo: '', weight_over_90: '', weight_over_100: '',
-  })
-  const [payoutInputs, setPayoutInputs] = useState<Record<keyof Payouts, string>>({
-    tandem_master: '', video: '', video_photo: '',
-  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -76,15 +16,10 @@ export default function Settings() {
   const [backupMessage, setBackupMessage] = useState<string | null>(null)
   const [backupError, setBackupError] = useState<string | null>(null)
 
-  function applySettings(cfg: {
-    exportDir: string; jumpLocation: string; backupDir: string
-    prices?: Prices; payouts?: Payouts
-  }) {
+  function applySettings(cfg: { exportDir: string; jumpLocation: string; backupDir: string }) {
     setExportDir(cfg.exportDir)
     setJumpLocation(cfg.jumpLocation)
     setBackupDir(cfg.backupDir)
-    setPriceInputs(toInputs(PRICE_FIELDS, cfg.prices ?? EMPTY_PRICES))
-    setPayoutInputs(toInputs(PAYOUT_FIELDS, cfg.payouts ?? EMPTY_PAYOUTS))
   }
 
   useEffect(() => {
@@ -99,9 +34,9 @@ export default function Settings() {
     setError(null)
     setSaved(false)
     try {
-      const prices = toAmounts(PRICE_FIELDS, priceInputs, EMPTY_PRICES, 'Preis')
-      const payouts = toAmounts(PAYOUT_FIELDS, payoutInputs, EMPTY_PAYOUTS, 'Vergütung')
-      const cfg = await putSettings({ exportDir, jumpLocation, backupDir, prices, payouts })
+      // The server merges the price and payout blocks, so leaving them out here
+      // keeps whatever the Stammdaten screen saved.
+      const cfg = await putSettings({ exportDir, jumpLocation, backupDir })
       applySettings(cfg)
       setSaved(true)
     } catch (err) {
@@ -165,52 +100,6 @@ export default function Settings() {
           }}
         />
       </label>
-
-      <section className="prices-section">
-        <h3>Preise (EUR)</h3>
-        <p className="hint">
-          Gilt für neu berechnete Preise. Bereits gespeicherte Registrierungen behalten ihren Preis.
-        </p>
-        {PRICE_FIELDS.map(({ key, label }) => (
-          <label className="field" key={key}>
-            {label}
-            <input
-              type="number"
-              className="numeral"
-              min="0"
-              step="1"
-              value={priceInputs[key]}
-              onChange={(e) => {
-                setPriceInputs((prev) => ({ ...prev, [key]: e.target.value }))
-                setSaved(false)
-              }}
-            />
-          </label>
-        ))}
-      </section>
-
-      <section className="payouts-section">
-        <h3>Vergütung (EUR)</h3>
-        <p className="hint">
-          Wird pro Sprung abgerechnet und erscheint im Excel-Export als eigener Block.
-        </p>
-        {PAYOUT_FIELDS.map(({ key, label }) => (
-          <label className="field" key={key}>
-            {label}
-            <input
-              type="number"
-              className="numeral"
-              min="0"
-              step="1"
-              value={payoutInputs[key]}
-              onChange={(e) => {
-                setPayoutInputs((prev) => ({ ...prev, [key]: e.target.value }))
-                setSaved(false)
-              }}
-            />
-          </label>
-        ))}
-      </section>
 
       {error && <p className="error">{error}</p>}
       {saved && !error && <p className="hint">Gespeichert.</p>}

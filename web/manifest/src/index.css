@@ -557,6 +557,33 @@ h2 {
   border-bottom: none;
 }
 
+/* Full width under the two crew lists: the amounts apply to everyone above. */
+.betraege-section {
+  flex-basis: 100%;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+}
+
+.betraege-section .amount-block {
+  flex: 1;
+  min-width: 260px;
+}
+
+.betraege-section .field {
+  max-width: 340px;
+  margin-bottom: 12px;
+}
+
+/* The save button belongs to both blocks, so it breaks onto its own row. */
+.betraege-section .actions,
+.betraege-section > .error,
+.betraege-section > .hint {
+  flex-basis: 100%;
+}
+
 .add-row {
   display: flex;
   gap: 8px;

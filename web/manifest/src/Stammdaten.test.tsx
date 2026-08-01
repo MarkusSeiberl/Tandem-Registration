@@ -1,0 +1,49 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import Stammdaten from './Stammdaten'
+import * as api from './api'
+import type { Settings as SettingsType } from './api'
+
+vi.mock('./api', () => ({
+  masters: vi.fn(),
+  flyers: vi.fn(),
+  addMaster: vi.fn(),
+  addFlyer: vi.fn(),
+  deleteMaster: vi.fn(),
+  deleteFlyer: vi.fn(),
+  getSettings: vi.fn(),
+  putSettings: vi.fn(),
+}))
+
+const CONFIG: SettingsType = {
+  exportDir: 'C:/Tandem',
+  contractText: '',
+  jumpLocation: 'Freistadt',
+  backupDir: '',
+  prices: { jump: 270, video: 100, video_photo: 120, weight_over_90: 40, weight_over_100: 60 },
+  payouts: { tandem_master: 45, video: 60, video_photo: 80 },
+}
+
+describe('Stammdaten', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(api.masters).mockResolvedValue([{ id: 1, name: 'Hans' }])
+    vi.mocked(api.flyers).mockResolvedValue([{ id: 7, name: 'Peter' }])
+    vi.mocked(api.getSettings).mockResolvedValue({ ...CONFIG })
+  })
+
+  it('lists the crew', async () => {
+    render(<Stammdaten />)
+
+    expect(await screen.findByText('Hans')).toBeInTheDocument()
+    expect(screen.getByText('Peter')).toBeInTheDocument()
+  })
+
+  it('carries the prices and payout rates, next to the people they apply to', async () => {
+    render(<Stammdaten />)
+
+    expect(await screen.findByText('Preise (EUR)')).toBeInTheDocument()
+    expect(screen.getByText('Vergütung (EUR)')).toBeInTheDocument()
+    expect((screen.getByLabelText('Tandemmaster pro Sprung') as HTMLInputElement).value).toBe('45')
+  })
+})

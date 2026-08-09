@@ -36,24 +36,16 @@ const PAGE1 = {
 
 // The voucher number is added later than everything else — the manifest only
 // learns it when the guest hands the voucher over, long after the contract was
-// signed and written to disk. It goes in the empty strip above the template's
-// header, at the top-left, where the operator sees it without unfolding the page.
+// signed and written to disk. It goes on the blank line at the top-left, where
+// the operator sees it without unfolding the page.
 //
-// The band was measured, not guessed: the template draws its text as vector
-// paths, and the topmost of them sits at y≈802 (rising to roughly y≈810 for the
-// glyphs themselves). Nothing at all is drawn above that. `clear` therefore
-// starts at 814 — far enough that the white box cannot eat into the header, and
-// far enough below the sheet edge (cap height reaches y≈826, some 16pt / 5.7mm
-// down) to survive a printer's unprintable margin.
+// Bare number, no label: the line it sits on already says what it is.
 //
-// `clear` is drawn white before the text: without it a corrected number would be
-// printed over the old one, and a deleted number would stay on the paper forever.
-// Erasing nothing but its own previous stamp matters here, because the signed PDF
-// cannot be rebuilt — the signature is not stored.
-const VOUCHER_STAMP = {
-  clear: { x: 36, y: 814, width: 240, height: 16 },
-  text: { x: 40, y: 818, size: 11 },
-}
+// No white box either, which makes removing the previous content stream (see
+// STAMP_KEY below) the *only* thing standing between a corrected number and a
+// contract showing two of them. That mechanism is not an optimisation here — it
+// is the erase.
+const VOUCHER_STAMP = { x: 40, y: 806, size: 11 }
 
 const PAGE2 = {
   ort: { x: 85, y: 82 },
@@ -109,10 +101,10 @@ export async function fillContractPdf(
 }
 
 // Marks the content stream this module last stamped onto page 1, so a re-stamp
-// can drop it instead of layering a second one on top. Painting white over the
-// old number would only hide it: the text would stay in the file, selectable and
-// copyable, and a contract would carry two voucher numbers with one of them
-// invisible. A private key in the page dictionary is ignored by every reader.
+// drops it instead of layering a second one on top. With no white box to hide
+// behind, this is what makes a correction a correction: without it the contract
+// would show both numbers, overprinted. A private key in the page dictionary is
+// ignored by every reader.
 const STAMP_KEY = PDFName.of('TandemVoucherStamp')
 
 function contentStreamRefs(page: ReturnType<PDFDocument['getPages']>[number]): PDFArray | undefined {
@@ -146,22 +138,17 @@ export async function stampVoucherNumber(
     page1.node.delete(STAMP_KEY)
   }
 
-  // Still drawn even though the old stream is gone: it also covers a stamp left
-  // by a version of this code that predates the key above.
-  page1.drawRectangle({
-    x: VOUCHER_STAMP.clear.x,
-    y: VOUCHER_STAMP.clear.y,
-    width: VOUCHER_STAMP.clear.width,
-    height: VOUCHER_STAMP.clear.height,
-    color: rgb(1, 1, 1),
-  })
+  // Counted before drawing, because an empty number draws nothing at all. Without
+  // this guard the "last stream on the page" below would be one of the template's
+  // own, and the next call would delete a piece of the contract.
+  const before = contentStreamRefs(page1)?.size() ?? 0
 
   const trimmed = voucherNumber?.trim() ?? ''
   if (trimmed.length > 0) {
-    page1.drawText(`Gutschein-Nr.: ${trimmed}`, {
-      x: VOUCHER_STAMP.text.x,
-      y: VOUCHER_STAMP.text.y,
-      size: VOUCHER_STAMP.text.size,
+    page1.drawText(trimmed, {
+      x: VOUCHER_STAMP.x,
+      y: VOUCHER_STAMP.y,
+      size: VOUCHER_STAMP.size,
       font,
       color: rgb(0, 0, 0),
     })
@@ -171,7 +158,7 @@ export async function stampVoucherNumber(
   // first draw call, so the stream just added is the last one on the page.
   const streams = contentStreamRefs(page1)?.asArray() ?? []
   const added = streams[streams.length - 1]
-  if (added instanceof PDFRef) page1.node.set(STAMP_KEY, added)
+  if (streams.length > before && added instanceof PDFRef) page1.node.set(STAMP_KEY, added)
 
   return Buffer.from(await doc.save())
 }

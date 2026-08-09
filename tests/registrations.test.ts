@@ -315,7 +315,7 @@ test('entering a voucher number prints it on the stored contract', async () => {
     payload: { payment_method: 'voucher', voucher_number: 'GS-2026-0042' },
   })
 
-  expect(await pdfContains(pdfPath, 'Gutschein-Nr.: GS-2026-0042')).toBe(true)
+  expect(await pdfContains(pdfPath, 'GS-2026-0042')).toBe(true)
   await app.close()
 })
 
@@ -341,7 +341,7 @@ test('correcting the number leaves only the corrected one on the contract', asyn
   expect(await pdfContains(pdfPath, 'GS-2026-0042')).toBe(false)
 
   await patch(null)
-  expect(await pdfContains(pdfPath, 'Gutschein-Nr.')).toBe(false)
+  expect(await pdfContains(pdfPath, 'GS-2026-4711')).toBe(false)
   await app.close()
 })
 

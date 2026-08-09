@@ -64,11 +64,14 @@ test('the text extractor actually sees drawn text (guards the assertions below)'
   expect(await pdfText(await stampVoucherNumber(contract, 'PROBE-1'))).toContain('PROBE-1')
 })
 
-test('stampVoucherNumber prints the number on the finished contract', async () => {
+test('stampVoucherNumber prints the bare number on the finished contract', async () => {
   const contract = await fillContractPdf(templateBytes, sampleData())
   const stamped = await stampVoucherNumber(contract, 'GS-2026-0815')
 
-  expect(await pdfText(stamped)).toContain('Gutschein-Nr.: GS-2026-0815')
+  const text = await pdfText(stamped)
+  expect(text).toContain('GS-2026-0815')
+  // No label: the blank line on the form already says what the number is.
+  expect(text).not.toContain('Gutschein-Nr.')
   expect((await PDFDocument.load(stamped)).getPageCount()).toBe(2)
 })
 
@@ -78,9 +81,9 @@ test('a corrected number replaces the old one instead of printing over it', asyn
   const twice = await stampVoucherNumber(once, 'GS-2026-4711')
 
   const text = await pdfText(twice)
-  expect(text).toContain('Gutschein-Nr.: GS-2026-4711')
-  // The white box under the new line is what makes this true on paper; here we
-  // can at least prove the old number is no longer drawn.
+  expect(text).toContain('GS-2026-4711')
+  // With no white box to hide behind, dropping the old content stream is the
+  // only thing keeping both numbers off the page.
   expect(text).not.toContain('GS-2026-0815')
 })
 
@@ -89,26 +92,43 @@ test('clearing the number leaves no stamp behind', async () => {
   const stamped = await stampVoucherNumber(contract, 'GS-2026-0815')
   const cleared = await stampVoucherNumber(stamped, null)
 
-  expect(await pdfText(cleared)).not.toContain('Gutschein-Nr.')
+  expect(await pdfText(cleared)).not.toContain('GS-2026-0815')
 })
 
 test('a blank number is treated as no number at all', async () => {
   const contract = await fillContractPdf(templateBytes, sampleData())
   const stamped = await stampVoucherNumber(contract, '   ')
+  const plain = await fillContractPdf(templateBytes, sampleData())
 
-  expect(await pdfText(stamped)).not.toContain('Gutschein-Nr.')
+  // Nothing drawn, so nothing added: the page keeps the content it arrived with.
+  const streams = async (b: Buffer) =>
+    (await PDFDocument.load(b)).getPages()[0].node.Contents()?.toString()
+  expect(await streams(stamped)).toBe(await streams(plain))
 })
 
-test('the stamp stays clear of the template header', async () => {
+test('clearing a number twice does not eat into the contract itself', async () => {
+  // The stamp is remembered by a key on the page. If an empty stamp wrongly
+  // claimed the last existing stream as its own, the next call would delete a
+  // piece of the template — and the signed original cannot be rebuilt.
+  const contract = await fillContractPdf(templateBytes, sampleData())
+  const once = await stampVoucherNumber(contract, null)
+  const twice = await stampVoucherNumber(once, null)
+  const thrice = await stampVoucherNumber(twice, 'GS-7')
+
+  const text = await pdfText(thrice)
+  expect(text).toContain('GS-7')
+  // The guest data drawn at registration must still be there.
+  expect(text).toContain('Mustermann')
+})
+
+test('the stamp sits on the blank line, clear of the template header', async () => {
   // Measured, not assumed: the topmost ink in Befoerderungsvertrag.pdf sits at
-  // y≈802. A stamp reaching into that would erase part of the club's header,
-  // and the signed original cannot be regenerated.
+  // y≈802, and the page is 842pt tall. The number is drawn at y=806 — on the
+  // blank line above the header, still inside a printer's margin.
   const contract = await fillContractPdf(templateBytes, sampleData())
   const stamped = await stampVoucherNumber(contract, 'GS-1')
   const page = (await PDFDocument.load(stamped)).getPages()[0]
 
-  // The white box is drawn at y=814 with height 16 — entirely above the header
-  // and entirely below the sheet edge.
-  expect(page.getHeight()).toBeGreaterThan(814 + 16)
-  expect(await pdfText(stamped)).toContain('Gutschein-Nr.: GS-1')
+  expect(page.getHeight()).toBeGreaterThan(806 + 11)
+  expect(await pdfText(stamped)).toContain('GS-1')
 })

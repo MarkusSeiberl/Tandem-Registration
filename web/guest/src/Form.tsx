@@ -104,9 +104,16 @@ export default function Form({ onNext, onCancel }: FormProps) {
   const errors = validate(values)
   const isValid = Object.keys(errors).length === 0
 
+  // Every field here is mandatory — there is no optional guest datum. `required`
+  // and aria-required say so before the guest has left a field empty, which the
+  // error messages can only do afterwards. The form keeps `noValidate`, so the
+  // browser's own English bubbles stay out of the way of the German messages.
   function field(name: keyof RawValues) {
     return {
       value: values[name],
+      required: true,
+      'aria-required': true,
+      'aria-invalid': showError(name as keyof Errors) ? true : undefined,
       onChange: (e: ChangeEvent<HTMLInputElement>) =>
         setValues((prev) => ({ ...prev, [name]: e.target.value })),
       onBlur: () => setTouched((prev) => ({ ...prev, [name]: true })),
@@ -152,6 +159,7 @@ export default function Form({ onNext, onCancel }: FormProps) {
   return (
     <section className="screen form-screen">
       <h1>Deine Daten</h1>
+      <p className="form-intro">Alle Felder sind Pflichtfelder.</p>
       <form onSubmit={handleSubmit} noValidate>
         <fieldset className="field-group">
           <legend>Person</legend>
@@ -174,7 +182,13 @@ export default function Form({ onNext, onCancel }: FormProps) {
           */}
           <div className="field">
             <span className="label" id="gender_label">Geschlecht</span>
-            <div className="radio-row" role="radiogroup" aria-labelledby="gender_label">
+            <div
+              className="radio-row"
+              role="radiogroup"
+              aria-labelledby="gender_label"
+              aria-required="true"
+              aria-invalid={showError('gender') ? true : undefined}
+            >
               {GENDERS.map((g) => (
                 <label key={g.value} className="radio-option">
                   <input

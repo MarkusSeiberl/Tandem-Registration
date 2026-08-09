@@ -10,7 +10,7 @@ import {
   COLLECTED_VIA, EXTRA_BOOKINGS, PAYMENT_METHODS, VOUCHER_SERVICES, WEIGHT_SURCHARGES,
   genderLabel,
 } from './labels'
-import { atLeast, formatEuro, priceLines, serviceOfVoucher } from './pricing'
+import { atLeast, formatEuro, priceLines, serviceOfVoucher, surchargeForWeight } from './pricing'
 import TrashIcon from './TrashIcon'
 
 export interface DetailProps {
@@ -38,6 +38,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   const [weightSurcharge, setWeightSurcharge] =
     useState<WeightSurcharge>(registration.weight_surcharge ?? 'none')
   const [cameraFlyerId, setCameraFlyerId] = useState<number | ''>(registration.camera_flyer_id ?? '')
+  const [notes, setNotes] = useState<string>(registration.notes ?? '')
 
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -85,6 +86,12 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   // closing. Worth a warning, not worth blocking a half-finished row from saving.
   const tillMissing = showVoucherPayment && voucherPaymentMethod === ''
 
+  // The surcharge is derived from the weight once, when the guest registers. From
+  // then on the operator owns it — waiving it is a legitimate exception. So this
+  // only reports the disagreement instead of correcting it.
+  const surchargeFromWeight = surchargeForWeight(registration.weight_kg)
+  const surchargeDeviates = weightSurcharge !== surchargeFromWeight
+
   async function handleSave() {
     setSaving(true)
     setError(null)
@@ -111,11 +118,15 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         weight_surcharge: weightSurcharge,
         // Clear a stale flyer selection if the booking no longer includes video.
         camera_flyer_id: showCameraFlyer ? (cameraFlyerId === '' ? null : cameraFlyerId) : null,
+        notes: notes.trim() === '' ? null : notes.trim(),
       })
       // The server owns the number; adopt whatever it stored so the field cannot
       // drift from the sheet.
       setPrice(updated.price ?? '')
       setPriceOverride(!!updated.price_override)
+      // Adopt the stored form of the note too, so the field shows what the sheet
+      // will show — the server trims it and turns an empty one into nothing.
+      setNotes(updated.notes ?? '')
       onSaved(updated)
       setSaved(true)
     } catch (err) {
@@ -341,10 +352,20 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
               ))}
             </select>
             {/*
-              Shown for orientation only — the surcharge is never derived from the
-              entered weight, because the manifest waives it as an exception.
+              Preset from the weight when the guest registered, and left alone
+              afterwards. The hint only points out a disagreement — waiving the
+              surcharge is the manifest's call, and a waiver that gets corrected
+              back on the next save is not a waiver.
             */}
-            <span className="field-hint">Eingetragenes Gewicht: {registration.weight_kg} kg</span>
+            <span className={surchargeDeviates ? 'field-hint warn' : 'field-hint'}>
+              {surchargeDeviates
+                ? `${registration.weight_kg} kg — ${
+                    surchargeFromWeight === 'none'
+                      ? 'kein Zuschlag fällig.'
+                      : `Zuschlag ${surchargeFromWeight === 'over_90' ? 'ab 90 kg' : 'ab 100 kg'} wäre fällig.`
+                  }`
+                : `Eingetragenes Gewicht: ${registration.weight_kg} kg`}
+            </span>
           </label>
 
           {/*
@@ -420,6 +441,24 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
               </label>
             )}
           </div>
+
+          {/*
+            Below the price box on purpose: a note about a special arrangement
+            explains the numbers above it. Placed among the dropdowns it would
+            read as one more thing to fill in on every row.
+          */}
+          <label className="field">
+            Anmerkungen
+            <textarea
+              name="notes"
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+            <span className="field-hint">
+              Besondere Vereinbarungen, Abweichungen, Sonderfälle. Steht im Excel-Export.
+            </span>
+          </label>
         </section>
       </div>
 

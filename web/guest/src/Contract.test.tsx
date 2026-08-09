@@ -30,10 +30,23 @@ function installFakeCanvasContext() {
   HTMLCanvasElement.prototype.setPointerCapture = vi.fn()
 }
 
+// Signing is only half the gate now; the data-protection box is the other half.
+function acknowledgePrivacy() {
+  fireEvent.click(screen.getByRole('checkbox'))
+}
+
+function sign() {
+  const canvas = document.querySelector('canvas.signature-pad') as HTMLCanvasElement
+  fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10, pointerId: 1 })
+  fireEvent.pointerMove(canvas, { clientX: 15, clientY: 12, pointerId: 1 })
+  fireEvent.pointerUp(canvas, { clientX: 15, clientY: 12, pointerId: 1 })
+}
+
 describe('Contract', () => {
   beforeEach(() => {
     installFakeCanvasContext()
     vi.spyOn(api, 'getContract').mockResolvedValue('Vertragstext hier.')
+    vi.spyOn(api, 'getPrivacyText').mockResolvedValue('Datenschutzinformation hier.')
   })
 
   afterEach(() => {
@@ -46,13 +59,11 @@ describe('Contract', () => {
 
     await waitFor(() => screen.getByText('Vertragstext hier.'))
 
-    const canvas = document.querySelector('canvas.signature-pad') as HTMLCanvasElement
     const submit = screen.getByRole('button', { name: 'Weiter' })
     expect(submit).toBeDisabled()
 
-    fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10, pointerId: 1 })
-    fireEvent.pointerMove(canvas, { clientX: 15, clientY: 12, pointerId: 1 })
-    fireEvent.pointerUp(canvas, { clientX: 15, clientY: 12, pointerId: 1 })
+    sign()
+    acknowledgePrivacy()
 
     expect(submit).toBeEnabled()
 
@@ -67,19 +78,65 @@ describe('Contract', () => {
     render(<Contract onNext={onNext} />)
     await waitFor(() => screen.getByText('Vertragstext hier.'))
 
-    const canvas = document.querySelector('canvas.signature-pad') as HTMLCanvasElement
     const submit = screen.getByRole('button', { name: 'Weiter' })
     const clear = screen.getByRole('button', { name: 'Löschen' })
 
-    fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10, pointerId: 1 })
-    fireEvent.pointerMove(canvas, { clientX: 15, clientY: 12, pointerId: 1 })
-    fireEvent.pointerUp(canvas, { clientX: 15, clientY: 12, pointerId: 1 })
+    sign()
+    acknowledgePrivacy()
     expect(submit).toBeEnabled()
 
     fireEvent.click(clear)
 
     expect(submit).toBeDisabled()
     expect(onNext).not.toHaveBeenCalled()
+  })
+
+  it('keeps "Weiter" shut on a signature alone, without the data-protection box', async () => {
+    const onNext = vi.fn()
+    render(<Contract onNext={onNext} />)
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    sign()
+
+    const submit = screen.getByRole('button', { name: 'Weiter' })
+    expect(submit).toBeDisabled()
+    fireEvent.click(submit)
+    expect(onNext).not.toHaveBeenCalled()
+  })
+
+  it('keeps "Weiter" shut on the box alone, without a signature', async () => {
+    render(<Contract onNext={vi.fn()} />)
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    acknowledgePrivacy()
+
+    expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+  })
+
+  it('shows the full data-protection notice on request', async () => {
+    render(<Contract onNext={vi.fn()} />)
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    // Folded away by default: the guest has one contract to read, not two.
+    expect(screen.queryByText('Datenschutzinformation hier.')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Datenschutzinformation lesen' }))
+
+    expect(screen.getByText('Datenschutzinformation hier.')).toBeInTheDocument()
+  })
+
+  it('offers no box to tick when the notice could not be loaded', async () => {
+    // Ticking a box that stands for nothing would be worse than not offering it.
+    vi.spyOn(api, 'getPrivacyText').mockRejectedValue(new Error('offline'))
+    render(<Contract onNext={vi.fn()} />)
+
+    await waitFor(() =>
+      screen.getByText(
+        'Die Datenschutzinformation konnte nicht geladen werden. Bitte wende dich an das Personal.'
+      )
+    )
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
   })
 
   it('shows a message when there is no contract text configured', async () => {

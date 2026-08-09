@@ -483,7 +483,8 @@ h2 {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   font: inherit;
   padding: 8px 10px;
   border: 2px solid var(--border);
@@ -492,13 +493,27 @@ h2 {
   color: var(--text);
 }
 
+/* Only vertical: a note growing sideways would drag the whole column with it. */
+.field textarea {
+  resize: vertical;
+  min-height: 62px;
+}
+
 /* Sits under a field to explain what it means without competing with the label
-   above it — used for the voucher/extra distinction and the guest's weight next
-   to the (deliberately independent) surcharge picker. */
+   above it — used for the voucher/extra distinction and for the guest's weight
+   beside the surcharge picker. */
 .field-hint {
   font-size: 12px;
   color: var(--text);
   opacity: 0.65;
+}
+
+/* The selected surcharge no longer matches the weight the guest entered. Worth
+   seeing, never worth overriding — the waiver belongs to the operator. */
+.field-hint.warn {
+  color: var(--ember);
+  font-weight: 600;
+  opacity: 1;
 }
 
 /* A locked field is still readable, but clearly not waiting for input. */

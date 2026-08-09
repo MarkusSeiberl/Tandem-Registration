@@ -57,7 +57,7 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
 
   // Draw a real multi-segment signature stroke on the canvas so `hasDrawn`
   // flips true and the PNG isn't blank. Signing this screen submits directly —
-  // there is no separate checkbox or later sign screen anymore.
+  // there is no later sign screen anymore.
   const canvas = page.locator('canvas.signature-pad')
   await expect(canvas).toBeVisible()
   const box = await canvas.boundingBox()
@@ -70,6 +70,10 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   await page.mouse.up()
 
   const signWeiter = page.getByRole('button', { name: 'Weiter' })
+  // Signing is not enough on its own: the data-protection notice has to be
+  // acknowledged as a separate act before the registration can be sent.
+  await expect(signWeiter).toBeDisabled()
+  await page.locator('.privacy-check input').check()
   await expect(signWeiter).toBeEnabled()
 
   const [submitResponse] = await Promise.all([

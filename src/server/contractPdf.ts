@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { PDFArray, PDFDocument, PDFName, PDFRef, StandardFonts, rgb } from 'pdf-lib'
 
 export interface ContractPdfData {
   firstName: string
@@ -33,6 +33,19 @@ const PAGE1 = {
   height: { x: 180, y: 580 },
   weight: { x: 315, y: 580 },
 }
+
+// The voucher number is added later than everything else — the manifest only
+// learns it when the guest hands the voucher over, long after the contract was
+// signed and written to disk. It goes on the blank line at the top-left, where
+// the operator sees it without unfolding the page.
+//
+// Bare number, no label: the line it sits on already says what it is.
+//
+// No white box either, which makes removing the previous content stream (see
+// STAMP_KEY below) the *only* thing standing between a corrected number and a
+// contract showing two of them. That mechanism is not an optimisation here — it
+// is the erase.
+const VOUCHER_STAMP = { x: 40, y: 806, size: 11 }
 
 const PAGE2 = {
   ort: { x: 85, y: 82 },
@@ -85,4 +98,67 @@ export async function fillContractPdf(
 
   const bytes = await doc.save()
   return Buffer.from(bytes)
+}
+
+// Marks the content stream this module last stamped onto page 1, so a re-stamp
+// drops it instead of layering a second one on top. With no white box to hide
+// behind, this is what makes a correction a correction: without it the contract
+// would show both numbers, overprinted. A private key in the page dictionary is
+// ignored by every reader.
+const STAMP_KEY = PDFName.of('TandemVoucherStamp')
+
+function contentStreamRefs(page: ReturnType<PDFDocument['getPages']>[number]): PDFArray | undefined {
+  const contents = page.node.get(PDFName.of('Contents'))
+  const resolved = contents instanceof PDFRef ? page.node.context.lookup(contents) : contents
+  return resolved instanceof PDFArray ? resolved : undefined
+}
+
+// Stamps (or clears) the voucher number on an already-generated contract PDF.
+// Re-stampable by design: the previous stamp is removed first, so calling this
+// repeatedly with different numbers leaves exactly one number in the document,
+// and an empty `voucherNumber` leaves none.
+export async function stampVoucherNumber(
+  pdfBytes: Uint8Array,
+  voucherNumber: string | null
+): Promise<Buffer> {
+  const doc = await PDFDocument.load(pdfBytes)
+  const font = await doc.embedFont(StandardFonts.HelveticaBold)
+  const [page1] = doc.getPages()
+
+  const previous = page1.node.get(STAMP_KEY)
+  if (previous instanceof PDFRef) {
+    const contents = contentStreamRefs(page1)
+    const index = contents?.asArray()
+      .findIndex((ref) => ref instanceof PDFRef && ref.toString() === previous.toString())
+    if (contents && index !== undefined && index >= 0) contents.remove(index)
+    // Dropping it from Contents only unlinks it — the object would still be
+    // written out, and the old number would still be in the file for anyone who
+    // looks past the renderer. Delete it outright.
+    page1.node.context.delete(previous)
+    page1.node.delete(STAMP_KEY)
+  }
+
+  // Counted before drawing, because an empty number draws nothing at all. Without
+  // this guard the "last stream on the page" below would be one of the template's
+  // own, and the next call would delete a piece of the contract.
+  const before = contentStreamRefs(page1)?.size() ?? 0
+
+  const trimmed = voucherNumber?.trim() ?? ''
+  if (trimmed.length > 0) {
+    page1.drawText(trimmed, {
+      x: VOUCHER_STAMP.x,
+      y: VOUCHER_STAMP.y,
+      size: VOUCHER_STAMP.size,
+      font,
+      color: rgb(0, 0, 0),
+    })
+  }
+
+  // pdf-lib appends the operators above to a content stream it registers on the
+  // first draw call, so the stream just added is the last one on the page.
+  const streams = contentStreamRefs(page1)?.asArray() ?? []
+  const added = streams[streams.length - 1]
+  if (streams.length > before && added instanceof PDFRef) page1.node.set(STAMP_KEY, added)
+
+  return Buffer.from(await doc.save())
 }

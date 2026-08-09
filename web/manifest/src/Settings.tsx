@@ -7,6 +7,8 @@ export default function Settings() {
   const [exportDir, setExportDir] = useState('')
   const [jumpLocation, setJumpLocation] = useState('')
   const [backupDir, setBackupDir] = useState('')
+  const [contractText, setContractText] = useState('')
+  const [privacyText, setPrivacyText] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -16,10 +18,15 @@ export default function Settings() {
   const [backupMessage, setBackupMessage] = useState<string | null>(null)
   const [backupError, setBackupError] = useState<string | null>(null)
 
-  function applySettings(cfg: { exportDir: string; jumpLocation: string; backupDir: string }) {
+  function applySettings(cfg: {
+    exportDir: string; jumpLocation: string; backupDir: string
+    contractText: string; privacyText: string
+  }) {
     setExportDir(cfg.exportDir)
     setJumpLocation(cfg.jumpLocation)
     setBackupDir(cfg.backupDir)
+    setContractText(cfg.contractText)
+    setPrivacyText(cfg.privacyText)
   }
 
   useEffect(() => {
@@ -36,7 +43,9 @@ export default function Settings() {
     try {
       // The server merges the price and payout blocks, so leaving them out here
       // keeps whatever the Stammdaten screen saved.
-      const cfg = await putSettings({ exportDir, jumpLocation, backupDir })
+      const cfg = await putSettings({
+        exportDir, jumpLocation, backupDir, contractText, privacyText,
+      })
       applySettings(cfg)
       setSaved(true)
     } catch (err) {
@@ -99,6 +108,40 @@ export default function Settings() {
             setSaved(false)
           }}
         />
+      </label>
+
+      {/*
+        Both texts the guest gets to read before signing. They live here rather
+        than only in config.json because a wrong address or an outdated retention
+        period is a legal problem, and fixing it must not need a new build.
+      */}
+      <label className="field">
+        Datenschutztext
+        <textarea
+          rows={10}
+          value={privacyText}
+          onChange={(e) => {
+            setPrivacyText(e.target.value)
+            setSaved(false)
+          }}
+        />
+        <span className="field-hint">
+          Wird dem Gast vor der Unterschrift gezeigt und muss von ihm bestätigt werden.
+          Angaben in eckigen Klammern ersetzen.
+        </span>
+      </label>
+
+      <label className="field">
+        Vertragstext
+        <textarea
+          rows={10}
+          value={contractText}
+          onChange={(e) => {
+            setContractText(e.target.value)
+            setSaved(false)
+          }}
+        />
+        <span className="field-hint">Der Beförderungsvertrag, den der Gast liest und unterschreibt.</span>
       </label>
 
       {error && <p className="error">{error}</p>}

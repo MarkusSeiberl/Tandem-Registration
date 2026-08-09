@@ -6,7 +6,7 @@ export interface GuestInput {
   age: number; height_cm: number; weight_kg: number
   street: string; postal_code: string; city: string
   email: string; phone: string
-  signature_png: string; accepted_terms: true
+  signature_png: string; accepted_terms: true; privacy_ack: true
 }
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
@@ -32,5 +32,9 @@ export function validateGuest(input: any):
   if (typeof input?.signature_png !== 'string' ||
       !input.signature_png.startsWith('data:image/png')) e.push('Unterschrift fehlt')
   if (input?.accepted_terms !== true) e.push('Bedingungen nicht akzeptiert')
+  // Separate from accepted_terms on purpose: bundling the data-protection notice
+  // into the contract acceptance is exactly the packaging Art. 7(2) DSGVO does
+  // not recognise, so the guest has to tick it as its own act.
+  if (input?.privacy_ack !== true) e.push('Datenschutzinformation nicht bestätigt')
   return e.length ? { ok: false, errors: e } : { ok: true, value: input as GuestInput }
 }

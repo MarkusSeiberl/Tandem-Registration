@@ -4,10 +4,10 @@ import { promises as fs } from 'fs'
 import path from 'path'
 import { validateGuest } from '../validation'
 import { SseHub } from '../sse'
-import { fillContractPdf } from '../contractPdf'
+import { fillContractPdf, stampVoucherNumber } from '../contractPdf'
 import {
-  computePrice, COLLECTED_VIA, EXTRA_BOOKINGS, PAYMENT_METHODS, VOUCHER_SERVICES,
-  WEIGHT_SURCHARGES,
+  computePrice, surchargeForWeight, COLLECTED_VIA, EXTRA_BOOKINGS, PAYMENT_METHODS,
+  VOUCHER_SERVICES, WEIGHT_SURCHARGES,
 } from '../pricing'
 import type { Config } from '../config'
 
@@ -73,20 +73,27 @@ export function registerRegistrationRoutes(
     const filename = await writeContractPdf(vertraegeDir, base, pdf)
 
     // The guest never picks anything priced, so a fresh row starts at the plain
-    // jump price. The manifest recomputes it as soon as it saves an extra, a
-    // surcharge or a voucher.
+    // jump price. The manifest recomputes it as soon as it saves an extra or a
+    // voucher. The weight surcharge is the one exception: it follows from the
+    // weight the guest just entered, so it is decided here rather than left for
+    // someone to notice — and the starting price has to include it.
+    const weightSurcharge = surchargeForWeight(v.weight_kg)
     const info = db.prepare(`INSERT INTO registrations
       (first_name,last_name,gender,age,height_cm,weight_kg,
        street,postal_code,city,email,phone,contract_pdf_filename,
-       accepted_terms,created_at,jump_date,
+       accepted_terms,privacy_ack_at,created_at,jump_date,
        extra_booking,weight_surcharge,price,price_override)
       VALUES (@first_name,@last_name,@gender,@age,@height_cm,@weight_kg,
        @street,@postal_code,@city,@email,@phone,
-       @contract_pdf_filename,1,@created_at,@jump_date,
-       'none','none',@price,0)`)
+       @contract_pdf_filename,1,@privacy_ack_at,@created_at,@jump_date,
+       'none',@weight_surcharge,@price,0)`)
       .run({
         ...v, contract_pdf_filename: filename, created_at: new Date().toISOString(),
-        jump_date: jumpDate, price: computePrice({}, cfgRef.current.prices),
+        // The server's clock, not the tablet's: when a guest acknowledged the
+        // data-protection notice is a record the club may have to stand behind.
+        privacy_ack_at: new Date().toISOString(),
+        jump_date: jumpDate, weight_surcharge: weightSurcharge,
+        price: computePrice({ weight_surcharge: weightSurcharge }, cfgRef.current.prices),
       })
     sse.broadcast('changed', { id: info.lastInsertRowid })
     // Best-effort desktop notification on the server machine; never blocks the
@@ -121,7 +128,7 @@ export function registerRegistrationRoutes(
 
   const ALLOWED = ['tandem_master_id', 'load_number', 'price', 'price_override',
     'payment_method', 'voucher_payment_method', 'voucher_number', 'voucher_service',
-    'extra_booking', 'weight_surcharge', 'camera_flyer_id', 'paid_at'] as const
+    'extra_booking', 'weight_surcharge', 'camera_flyer_id', 'paid_at', 'notes'] as const
   // Changing any of these changes what the guest owes, so a non-overridden price
   // has to be recomputed in the same statement.
   const PRICING_FIELDS = [
@@ -154,6 +161,15 @@ export function registerRegistrationRoutes(
         !COLLECTED_VIA.includes(body.voucher_payment_method))
       return reply.code(400).send({ error: 'Zahlungsart der Zuzahlung ungültig' })
 
+    // Free text, so nothing to validate beyond the type — but an empty note is
+    // stored as NULL rather than '' so the export shows a blank cell either way.
+    if ('notes' in body) {
+      if (body.notes !== null && typeof body.notes !== 'string')
+        return reply.code(400).send({ error: 'Anmerkung ungültig' })
+      const trimmed = typeof body.notes === 'string' ? body.notes.trim() : ''
+      body.notes = trimmed === '' ? null : trimmed
+    }
+
     const current = db.prepare('SELECT * FROM registrations WHERE id=?').get(id) as any
     if (!current) return reply.code(404).send()
 
@@ -181,11 +197,32 @@ export function registerRegistrationRoutes(
       for (const k of keys) params[k] = body[k]
       const result = db.prepare(`UPDATE registrations SET ${set} WHERE id=@id`).run(params)
       if (result.changes === 0) return reply.code(404).send()
+      // Only when the number actually changed: every save from the detail screen
+      // carries a voucher_number, and rewriting the signed PDF on each of them
+      // would churn the file for nothing.
+      if ('voucher_number' in body && body.voucher_number !== current.voucher_number) {
+        await restampContract(current.contract_pdf_filename, body.voucher_number)
+      }
       sse.broadcast('changed', { id })
       return db.prepare('SELECT * FROM registrations WHERE id=?').get(id)
     }
     return current
   })
+
+  // Writes the voucher number onto the contract that was signed at registration
+  // time. Best-effort on purpose: the row is the record that matters, and losing
+  // an operator's till entry because a PDF was locked by a viewer would be the
+  // worse failure. The manifest can always check the result via "Vertrag öffnen".
+  async function restampContract(filename: string | null, voucherNumber: string | null) {
+    if (!filename) return
+    const filePath = path.join(cfgRef.current.exportDir, 'vertaege', filename)
+    try {
+      const stamped = await stampVoucherNumber(await fs.readFile(filePath), voucherNumber)
+      await fs.writeFile(filePath, stamped)
+    } catch (err) {
+      app.log.error({ err, filename }, 'Gutschein-Nr. konnte nicht auf den Vertrag gedruckt werden')
+    }
+  }
 
   app.delete('/api/registrations/:id', async (req, reply) => {
     const id = (req.params as any).id

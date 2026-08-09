@@ -82,6 +82,11 @@ export interface Registration {
   jump_date: string
   // NULL heißt: noch nicht kassiert. Sonst der Zeitpunkt, den der Server gesetzt hat.
   paid_at: string | null
+  // Freitext des Manifests zu Sondervereinbarungen.
+  notes: string | null
+  // Wann der Gast die Datenschutzinformation bestätigt hat. NULL bei Zeilen aus
+  // der Zeit davor — das heißt nicht, dass jemand abgelehnt hätte.
+  privacy_ack_at: string | null
 }
 
 export interface StammdatenItem {
@@ -92,6 +97,7 @@ export interface StammdatenItem {
 export interface Settings {
   exportDir: string
   contractText: string
+  privacyText: string
   jumpLocation: string
   backupDir: string
   prices: Prices
@@ -114,6 +120,7 @@ export interface ManifestPatch {
   camera_flyer_id?: number | null
   // Ein Schalter, kein Zeitpunkt — den Zeitstempel setzt der Server.
   paid?: boolean
+  notes?: string | null
 }
 
 export interface ExportResult {

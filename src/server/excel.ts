@@ -10,6 +10,9 @@ export interface Column {
   key: string
   header: string
   numFmt?: string
+  // Overrides the uniform column width below. Only worth setting for a column
+  // whose content is a sentence rather than a name or an amount.
+  width?: number
 }
 
 export const DEFAULT_COLUMNS: Column[] = [
@@ -29,6 +32,9 @@ export const DEFAULT_COLUMNS: Column[] = [
   { key: 'extra_booking', header: 'Leistung' },
   { key: 'weight_surcharge', header: 'Zuschlag' },
   { key: 'camera_flyer_id', header: 'Kameraflieger' },
+  // Last, and wide: this is where a special arrangement gets explained, and an
+  // explanation clipped to the standard width is one nobody can read.
+  { key: 'notes', header: 'Anmerkungen', width: 50 },
 ]
 
 export interface MetaRow {
@@ -121,7 +127,7 @@ export async function buildWorkbook(
     total.getCell(3).numFmt = EURO_FORMAT
   }
 
-  columns.forEach((_, i) => { ws.getColumn(i + 1).width = 18 })
+  columns.forEach((c, i) => { ws.getColumn(i + 1).width = c.width ?? 18 })
   if (payouts.length) {
     PAYOUT_COLUMN_WIDTHS.forEach((width, i) => {
       const column = ws.getColumn(i + 1)

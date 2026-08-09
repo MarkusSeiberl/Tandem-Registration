@@ -14,6 +14,19 @@ export const EXTRA_BOOKINGS: ExtraBooking[] = ['none', 'video', 'video_photo']
 export const VOUCHER_SERVICES: VoucherService[] = ['jump', 'jump_video', 'jump_video_photo']
 export const WEIGHT_SURCHARGES: WeightSurcharge[] = ['none', 'over_90', 'over_100']
 
+// The surcharge a weight calls for at the club's thresholds. Applied once, when
+// the registration is created, so the row reaches the manifest with the right
+// surcharge and the right price instead of a 'none' nobody thought about. It is
+// deliberately never re-derived on update: the manifest waives the surcharge as
+// an exception, and a waiver that reappears on the next save is not a waiver.
+export function surchargeForWeight(kg: number): WeightSurcharge {
+  if (!Number.isFinite(kg)) return 'none'
+  // "ab 90 kg" on the price list means 90 counts, not 91.
+  if (kg >= 100) return 'over_100'
+  if (kg >= 90) return 'over_90'
+  return 'none'
+}
+
 export interface PricedFields {
   payment_method?: PaymentMethod | null
   voucher_service?: VoucherService | null

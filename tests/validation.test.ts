@@ -5,7 +5,7 @@ const base = { first_name:'A', last_name:'B', gender:'female', age:30,
   height_cm:170, weight_kg:80,
   street:'X 1', postal_code:'4240', city:'Freistadt',
   email:'a@b.de', phone:'0660', signature_png:'data:image/png;base64,x',
-  accepted_terms:true }
+  accepted_terms:true, privacy_ack:true }
 
 test('accepts valid input', () => {
   expect(validateGuest(base).ok).toBe(true)
@@ -89,4 +89,16 @@ test('signature_png must be PNG data URI', () => {
 test('signature_png must be string', () => {
   expect(validateGuest({ ...base, signature_png:undefined }).ok).toBe(false)
   expect(validateGuest({ ...base, signature_png:null }).ok).toBe(false)
+})
+
+// The data-protection acknowledgement is its own field, not part of accepting
+// the contract: bundling the two is exactly what Art. 7 Abs. 2 DSGVO rejects.
+test('rejects a registration without the data-protection acknowledgement', () => {
+  const r = validateGuest({ ...base, privacy_ack: undefined })
+  expect(r.ok).toBe(false)
+  expect(r.ok === false && r.errors).toContain('Datenschutzinformation nicht bestätigt')
+})
+
+test('accepting the contract does not stand in for the acknowledgement', () => {
+  expect(validateGuest({ ...base, accepted_terms: true, privacy_ack: false }).ok).toBe(false)
 })

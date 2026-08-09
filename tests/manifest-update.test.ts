@@ -6,7 +6,7 @@ const validBody = () => ({
   height_cm: 170, weight_kg: 80,
   street: 'X', postal_code: '4240', city: 'Freistadt',
   email: 'a@b.de', phone: '1',
-  signature_png: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', accepted_terms: true
+  signature_png: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', accepted_terms: true, privacy_ack: true
 })
 
 test('patch adds manifest fields', async () => {
@@ -484,4 +484,38 @@ test('broadcasts a "changed" SSE event on patch', async () => {
     await reader.cancel().catch(() => {})
     await app.close()
   }
+})
+
+test('patch stores a note and trims it', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { notes: '  Zahlt den Rest am Sonntag  ' },
+  })
+  expect(res.statusCode).toBe(200)
+  expect(res.json().notes).toBe('Zahlt den Rest am Sonntag')
+  await app.close()
+})
+
+test('an emptied note becomes NULL rather than an empty string', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  await app.inject({ method: 'PATCH', url: `/api/registrations/${id}`, payload: { notes: 'Alt' } })
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`, payload: { notes: '   ' },
+  })
+  // Both forms print as a blank cell, but only NULL says "there is no note".
+  expect(res.json().notes).toBeNull()
+  await app.close()
+})
+
+test('rejects a note that is not text', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`, payload: { notes: 42 },
+  })
+  expect(res.statusCode).toBe(400)
+  await app.close()
 })

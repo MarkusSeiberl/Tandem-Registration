@@ -13,6 +13,7 @@ vi.mock('./api', () => ({
 const CONFIG: SettingsType = {
   exportDir: 'C:/Tandem',
   contractText: '',
+  privacyText: '',
   jumpLocation: 'Freistadt',
   backupDir: '',
   prices: { jump: 270, video: 100, video_photo: 120, weight_over_90: 40, weight_over_100: 60 },

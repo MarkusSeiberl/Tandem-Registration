@@ -36,6 +36,13 @@ export async function getContract(): Promise<string> {
   return data.text ?? ''
 }
 
+export async function getPrivacyText(): Promise<string> {
+  const res = await fetch(apiUrl('/api/privacy'))
+  if (!res.ok) throw new Error('Datenschutzinformation konnte nicht geladen werden')
+  const data = (await res.json()) as { text?: string }
+  return data.text ?? ''
+}
+
 export interface RegistrationPayload {
   first_name: string
   last_name: string
@@ -50,6 +57,9 @@ export interface RegistrationPayload {
   phone: string
   signature_png: string
   accepted_terms: true
+  // The guest's acknowledgement of the data-protection notice, kept apart from
+  // accepted_terms: one covers the contract, the other the Art. 13 information.
+  privacy_ack: true
 }
 
 export type SubmitResult =

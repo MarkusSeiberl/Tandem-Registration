@@ -53,9 +53,10 @@ keine Einwilligung.
 - Neuer Konfigurationsschlüssel `privacyText` mit deutschem Standardtext, geliefert
   über `GET /api/privacy` — anders als `/api/contract` in `index.ts` registriert,
   damit die Route von den Server-Tests erreichbar ist.
-- Der Standardtext enthält **Platzhalter** für Verantwortlichen (Name, Anschrift,
-  Kontakt) und Aufbewahrungsdauer. Diese Angaben erfindet niemand; der Verein
-  trägt sie ein.
+- Verantwortlicher, ZVR, Anschrift und Kontakt stehen im Standardtext und stammen
+  aus dem Impressum des Vereins. Die **Aufbewahrungsdauer** bleibt ein Platzhalter:
+  sie folgt aus keiner öffentlichen Quelle, und eine erfundene Frist wäre in einer
+  Datenschutzinformation schlimmer als eine sichtbar offene.
 - `config.example.json` bekommt den Schlüssel bewusst **nicht**. Ein fehlender
   Schlüssel fällt auf den Standardtext zurück, ein leerer würde ihn löschen — und
   ohne Text gibt es keine Checkbox und damit keine Registrierung mehr.

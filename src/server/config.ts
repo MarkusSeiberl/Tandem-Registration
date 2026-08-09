@@ -97,10 +97,11 @@ Ich bestätige durch den TM eine umfassende Einweisung für den Tandem-Passagier
 // was er später widerrufen und damit die Löschung eines aufbewahrungspflichtigen
 // Sprungdatensatzes verlangen könnte.
 //
-// Die Angaben in eckigen Klammern kennt nur der Verein. Sie bleiben bewusst als
-// Platzhalter stehen, damit eine unausgefüllte Datenschutzinformation auffällt,
-// statt mit erfundenen Daten echt auszusehen.
-const PRIVACY_TEXT = `Verantwortlicher für die Verarbeitung deiner Daten ist der HFSC-Freistadt, [Anschrift des Vereins], erreichbar unter [E-Mail-Adresse des Vereins].
+// Name, Anschrift, ZVR und Kontakt stammen aus dem Impressum des Vereins
+// (skydive-freistadt.at). Die Aufbewahrungsdauer steht weiterhin als Platzhalter
+// darin: sie folgt aus keiner öffentlichen Quelle, und eine erfundene Frist in
+// einer Datenschutzinformation wäre schlimmer als eine sichtbar offene.
+const PRIVACY_TEXT = `Verantwortlicher für die Verarbeitung deiner Daten ist der Heeresfallschirmspringerclub Freistadt (HFSC-Freistadt), ZVR 893240645, c/o Mag. Martin Brunner, Klauberweg 8/2/37, 4030 Linz, Österreich, erreichbar unter mailpoint@skydive-freistadt.at oder +43 664 7965892.
 
 Welche Daten wir verarbeiten: Vor- und Nachname, Geschlecht, Alter, Größe, Gewicht, Anschrift, E-Mail-Adresse, Telefonnummer, deine Unterschrift auf dem Beförderungsvertrag sowie die Angaben zu deinem Sprung (Datum, Load, gebuchte Leistung, bezahlter Betrag).
 
@@ -110,7 +111,7 @@ Wie lange: für die Dauer der gesetzlichen Aufbewahrungsfristen, danach werden d
 
 An wen wir sie weitergeben: an niemanden außerhalb des Vereins, außer wenn wir gesetzlich dazu verpflichtet sind oder es zur Abwicklung eines Versicherungsfalls nötig ist.
 
-Deine Rechte: Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung, Datenübertragbarkeit und Widerspruch. Wende dich dafür an die oben genannte Adresse. Außerdem kannst du dich bei der Österreichischen Datenschutzbehörde beschweren.`
+Deine Rechte: Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung, Datenübertragbarkeit und Widerspruch. Wende dich dafür an mailpoint@skydive-freistadt.at. Außerdem kannst du dich bei der Österreichischen Datenschutzbehörde beschweren (Barichgasse 40-42, 1030 Wien, dsb@dsb.gv.at).`
 
 export function loadConfig(dir: string): Config {
   const p = path.join(dir, 'config.json')

@@ -41,6 +41,9 @@ function App() {
       ...formValues,
       signature_png: signaturePng,
       accepted_terms: true,
+      // Contract.tsx will not call onNext without the box ticked, so reaching
+      // this line already means the guest acknowledged the notice.
+      privacy_ack: true,
     })
     setSubmitting(false)
     if (result.ok) {

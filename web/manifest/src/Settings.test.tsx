@@ -13,7 +13,8 @@ vi.mock('./api', () => ({
 
 const CONFIG: SettingsType = {
   exportDir: 'C:/Tandem',
-  contractText: '',
+  contractText: 'Beförderungsvertrag …',
+  privacyText: 'Datenschutzinformation …',
   jumpLocation: 'Freistadt',
   backupDir: '',
   prices: { jump: 270, video: 100, video_photo: 120, weight_over_90: 40, weight_over_100: 60 },
@@ -36,9 +37,30 @@ describe('Settings', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
 
     await waitFor(() => expect(api.putSettings).toHaveBeenCalled())
+    // The two texts travel back unchanged: the screen loaded them, so leaving
+    // them out of the save would blank whatever it just displayed.
     expect(vi.mocked(api.putSettings).mock.calls[0][0]).toEqual({
       exportDir: 'C:/Tandem', jumpLocation: 'Linz', backupDir: '',
+      contractText: 'Beförderungsvertrag …', privacyText: 'Datenschutzinformation …',
     })
+  })
+
+  it('edits the texts the guest is shown before signing', async () => {
+    render(<Settings />)
+    await screen.findByLabelText('Export-Verzeichnis')
+
+    const privacy = screen.getByLabelText(/Datenschutztext/) as HTMLTextAreaElement
+    expect(privacy.value).toBe('Datenschutzinformation …')
+    expect((screen.getByLabelText(/Vertragstext/) as HTMLTextAreaElement).value)
+      .toBe('Beförderungsvertrag …')
+
+    await userEvent.clear(privacy)
+    await userEvent.type(privacy, 'Neue Fassung')
+    await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+    await waitFor(() => expect(api.putSettings).toHaveBeenCalled())
+    expect(vi.mocked(api.putSettings).mock.calls[0][0])
+      .toMatchObject({ privacyText: 'Neue Fassung' })
   })
 
   it('leaves the amounts to the Stammdaten screen', async () => {

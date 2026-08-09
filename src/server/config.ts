@@ -42,6 +42,11 @@ export const DEFAULT_PAYOUTS: Payouts = {
 export interface Config {
   exportDir: string
   contractText: string
+  // Was der Gast vor der Unterschrift zur Kenntnis nimmt. Getrennt vom
+  // Vertragstext, weil eine Datenschutzinformation nach Art. 13 DSGVO nicht in
+  // einer Vertragswand untergehen darf — und weil sie sich unabhängig davon
+  // ändert (neue Anschrift, neue Aufbewahrungsfrist).
+  privacyText: string
   jumpLocation: string
   backupDir: string
   prices: Prices
@@ -87,10 +92,31 @@ Ich bestätige, dass ich den obigen Text genau gelesen habe und ich nur dann in 
 
 Ich bestätige durch den TM eine umfassende Einweisung für den Tandem-Passagier-Fallschirmsprung erhalten zu haben und über das richtige Verhalten informiert worden zu sein. Insbesondere bestätige ich, dass die Absprunghaltung, die Freifallhaltung und die Landehaltung durch den TM vorgezeigt und von mir am Boden nachvollzogen wurden und keine Fragen dazu mehr bestehen.`
 
+// Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Vertragserfüllung), nicht eine
+// Einwilligung: der Gast nimmt diese Information zur Kenntnis, er erlaubt nichts,
+// was er später widerrufen und damit die Löschung eines aufbewahrungspflichtigen
+// Sprungdatensatzes verlangen könnte.
+//
+// Die Angaben in eckigen Klammern kennt nur der Verein. Sie bleiben bewusst als
+// Platzhalter stehen, damit eine unausgefüllte Datenschutzinformation auffällt,
+// statt mit erfundenen Daten echt auszusehen.
+const PRIVACY_TEXT = `Verantwortlicher für die Verarbeitung deiner Daten ist der HFSC-Freistadt, [Anschrift des Vereins], erreichbar unter [E-Mail-Adresse des Vereins].
+
+Welche Daten wir verarbeiten: Vor- und Nachname, Geschlecht, Alter, Größe, Gewicht, Anschrift, E-Mail-Adresse, Telefonnummer, deine Unterschrift auf dem Beförderungsvertrag sowie die Angaben zu deinem Sprung (Datum, Load, gebuchte Leistung, bezahlter Betrag).
+
+Wozu wir sie verarbeiten: zur Durchführung und Abrechnung deines Tandemsprungs, also zur Erfüllung des Beförderungsvertrags (Art. 6 Abs. 1 lit. b DSGVO), sowie zur Erfüllung gesetzlicher Aufzeichnungs- und Aufbewahrungspflichten (Art. 6 Abs. 1 lit. c DSGVO). Größe und Gewicht brauchen wir für die Auswahl der passenden Ausrüstung — sie sind eine Sicherheitsangabe, keine Formalität.
+
+Wie lange: für die Dauer der gesetzlichen Aufbewahrungsfristen, danach werden die Daten gelöscht. [Aufbewahrungsdauer eintragen, z. B. 7 Jahre.]
+
+An wen wir sie weitergeben: an niemanden außerhalb des Vereins, außer wenn wir gesetzlich dazu verpflichtet sind oder es zur Abwicklung eines Versicherungsfalls nötig ist.
+
+Deine Rechte: Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung, Datenübertragbarkeit und Widerspruch. Wende dich dafür an die oben genannte Adresse. Außerdem kannst du dich bei der Österreichischen Datenschutzbehörde beschweren.`
+
 export function loadConfig(dir: string): Config {
   const p = path.join(dir, 'config.json')
   const def: Config = {
-    exportDir: dir, contractText: CONTRACT_TEXT, jumpLocation: '', backupDir: '',
+    exportDir: dir, contractText: CONTRACT_TEXT, privacyText: PRIVACY_TEXT,
+    jumpLocation: '', backupDir: '',
     prices: { ...DEFAULT_PRICES }, payouts: { ...DEFAULT_PAYOUTS },
   }
   try {

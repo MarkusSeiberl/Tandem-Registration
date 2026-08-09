@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactNode, UIEvent as ReactUIEvent } from 'react'
-import { getContract } from './api'
+import { getContract, getPrivacyText } from './api'
 
 export interface ContractProps {
   onNext: (signaturePng: string) => void
@@ -49,6 +49,14 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
   const textRef = useRef<HTMLDivElement | null>(null)
   const [scrolledToEnd, setScrolledToEnd] = useState(false)
 
+  // The data-protection notice is its own act, not a line buried in the contract:
+  // an acknowledgement bundled into a wall of other text is the packaging Art. 7
+  // Abs. 2 DSGVO does not accept. Loaded separately so the club can reword it
+  // without touching the contract.
+  const [privacyText, setPrivacyText] = useState<string>('')
+  const [privacyOpen, setPrivacyOpen] = useState(false)
+  const [privacyAccepted, setPrivacyAccepted] = useState(false)
+
   useEffect(() => {
     let cancelled = false
     getContract()
@@ -61,6 +69,20 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // A failure here leaves the text empty; the block below then says so instead of
+  // presenting an empty box to tick. It never blocks the contract from loading.
+  useEffect(() => {
+    let cancelled = false
+    getPrivacyText()
+      .then((t) => {
+        if (!cancelled) setPrivacyText(t)
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -152,7 +174,7 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
 
   function handleNext() {
     const canvas = canvasRef.current
-    if (!canvas || !hasDrawn) return
+    if (!canvas || !hasDrawn || !privacyAccepted) return
     onNext(canvas.toDataURL('image/png'))
   }
 
@@ -184,6 +206,53 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
             Bitte den gesamten Vertrag lesen — nach unten scrollen, um fortzufahren.
           </p>
         )}
+
+        {/*
+          Above the signature, because it has to be read before signing — and
+          separate from the contract text above it, because that is the whole
+          point of pulling it out of the contract.
+        */}
+        <div className="privacy-section">
+          <h2>Datenschutz</h2>
+          <p>
+            Wir verarbeiten deine Daten, um deinen Tandemsprung durchzuführen und abzurechnen.
+            Die vollständige Datenschutzinformation kannst du hier aufklappen.
+          </p>
+
+          {privacyText.trim().length === 0 ? (
+            <p className="error">
+              Die Datenschutzinformation konnte nicht geladen werden. Bitte wende dich an das
+              Personal.
+            </p>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="btn secondary privacy-toggle"
+                aria-expanded={privacyOpen}
+                onClick={() => setPrivacyOpen((open) => !open)}
+              >
+                {privacyOpen ? 'Datenschutzinformation zuklappen' : 'Datenschutzinformation lesen'}
+              </button>
+
+              {privacyOpen && (
+                <div className="privacy-text" role="region" aria-label="Datenschutzinformation">
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{privacyText}</p>
+                </div>
+              )}
+
+              <label className="privacy-check">
+                <input
+                  type="checkbox"
+                  checked={privacyAccepted}
+                  onChange={(e) => setPrivacyAccepted(e.target.checked)}
+                />
+                Ich habe die Datenschutzinformation gelesen und stimme der Verarbeitung meiner
+                Daten zur Abwicklung des Tandemsprungs zu.
+              </label>
+            </>
+          )}
+        </div>
 
         <div className="sign-section">
           <h2>Unterschrift</h2>
@@ -222,7 +291,7 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
         <button
           type="button"
           className="btn primary"
-          disabled={!hasDrawn || !scrolledToEnd || submitting}
+          disabled={!hasDrawn || !scrolledToEnd || !privacyAccepted || submitting}
           onClick={handleNext}
         >
           {submitting ? 'Wird gesendet…' : 'Weiter'}

@@ -29,7 +29,9 @@ function makeRegistration(overrides: Partial<Registration> = {}): Registration {
     gender: 'female',
     age: 30,
     height_cm: 170,
-    weight_kg: 95,
+    // Below the first threshold, so the default row's 'none' is what the weight
+    // calls for — the deviation hint is exercised by its own tests below.
+    weight_kg: 80,
     street: 'Hauptstraße 1',
     postal_code: '5020',
     city: 'Salzburg',
@@ -51,6 +53,8 @@ function makeRegistration(overrides: Partial<Registration> = {}): Registration {
     created_at: '2026-07-09T10:00:00.000Z',
     jump_date: '2026-07-09',
     paid_at: null,
+    notes: null,
+    privacy_ack_at: '2026-07-09T09:59:00.000Z',
     ...overrides,
   }
 }
@@ -79,7 +83,7 @@ describe('Detail', () => {
     vi.mocked(api.masters).mockResolvedValue([])
     vi.mocked(api.flyers).mockResolvedValue([{ id: 7, name: 'Peter' }])
     vi.mocked(api.getSettings).mockResolvedValue({
-      exportDir: '', contractText: '', jumpLocation: '', backupDir: '',
+      exportDir: '', contractText: '', privacyText: '', jumpLocation: '', backupDir: '',
       prices: PRICES, payouts: PAYOUTS,
     })
     vi.mocked(api.patch).mockImplementation(async (_id, fields) =>
@@ -305,13 +309,57 @@ describe('Detail', () => {
     expect(screen.getByText('Kein Video gebucht.')).toBeInTheDocument()
   })
 
-  it('shows the entered weight as a hint without deriving the surcharge from it', async () => {
-    renderDetail(makeRegistration({ weight_kg: 104 }))
+  it('shows the plain weight hint while the surcharge matches the weight', async () => {
+    renderDetail(makeRegistration({ weight_kg: 104, weight_surcharge: 'over_100' }))
     await screen.findByText('Zu kassieren')
 
     expect(screen.getByText('Eingetragenes Gewicht: 104 kg')).toBeInTheDocument()
-    const select = screen.getByLabelText(/Gewichtszuschlag/) as HTMLSelectElement
-    expect(select.value).toBe('none')
+  })
+
+  it('points out a surcharge that no longer matches the weight, without changing it', async () => {
+    // Waived by the manifest: the screen says so, and leaves the choice alone.
+    renderDetail(makeRegistration({ weight_kg: 104, weight_surcharge: 'none' }))
+    await screen.findByText('Zu kassieren')
+
+    expect(screen.getByText('104 kg — Zuschlag ab 100 kg wäre fällig.')).toBeInTheDocument()
+    expect((screen.getByLabelText(/Gewichtszuschlag/) as HTMLSelectElement).value).toBe('none')
+  })
+
+  it('points out a surcharge charged to a guest light enough to be free of it', async () => {
+    renderDetail(makeRegistration({ weight_kg: 72, weight_surcharge: 'over_90' }))
+    await screen.findByText('Zu kassieren')
+
+    expect(screen.getByText('72 kg — kein Zuschlag fällig.')).toBeInTheDocument()
+  })
+
+  it('loads an existing note and saves an edited one', async () => {
+    const user = userEvent.setup()
+    const registration = makeRegistration({ notes: 'Zahlt Rest nächste Woche' })
+    vi.mocked(api.patch).mockResolvedValue({ ...registration, notes: 'Rest am Sonntag' })
+    renderDetail(registration)
+    await screen.findByText('Zu kassieren')
+
+    const field = screen.getByLabelText(/Anmerkungen/) as HTMLTextAreaElement
+    expect(field.value).toBe('Zahlt Rest nächste Woche')
+
+    await user.clear(field)
+    await user.type(field, '  Rest am Sonntag  ')
+    await user.click(screen.getByRole('button', { name: 'Speichern' }))
+
+    expect(vi.mocked(api.patch).mock.calls[0][1]).toMatchObject({ notes: 'Rest am Sonntag' })
+  })
+
+  it('sends an emptied note as null so the export cell goes blank', async () => {
+    const user = userEvent.setup()
+    const registration = makeRegistration({ notes: 'Alte Notiz' })
+    vi.mocked(api.patch).mockResolvedValue({ ...registration, notes: null })
+    renderDetail(registration)
+    await screen.findByText('Zu kassieren')
+
+    await user.clear(screen.getByLabelText(/Anmerkungen/))
+    await user.click(screen.getByRole('button', { name: 'Speichern' }))
+
+    expect(vi.mocked(api.patch).mock.calls[0][1]).toMatchObject({ notes: null })
   })
 
   it('lets the manifest type an exception price', async () => {

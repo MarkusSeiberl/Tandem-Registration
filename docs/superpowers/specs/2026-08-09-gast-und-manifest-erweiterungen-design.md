@@ -56,6 +56,9 @@ keine Einwilligung.
 - Der Standardtext enthält **Platzhalter** für Verantwortlichen (Name, Anschrift,
   Kontakt) und Aufbewahrungsdauer. Diese Angaben erfindet niemand; der Verein
   trägt sie ein.
+- `config.example.json` bekommt den Schlüssel bewusst **nicht**. Ein fehlender
+  Schlüssel fällt auf den Standardtext zurück, ein leerer würde ihn löschen — und
+  ohne Text gibt es keine Checkbox und damit keine Registrierung mehr.
 - Im Gast-Screen `Contract.tsx` steht der Block über dem Unterschriftsfeld:
   Kurzfassung, aufklappbarer Volltext, Pflicht-Checkbox. Die Freigabe von „Weiter"
   lautet danach `hasDrawn && scrolledToEnd && privacyAccepted`.
@@ -77,10 +80,22 @@ Datenschutzarbeit in Punkt 3 zuwiderliefe. Stattdessen wird das vorhandene PDF
 gestempelt.
 
 `stampVoucherNumber(pdfBytes, voucherNumber)` in `contractPdf.ts` lädt das
-gespeicherte PDF, zeichnet ein **weißes Rechteck** über die linke obere Ecke und
-darauf „Gutschein-Nr.: XYZ". Das Rechteck macht den Stempel wiederholbar: eine
-korrigierte Nummer hinterlässt keinen Schatten der alten, und eine gelöschte
-Nummer verschwindet ganz.
+gespeicherte PDF und schreibt „Gutschein-Nr.: XYZ" in die linke obere Ecke.
+
+**Die Stelle ist gemessen, nicht geschätzt.** Die Vorlage zeichnet ihren Text als
+Vektorpfade; der oberste davon liegt bei y≈802, darüber steht nichts. Der Stempel
+beginnt bei y=814 — weit genug über dem Kopf des Formulars, dass nichts davon
+zerstört wird, und mit ~16 pt Abstand zur Blattkante weit genug innen für den
+nicht druckbaren Rand eines Druckers.
+
+**Eine Korrektur entfernt den alten Stempel, sie überdeckt ihn nicht.** Der
+Content-Stream des vorherigen Stempels wird über einen privaten Schlüssel im
+Seiten-Dictionary wiedergefunden, aus `/Contents` gelöst und aus dem Dokument
+gelöscht. Ein weißes Rechteck allein würde die alte Nummer nur verdecken: sie
+bliebe im PDF, markierbar und kopierbar, und der Vertrag trüge zwei
+Gutschein-Nummern, von denen eine unsichtbar ist. Das weiße Rechteck wird
+trotzdem gezeichnet — es deckt einen Stempel ab, den eine ältere Fassung dieses
+Codes ohne den Schlüssel hinterlassen haben könnte.
 
 Ausgelöst wird das in der PATCH-Route, wenn sich `voucher_number` tatsächlich
 geändert hat und die Zeile ein `contract_pdf_filename` trägt.

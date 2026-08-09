@@ -52,6 +52,16 @@ export function computePrice(fields: PricedFields, prices: Prices): number {
   return priceLines(fields, prices).reduce((sum, l) => sum + l.amount, 0)
 }
 
+// Mirror of surchargeForWeight() in src/server/pricing.ts. The server applies it
+// once, when the registration is created; here it only feeds the hint that tells
+// the operator when the selected surcharge no longer matches the guest's weight.
+export function surchargeForWeight(kg: number): WeightSurcharge {
+  if (!Number.isFinite(kg)) return 'none'
+  if (kg >= 100) return 'over_100'
+  if (kg >= 90) return 'over_90'
+  return 'none'
+}
+
 export function formatEuro(amount: number): string {
   return `${amount.toLocaleString('de-AT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} €`
 }

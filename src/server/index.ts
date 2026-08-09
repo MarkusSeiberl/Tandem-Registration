@@ -18,6 +18,9 @@ export function buildServer(
   const app = Fastify({ bodyLimit: 5 * 1024 * 1024 }) // signatures
   const sse = new SseHub()
   app.get('/api/health', async () => ({ ok: true }))
+  // Unlike /api/contract (registered in main.ts) this lives here, so the tests
+  // that build a server without main.ts can reach it.
+  app.get('/api/privacy', async () => ({ text: cfgRef.current.privacyText }))
   registerRegistrationRoutes(app, db, sse, cfgRef, contractTemplate, notify)
   registerStammdatenRoutes(app, db)
   registerExportRoutes(app, db, cfgRef)

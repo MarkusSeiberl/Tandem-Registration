@@ -127,3 +127,26 @@ test('no totals block is written when there are no totals', async () => {
   const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf as any)
   expect(wb.worksheets[0].actualRowCount).toBe(2)
 })
+
+test('the sheet carries the note in a column wide enough to read it', async () => {
+  const note = 'Zuzahlung erlassen, Absprache mit dem Betriebsleiter'
+  const buf = await buildWorkbook([{ first_name: 'A', notes: note }], DEFAULT_COLUMNS)
+  const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf as any)
+  const ws = wb.worksheets[0]
+
+  const headers = (ws.getRow(1).values as string[]).filter(Boolean)
+  expect(headers).toContain('Anmerkungen')
+  const index = headers.indexOf('Anmerkungen') + 1
+  expect(ws.getRow(2).getCell(index).value).toBe(note)
+  // A note clipped to the uniform width would be a note nobody reads.
+  expect(ws.getColumn(index).width).toBeGreaterThan(18)
+})
+
+test('a row without a note leaves a blank cell', async () => {
+  const buf = await buildWorkbook([{ first_name: 'A', notes: null }], DEFAULT_COLUMNS)
+  const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf as any)
+  const ws = wb.worksheets[0]
+  const headers = (ws.getRow(1).values as string[]).filter(Boolean)
+  const index = headers.indexOf('Anmerkungen') + 1
+  expect(ws.getRow(2).getCell(index).value ?? '').toBe('')
+})

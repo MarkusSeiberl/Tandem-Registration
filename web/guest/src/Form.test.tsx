@@ -122,6 +122,52 @@ describe('Form', () => {
     expect(onNext).toHaveBeenCalledWith(expect.objectContaining({ gender: 'diverse' }))
   })
 
+  // The labels of every text/number input, in the order the guest meets them.
+  const TEXT_FIELDS = [
+    'Vorname', 'Nachname', 'Alter', 'Größe (cm)', 'Gewicht (kg)',
+    'Straße und Hausnummer', 'PLZ', 'Wohnort', 'E-Mail', 'Telefon',
+  ]
+
+  it('marks every field as required, including the gender group', async () => {
+    render(<Form onNext={vi.fn()} />)
+
+    for (const label of TEXT_FIELDS) {
+      const input = screen.getByLabelText(label)
+      expect(input, `${label} ist nicht als Pflichtfeld ausgezeichnet`).toBeRequired()
+    }
+    // The radio group carries the marker itself; the individual radios cannot.
+    expect(screen.getByRole('radiogroup')).toHaveAttribute('aria-required', 'true')
+    expect(screen.getByText('Alle Felder sind Pflichtfelder.')).toBeInTheDocument()
+  })
+
+  // Guards against a field being added to the form without a validation rule:
+  // emptying any single one of them has to be enough to shut the button. One
+  // case per field, so a new field that slips through names itself in the report.
+  it.each(TEXT_FIELDS)('holds "Weiter" back when %s is empty', async (label) => {
+    const user = userEvent.setup()
+    render(<Form onNext={vi.fn()} />)
+
+    await fillValid(user)
+    expect(screen.getByRole('button', { name: 'Weiter' })).toBeEnabled()
+
+    await user.clear(screen.getByLabelText(label))
+    expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+  })
+
+  it('flags a field the guest left empty', async () => {
+    const user = userEvent.setup()
+    render(<Form onNext={vi.fn()} />)
+
+    const input = screen.getByLabelText('Vorname')
+    expect(input).not.toHaveAttribute('aria-invalid')
+
+    await user.click(input)
+    await user.tab()
+
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText('Vorname fehlt')).toBeInTheDocument()
+  })
+
   it('accepts a non-numeric foreign postal code', async () => {
     const user = userEvent.setup()
     const onNext = vi.fn()

@@ -1,5 +1,7 @@
 import { test, expect } from 'vitest'
-import { collectedVia, computePrice, priceLines, voucherValue } from '../src/server/pricing'
+import {
+  collectedVia, computePrice, priceLines, surchargeForWeight, voucherValue,
+} from '../src/server/pricing'
 import { DEFAULT_PRICES } from '../src/server/config'
 
 const p = DEFAULT_PRICES
@@ -119,4 +121,21 @@ test('an over-valued voucher is capped so the lines still add up to the total', 
       weight_surcharge: 'over_90' }, p)
   expect(lines.map(l => l.amount)).toEqual([270, -270, 40])
   expect(lines.reduce((s, l) => s + l.amount, 0)).toBe(40)
+})
+
+// The thresholds the club prints on its price list: "ab 90 kg" includes 90.
+test('the surcharge follows the weight at the printed thresholds', () => {
+  expect(surchargeForWeight(89)).toBe('none')
+  expect(surchargeForWeight(89.9)).toBe('none')
+  expect(surchargeForWeight(90)).toBe('over_90')
+  expect(surchargeForWeight(99)).toBe('over_90')
+  expect(surchargeForWeight(100)).toBe('over_100')
+  expect(surchargeForWeight(140)).toBe('over_100')
+})
+
+test('a missing weight buys no surcharge', () => {
+  // Nothing in the schema guarantees a number here for an old row; charging a
+  // guest 60 € for a NaN would be the worst possible reading of "unknown".
+  expect(surchargeForWeight(NaN)).toBe('none')
+  expect(surchargeForWeight(undefined as unknown as number)).toBe('none')
 })

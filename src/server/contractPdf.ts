@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { PDFArray, PDFDocument, PDFName, PDFRef, StandardFonts, rgb } from 'pdf-lib'
 
 export interface ContractPdfData {
   firstName: string
@@ -32,6 +32,27 @@ const PAGE1 = {
   age: { x: 90, y: 580 },
   height: { x: 180, y: 580 },
   weight: { x: 315, y: 580 },
+}
+
+// The voucher number is added later than everything else — the manifest only
+// learns it when the guest hands the voucher over, long after the contract was
+// signed and written to disk. It goes in the empty strip above the template's
+// header, at the top-left, where the operator sees it without unfolding the page.
+//
+// The band was measured, not guessed: the template draws its text as vector
+// paths, and the topmost of them sits at y≈802 (rising to roughly y≈810 for the
+// glyphs themselves). Nothing at all is drawn above that. `clear` therefore
+// starts at 814 — far enough that the white box cannot eat into the header, and
+// far enough below the sheet edge (cap height reaches y≈826, some 16pt / 5.7mm
+// down) to survive a printer's unprintable margin.
+//
+// `clear` is drawn white before the text: without it a corrected number would be
+// printed over the old one, and a deleted number would stay on the paper forever.
+// Erasing nothing but its own previous stamp matters here, because the signed PDF
+// cannot be rebuilt — the signature is not stored.
+const VOUCHER_STAMP = {
+  clear: { x: 36, y: 814, width: 240, height: 16 },
+  text: { x: 40, y: 818, size: 11 },
 }
 
 const PAGE2 = {
@@ -85,4 +106,72 @@ export async function fillContractPdf(
 
   const bytes = await doc.save()
   return Buffer.from(bytes)
+}
+
+// Marks the content stream this module last stamped onto page 1, so a re-stamp
+// can drop it instead of layering a second one on top. Painting white over the
+// old number would only hide it: the text would stay in the file, selectable and
+// copyable, and a contract would carry two voucher numbers with one of them
+// invisible. A private key in the page dictionary is ignored by every reader.
+const STAMP_KEY = PDFName.of('TandemVoucherStamp')
+
+function contentStreamRefs(page: ReturnType<PDFDocument['getPages']>[number]): PDFArray | undefined {
+  const contents = page.node.get(PDFName.of('Contents'))
+  const resolved = contents instanceof PDFRef ? page.node.context.lookup(contents) : contents
+  return resolved instanceof PDFArray ? resolved : undefined
+}
+
+// Stamps (or clears) the voucher number on an already-generated contract PDF.
+// Re-stampable by design: the previous stamp is removed first, so calling this
+// repeatedly with different numbers leaves exactly one number in the document,
+// and an empty `voucherNumber` leaves none.
+export async function stampVoucherNumber(
+  pdfBytes: Uint8Array,
+  voucherNumber: string | null
+): Promise<Buffer> {
+  const doc = await PDFDocument.load(pdfBytes)
+  const font = await doc.embedFont(StandardFonts.HelveticaBold)
+  const [page1] = doc.getPages()
+
+  const previous = page1.node.get(STAMP_KEY)
+  if (previous instanceof PDFRef) {
+    const contents = contentStreamRefs(page1)
+    const index = contents?.asArray()
+      .findIndex((ref) => ref instanceof PDFRef && ref.toString() === previous.toString())
+    if (contents && index !== undefined && index >= 0) contents.remove(index)
+    // Dropping it from Contents only unlinks it — the object would still be
+    // written out, and the old number would still be in the file for anyone who
+    // looks past the renderer. Delete it outright.
+    page1.node.context.delete(previous)
+    page1.node.delete(STAMP_KEY)
+  }
+
+  // Still drawn even though the old stream is gone: it also covers a stamp left
+  // by a version of this code that predates the key above.
+  page1.drawRectangle({
+    x: VOUCHER_STAMP.clear.x,
+    y: VOUCHER_STAMP.clear.y,
+    width: VOUCHER_STAMP.clear.width,
+    height: VOUCHER_STAMP.clear.height,
+    color: rgb(1, 1, 1),
+  })
+
+  const trimmed = voucherNumber?.trim() ?? ''
+  if (trimmed.length > 0) {
+    page1.drawText(`Gutschein-Nr.: ${trimmed}`, {
+      x: VOUCHER_STAMP.text.x,
+      y: VOUCHER_STAMP.text.y,
+      size: VOUCHER_STAMP.text.size,
+      font,
+      color: rgb(0, 0, 0),
+    })
+  }
+
+  // pdf-lib appends the operators above to a content stream it registers on the
+  // first draw call, so the stream just added is the last one on the page.
+  const streams = contentStreamRefs(page1)?.asArray() ?? []
+  const added = streams[streams.length - 1]
+  if (added instanceof PDFRef) page1.node.set(STAMP_KEY, added)
+
+  return Buffer.from(await doc.save())
 }

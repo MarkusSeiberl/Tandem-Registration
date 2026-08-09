@@ -18,6 +18,7 @@ export function testServer(
     current: {
       exportDir: os.tmpdir(),
       contractText: '',
+      privacyText: '',
       jumpLocation: '',
       backupDir: '',
       prices: { ...DEFAULT_PRICES },

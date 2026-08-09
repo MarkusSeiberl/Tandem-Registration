@@ -2,14 +2,32 @@ import { test, expect, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import zlib from 'zlib'
+import { PDFDocument } from 'pdf-lib'
 import { testServer } from './helpers/testServer'
+
+// pdf-lib compresses its content streams and hex-encodes the drawn string, so a
+// plain byte search would find nothing whether the stamp is there or not.
+// Mirrors the helper in contractPdf.test.ts.
+async function pdfContains(filePath: string, needle: string): Promise<boolean> {
+  const doc = await PDFDocument.load(fs.readFileSync(filePath))
+  let text = ''
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    const contents = (obj as any).contents
+    if (!contents) continue
+    const raw = Buffer.from(contents)
+    try { text += zlib.inflateSync(raw).toString('latin1') } catch { text += raw.toString('latin1') }
+  }
+  return text.replace(/<([0-9A-Fa-f]+)>/g, (all, hex: string) =>
+    hex.length % 2 === 0 ? Buffer.from(hex, 'hex').toString('latin1') : all).includes(needle)
+}
 
 const validBody = () => ({
   first_name: 'A', last_name: 'B', gender: 'female', age: 30,
   height_cm: 170, weight_kg: 80,
   street: 'X 1', postal_code: '4240', city: 'Freistadt',
   email: 'a@b.de', phone: '0660',
-  signature_png: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', accepted_terms: true
+  signature_png: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', accepted_terms: true, privacy_ack: true
 })
 
 async function waitForSseChunk(
@@ -233,4 +251,138 @@ test('DELETE /api/registrations/:id broadcasts a "changed" SSE event', async () 
     await reader.cancel().catch(() => {})
     await app.close()
   }
+})
+
+test('a heavy guest arrives with the surcharge and the price already right', async () => {
+  const { app } = testServer()
+  await app.inject({
+    method: 'POST', url: '/api/registrations',
+    payload: { ...validBody(), weight_kg: 104 },
+  })
+  const row = (await app.inject({ method: 'GET', url: '/api/registrations' })).json()[0]
+
+  // Derived once, here, rather than left as 'none' for someone to notice: the
+  // row hits the manifest list with the surcharge and the money it implies.
+  expect(row.weight_surcharge).toBe('over_100')
+  expect(row.price).toBe(270 + 60)
+  await app.close()
+})
+
+test('a guest below the threshold is charged nothing extra', async () => {
+  const { app } = testServer()
+  await app.inject({
+    method: 'POST', url: '/api/registrations',
+    payload: { ...validBody(), weight_kg: 89 },
+  })
+  const row = (await app.inject({ method: 'GET', url: '/api/registrations' })).json()[0]
+  expect(row.weight_surcharge).toBe('none')
+  expect(row.price).toBe(270)
+  await app.close()
+})
+
+test('the server timestamps the data-protection acknowledgement itself', async () => {
+  const { app } = testServer()
+  await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })
+  const row = (await app.inject({ method: 'GET', url: '/api/registrations' })).json()[0]
+
+  // A tablet with a wrong clock must not get to decide when a guest consented.
+  expect(isNaN(Date.parse(row.privacy_ack_at))).toBe(false)
+  await app.close()
+})
+
+test('serves the data-protection text the club configured', async () => {
+  const { app } = testServer({ privacyText: 'Verantwortlicher ist der Verein.' })
+  const res = await app.inject({ method: 'GET', url: '/api/privacy' })
+  expect(res.statusCode).toBe(200)
+  expect(res.json().text).toBe('Verantwortlicher ist der Verein.')
+  await app.close()
+})
+
+// The whole point of the stamp: the number the manifest types has to land on the
+// PDF that is already sitting on disk, signed.
+test('entering a voucher number prints it on the stored contract', async () => {
+  const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-stamp-'))
+  const { app } = testServer({ exportDir })
+  const { id } = (await app.inject({
+    method: 'POST', url: '/api/registrations', payload: validBody(),
+  })).json()
+  const filename = (await app.inject({ method: 'GET', url: '/api/registrations' }))
+    .json()[0].contract_pdf_filename
+  const pdfPath = path.join(exportDir, 'vertaege', filename)
+
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'voucher', voucher_number: 'GS-2026-0042' },
+  })
+
+  expect(await pdfContains(pdfPath, 'Gutschein-Nr.: GS-2026-0042')).toBe(true)
+  await app.close()
+})
+
+test('correcting the number leaves only the corrected one on the contract', async () => {
+  const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-restamp-'))
+  const { app } = testServer({ exportDir })
+  const { id } = (await app.inject({
+    method: 'POST', url: '/api/registrations', payload: validBody(),
+  })).json()
+  const filename = (await app.inject({ method: 'GET', url: '/api/registrations' }))
+    .json()[0].contract_pdf_filename
+  const pdfPath = path.join(exportDir, 'vertaege', filename)
+
+  const patch = (voucher_number: string | null) => app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'voucher', voucher_number },
+  })
+  await patch('GS-2026-0042')
+  await patch('GS-2026-4711')
+
+  expect(await pdfContains(pdfPath, 'GS-2026-4711')).toBe(true)
+  // A typo corrected on screen must not stay legible on the printed contract.
+  expect(await pdfContains(pdfPath, 'GS-2026-0042')).toBe(false)
+
+  await patch(null)
+  expect(await pdfContains(pdfPath, 'Gutschein-Nr.')).toBe(false)
+  await app.close()
+})
+
+test('a save that does not touch the voucher number leaves the contract alone', async () => {
+  const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-nostamp-'))
+  const { app } = testServer({ exportDir })
+  const { id } = (await app.inject({
+    method: 'POST', url: '/api/registrations', payload: validBody(),
+  })).json()
+  const filename = (await app.inject({ method: 'GET', url: '/api/registrations' }))
+    .json()[0].contract_pdf_filename
+  const pdfPath = path.join(exportDir, 'vertaege', filename)
+  const before = fs.readFileSync(pdfPath)
+
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`, payload: { load_number: 3 },
+  })
+
+  // Byte-identical: every save from the detail screen carries a voucher_number,
+  // and rewriting the signed document on each of them would churn it for nothing.
+  expect(fs.readFileSync(pdfPath).equals(before)).toBe(true)
+  await app.close()
+})
+
+test('a missing contract file does not fail the save', async () => {
+  const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-gone-'))
+  const { app } = testServer({ exportDir })
+  const { id } = (await app.inject({
+    method: 'POST', url: '/api/registrations', payload: validBody(),
+  })).json()
+  const filename = (await app.inject({ method: 'GET', url: '/api/registrations' }))
+    .json()[0].contract_pdf_filename
+  fs.rmSync(path.join(exportDir, 'vertaege', filename))
+
+  // The row is the record that matters; losing a till entry to a missing PDF
+  // would be the worse failure.
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'voucher', voucher_number: 'GS-9' },
+  })
+  expect(res.statusCode).toBe(200)
+  expect(res.json().voucher_number).toBe('GS-9')
+  await app.close()
 })

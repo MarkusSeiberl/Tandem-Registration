@@ -1,5 +1,11 @@
 import { test, expect } from 'vitest'
+import ExcelJS from 'exceljs'
+import { promises as fs } from 'fs'
+import os from 'os'
+import path from 'path'
 import { testServer } from './helpers/testServer'
+import { writeVoucherFile } from './helpers/voucherFile'
+import { clearVoucherListCache } from '../src/server/voucherList'
 
 const validBody = () => ({
   first_name: 'A', last_name: 'B', gender: 'female', age: 30,
@@ -517,5 +523,113 @@ test('rejects a note that is not text', async () => {
     method: 'PATCH', url: `/api/registrations/${id}`, payload: { notes: 42 },
   })
   expect(res.statusCode).toBe(400)
+  await app.close()
+})
+
+// The club's real Tandemliste is its only record of which vouchers it sold, so
+// these run against a generated workbook in a throwaway directory — never a
+// copy of the club's file.
+async function voucherServer(voucherListPath: string) {
+  clearVoucherListCache()
+  const exportDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tandem-manifest-'))
+  const { app } = testServer({ exportDir, voucherListPath })
+  const { id } = (await app.inject({
+    method: 'POST', url: '/api/registrations', payload: validBody(),
+  })).json()
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'voucher', voucher_number: '26-001' },
+  })
+  const collect = (paid: boolean, alsoChanged: Record<string, unknown> = {}) => app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`, payload: { paid, ...alsoChanged },
+  })
+  return { app, id, collect }
+}
+
+const MISSING_LIST = path.join(os.tmpdir(), 'tandem-gibt-es-nicht', 'Tandemliste.xlsx')
+
+async function eingeloestCell(file: string, row: number) {
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.readFile(file)
+  const ws = wb.worksheets[0]
+  const headers = ws.getRow(1).values as string[]
+  return ws.getRow(row).getCell(headers.indexOf('Eingelöst')).value
+}
+
+test('a voucher list that cannot be written never fails the operator’s save', async () => {
+  const { app, collect } = await voucherServer(MISSING_LIST)
+  const res = await collect(true)
+
+  // The till entry is the operator's work and must survive a locked, missing or
+  // mid-sync file without a word.
+  expect(res.statusCode).toBe(200)
+  expect(res.json().paid_at).not.toBeNull()
+  // Redeemed but not synced: we decided the voucher is spent, the file has not
+  // heard about it yet, and the export sweep owes it a retry.
+  expect(res.json().voucher_redeemed_at).not.toBeNull()
+  expect(res.json().voucher_redeem_synced_at).toBeNull()
+  await app.close()
+})
+
+test('a redemption that reaches the list stamps both columns', async () => {
+  const file = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+  ])
+  const { app, collect } = await voucherServer(file)
+  const res = await collect(true)
+
+  expect(res.statusCode).toBe(200)
+  expect(res.json().voucher_redeemed_at).not.toBeNull()
+  // The sync stamp is the claim that the file has it — so the file must.
+  expect(res.json().voucher_redeem_synced_at).not.toBeNull()
+  expect(await eingeloestCell(file, 2)).toBeInstanceOf(Date)
+  await app.close()
+})
+
+test('un-collecting drops a redemption the list never received', async () => {
+  const { app, collect } = await voucherServer(MISSING_LIST)
+  await collect(true)
+  const res = await collect(false)
+
+  expect(res.json().paid_at).toBeNull()
+  // Nothing was written, so nothing is owed: the retry queue must not keep a
+  // voucher the club is no longer collecting.
+  expect(res.json().voucher_redeemed_at).toBeNull()
+  await app.close()
+})
+
+test('un-collecting leaves a redemption the list already has', async () => {
+  const file = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+  ])
+  const { app, collect } = await voucherServer(file)
+  const synced = (await collect(true)).json().voucher_redeemed_at
+  const res = await collect(false)
+
+  expect(res.json().paid_at).toBeNull()
+  // The date is in the club's file. Forgetting it here would leave the two
+  // records disagreeing with nobody able to see it; a stale one a human can
+  // correct is the lesser harm.
+  expect(res.json().voucher_redeemed_at).toBe(synced)
+  expect(res.json().voucher_redeem_synced_at).not.toBeNull()
+  await app.close()
+})
+
+test('saving an already collected row does not go near the list again', async () => {
+  const file = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+  ])
+  const { app, collect } = await voucherServer(file)
+  const first = (await collect(true)).json()
+
+  // Every save from the detail screen re-sends the collected flag alongside
+  // whatever actually changed. If the redemption block re-ran on those, it
+  // would re-read the whole workbook each time — and here, with the list gone,
+  // it would overwrite a settled redemption with a fresh unsynced one.
+  await fs.rm(path.dirname(file), { recursive: true, force: true })
+  const again = (await collect(true, { notes: 'Fährt später' })).json()
+  expect(again.notes).toBe('Fährt später')
+  expect(again.voucher_redeemed_at).toBe(first.voucher_redeemed_at)
+  expect(again.voucher_redeem_synced_at).toBe(first.voucher_redeem_synced_at)
   await app.close()
 })

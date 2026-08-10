@@ -64,7 +64,13 @@ const REQUIRED_HEADERS = ['lfdnr', 'einzahldat', 'eingelöst'] as const
 // The club's sheet already carries a stray "Spalte1"; anyone inserting a column
 // must not silently shift the reader onto the wrong data, so columns are located
 // by their header text rather than by position.
-function headerColumns(sheet: ExcelJS.Worksheet): Map<string, number> {
+//
+// Exported because the redemption writer has to find the same columns in the
+// same file. A second, near-identical lookup there drifted once already: it
+// skipped unwrapCellValue, so a hyperlinked header cell would have been found
+// here and missed there — the reader and the writer would have disagreed about
+// which column is which in the club's only voucher record.
+export function headerColumns(sheet: ExcelJS.Worksheet): Map<string, number> {
   const columns = new Map<string, number>()
   const header = sheet.getRow(1)
   for (let c = 1; c <= sheet.columnCount; c++) {
@@ -104,7 +110,10 @@ function cellNumber(value: ExcelJS.CellValue): number | null {
   return typeof unwrapped === 'number' && Number.isFinite(unwrapped) ? unwrapped : null
 }
 
-function cellText(value: ExcelJS.CellValue): string | null {
+// Exported alongside headerColumns so the redemption writer reads a cell the
+// same way this reader did — a row is only identified as the right one if both
+// sides turn its LfdNr into the same text.
+export function cellText(value: ExcelJS.CellValue): string | null {
   const unwrapped = unwrapCellValue(value)
   if (unwrapped === null || unwrapped === undefined) return null
   const text = String(unwrapped).trim()

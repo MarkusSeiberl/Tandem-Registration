@@ -13,6 +13,7 @@ vi.mock('./api', () => ({
   getSettings: vi.fn(),
   contractPdfUrl: vi.fn(() => '/api/registrations/1/contract.pdf'),
   getApiBase: vi.fn(() => ''),
+  checkVoucher: vi.fn(),
 }))
 
 const PRICES = {
@@ -453,5 +454,108 @@ describe('Detail', () => {
       voucher_service: null,
       voucher_number: null,
     })
+  })
+
+  const OK_CHECK = {
+    configured: true, readable: true, status: 'ok' as const, number: '26-001',
+    paidAt: '2026-01-14', paidText: null, amount: 355, art: 'Tandem + Video',
+    service: 'jump_video' as const, isAddOn: false, redeemedAt: null, error: null,
+  }
+
+  async function typeVoucherNumber(user: ReturnType<typeof userEvent.setup>, number: string) {
+    await user.selectOptions(screen.getByLabelText('Zahlungsart'), 'voucher')
+    await user.type(screen.getByLabelText('Gutschein-Nr.'), number)
+  }
+
+  it('says a voucher is paid and still unused', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+
+    expect(await screen.findByText(/Bezahlt am 14\.01\.2026/)).toBeInTheDocument()
+  })
+
+  it('warns about an unpaid voucher without locking anything', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue({ ...OK_CHECK, status: 'unpaid', paidAt: null })
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-007')
+
+    expect(await screen.findByText(/Nicht bezahlt/)).toBeInTheDocument()
+    // The operator is standing in front of the guest; the software does not decide.
+    expect(screen.getByRole('button', { name: 'Speichern' })).toBeEnabled()
+  })
+
+  it('quotes whatever text stands in EinzahlDat', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue({
+      ...OK_CHECK, status: 'cancelled', paidAt: null, paidText: 'STORNO',
+    })
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-009')
+
+    expect(await screen.findByText(/STORNO/)).toBeInTheDocument()
+  })
+
+  it('says when a voucher was already redeemed', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue({
+      ...OK_CHECK, status: 'redeemed', redeemedAt: '2026-07-12',
+    })
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-002')
+
+    expect(await screen.findByText(/Bereits eingelöst am 12\.07\.2026/)).toBeInTheDocument()
+  })
+
+  it('points out an Art that does not match the chosen Leistung', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+    await screen.findByText(/Bezahlt am/)
+    await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump')
+
+    expect(await screen.findByText(/Laut Liste: Tandem \+ Video/)).toBeInTheDocument()
+  })
+
+  it('shows the amount then and now, without calling the gap a problem', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+
+    // 355 € paid then, 270 + 100 at today's table. Every older voucher is below
+    // today's price; that is the club's arrangement, so it is stated, not flagged.
+    const line = await screen.findByText(/355 € damals/)
+    expect(line.textContent).toContain('370 € heute')
+    expect(line.className).not.toContain('warn')
+  })
+
+  it('says nothing at all when no list is configured', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue({
+      ...OK_CHECK, configured: false, readable: false, status: null,
+    })
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+
+    expect(screen.queryByText(/Gutscheinliste/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Bezahlt am/)).not.toBeInTheDocument()
   })
 })

@@ -516,6 +516,18 @@ h2 {
   opacity: 1;
 }
 
+/* The club's list disagrees with what was typed — worth seeing, never blocking. */
+.voucher-check.warn {
+  color: var(--ember);
+  font-weight: 600;
+  opacity: 1;
+}
+
+.voucher-check.ok {
+  color: var(--text-h);
+  opacity: 0.9;
+}
+
 /* A locked field is still readable, but clearly not waiting for input. */
 .field select:disabled,
 .field input:disabled {

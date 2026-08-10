@@ -3,6 +3,9 @@
 // The optional apiBase (hidden operator setting) is prepended so the manifest PC can be
 // pointed at a different server without a rebuild. Mirrors web/guest/src/api.ts.
 
+import type { VoucherCheck } from './voucher'
+export type { VoucherCheck } from './voucher'
+
 const API_BASE_KEY = 'apiBase'
 
 export function getApiBase(): string {
@@ -165,6 +168,12 @@ export async function patch(id: number, fields: ManifestPatch): Promise<Registra
 export async function remove(id: number): Promise<void> {
   const res = await fetch(apiUrl(`/api/registrations/${id}`), { method: 'DELETE' })
   if (!res.ok) throw new Error('Löschen fehlgeschlagen')
+}
+
+export async function checkVoucher(number: string): Promise<VoucherCheck> {
+  const res = await fetch(apiUrl(`/api/voucher?number=${encodeURIComponent(number)}`))
+  if (!res.ok) throw new Error('Gutschein konnte nicht geprüft werden')
+  return asJson<VoucherCheck>(res)
 }
 
 type StammdatenKind = 'masters' | 'flyers'

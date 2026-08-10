@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react'
 import {
-  patch, remove, flyers as fetchFlyers, masters as fetchMasters, contractPdfUrl, getSettings,
+  checkVoucher, patch, remove, flyers as fetchFlyers, masters as fetchMasters, contractPdfUrl,
+  getSettings,
 } from './api'
 import type {
   CollectedVia, ExtraBooking, PaymentMethod, Prices, Registration, StammdatenItem,
-  VoucherService, WeightSurcharge,
+  VoucherCheck, VoucherService, WeightSurcharge,
 } from './api'
 import {
   COLLECTED_VIA, EXTRA_BOOKINGS, PAYMENT_METHODS, VOUCHER_SERVICES, WEIGHT_SURCHARGES,
   genderLabel,
 } from './labels'
-import { atLeast, formatEuro, priceLines, serviceOfVoucher, surchargeForWeight } from './pricing'
+import {
+  atLeast, formatEuro, priceLines, serviceOfVoucher, surchargeForWeight, voucherValue,
+} from './pricing'
+import { voucherAmountText, voucherServiceText, voucherStatusText } from './voucher'
 import TrashIcon from './TrashIcon'
 
 export interface DetailProps {
@@ -34,6 +38,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
     useState<CollectedVia | ''>(registration.voucher_payment_method ?? '')
   const [voucherNumber, setVoucherNumber] = useState<string>(registration.voucher_number ?? '')
   const [voucherService, setVoucherService] = useState<VoucherService | ''>(registration.voucher_service ?? '')
+  const [voucherCheck, setVoucherCheck] = useState<VoucherCheck | null>(null)
   const [extraBooking, setExtraBooking] = useState<ExtraBooking>(registration.extra_booking ?? 'none')
   const [weightSurcharge, setWeightSurcharge] =
     useState<WeightSurcharge>(registration.weight_surcharge ?? 'none')
@@ -57,6 +62,40 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   // A voucher number and the covered service only exist when the guest actually
   // paid with one.
   const showVoucherNumber = paymentMethod === 'voucher'
+
+  // Checked shortly after typing stops, not per keystroke: the club's list may
+  // live in OneDrive. The server caches it against the file's mtime, so a repeat
+  // check of the same number costs nothing.
+  useEffect(() => {
+    const number = voucherNumber.trim()
+    if (!showVoucherNumber || number.length === 0) {
+      setVoucherCheck(null)
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      checkVoucher(number)
+        .then((result) => { if (!cancelled) setVoucherCheck(result) })
+        .catch(() => { if (!cancelled) setVoucherCheck(null) })
+    }, 350)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [voucherNumber, showVoucherNumber])
+
+  const voucherLine = voucherCheck ? voucherStatusText(voucherCheck) : null
+  const voucherArtLine = voucherCheck ? voucherServiceText(voucherCheck, voucherService) : null
+  // What the same service is worth at today's table, for the "damals · heute"
+  // line. `voucherValue` is already imported by this screen's pricing helpers.
+  const voucherAmountLine =
+    voucherCheck && prices
+      ? voucherAmountText(
+          voucherCheck,
+          voucherCheck.service ? voucherValue(voucherCheck.service, prices) : null,
+          formatEuro
+        )
+      : null
   // Kameraflieger is needed whenever video is filmed — that includes a guest
   // whose voucher already covers the video, who books nothing on top.
   const voucherCoversVideo = showVoucherNumber &&
@@ -266,6 +305,21 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
                   value={voucherNumber}
                   onChange={(e) => setVoucherNumber(e.target.value)}
                 />
+                {voucherLine && (
+                  <span className={`field-hint voucher-check ${voucherLine.tone}`}>
+                    {voucherLine.text}
+                  </span>
+                )}
+                {voucherArtLine && (
+                  <span className={`field-hint voucher-check ${voucherArtLine.tone}`}>
+                    {voucherArtLine.text}
+                  </span>
+                )}
+                {voucherAmountLine && (
+                  <span className={`field-hint voucher-check ${voucherAmountLine.tone}`}>
+                    {voucherAmountLine.text}
+                  </span>
+                )}
               </label>
 
               <label className="field">

@@ -1675,7 +1675,8 @@ git commit -m "Write the redemption date back into the club's voucher list"
 - Modify: `src/server/routes/voucher.ts` (add `GET /api/voucher/pending`)
 - Modify: `web/manifest/src/api.ts` (`ExportResult`, `pendingRedemptions`)
 - Modify: `web/manifest/src/List.tsx:221-232, 260-270`
-- Test: `tests/export.test.ts`, `web/manifest/src/List.test.tsx`
+- Modify: `tests/helpers/testServer.ts` (return the database too)
+- Test: `tests/export.test.ts` (local `makeCfgRef` pattern — see the note in Step 1), `tests/voucher-route.test.ts`, `web/manifest/src/List.test.tsx`
 
 **Interfaces:**
 - Consumes: `redeemVoucher` from Task 7.
@@ -1742,6 +1743,31 @@ test('a voucher that turned invalid leaves the queue instead of blocking it', as
   await app.close()
 })
 
+**Note on the two tests above:** `tests/export.test.ts` does not use the
+`testServer` helper — it builds its own Fastify instance, calls `openDb` itself
+and assembles a config through the local `makeCfgRef(dir)`. Follow that existing
+pattern rather than importing `testServer`: create the app the way the
+neighbouring tests in that file do, and extend `makeCfgRef` so the config it
+returns carries the new key:
+
+```ts
+function makeCfgRef(dir: string, jumpLocation = 'Freistadt', voucherListPath = '') {
+  return {
+    current: {
+      exportDir: dir, contractText: '', privacyText: '', jumpLocation, backupDir: '',
+      voucherListPath,
+      prices: { ...DEFAULT_PRICES }, payouts: { ...DEFAULT_PAYOUTS },
+    },
+  }
+}
+```
+
+Existing callers pass one or two arguments and are unaffected.
+
+The pending-count test belongs with the other route tests, not here. Add it to
+`tests/voucher-route.test.ts`:
+
+```ts
 test('the pending count is what the manifest shows in its banner', async () => {
   clearVoucherListCache()
   const { app, db } = testServer({ voucherListPath: '' })
@@ -1755,7 +1781,8 @@ test('the pending count is what the manifest shows in its banner', async () => {
 })
 ```
 
-`testServer` currently returns `{ app, cfgRef }`. Extend `tests/helpers/testServer.ts` to build the database first and return it:
+`testServer` currently returns `{ app, cfgRef }`. Extend `tests/helpers/testServer.ts`
+to build the database first and return it, so that test can seed a row:
 
 ```ts
   const db = openDb(':memory:')

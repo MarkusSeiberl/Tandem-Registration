@@ -42,3 +42,70 @@ test('an Art nobody recognises compares against nothing', () => {
   expect(serviceFromArt(null)).toEqual({ service: null, isAddOn: false })
   expect(serviceFromArt('')).toEqual({ service: null, isAddOn: false })
 })
+
+import { readVoucherList } from '../src/server/voucherList'
+import { writeVoucherFile } from './helpers/voucherFile'
+
+test('reads the columns it needs by header name', async () => {
+  const file = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem + Video', betrag: 355 },
+  ])
+  const list = await readVoucherList(file)
+
+  const entry = list.byNumber.get(normaliseVoucherNumber('26-001'))![0]
+  expect(entry.number).toBe('26-001')
+  expect(entry.amount).toBe(355)
+  expect(entry.art).toBe('Tandem + Video')
+  expect(entry.service).toBe('jump_video')
+  expect(entry.paidAt?.toISOString().slice(0, 10)).toBe('2026-01-14')
+  expect(entry.paidText).toBeNull()
+  expect(entry.redeemedAt).toBeNull()
+  // Row 1 is the header, so the first voucher is row 2 — the writer needs this.
+  expect(entry.rowNumber).toBe(2)
+})
+
+test('an unpaid row and a STORNO row are told apart', async () => {
+  const file = await writeVoucherFile([
+    { lfdNr: '26-007', einzahlDat: null, art: 'Tandem', betrag: 255 },
+    { lfdNr: '26-009', einzahlDat: 'STORNO', art: 'Tandem', betrag: 255 },
+  ])
+  const list = await readVoucherList(file)
+
+  const unpaid = list.byNumber.get(normaliseVoucherNumber('26-007'))![0]
+  expect(unpaid.paidAt).toBeNull()
+  expect(unpaid.paidText).toBeNull()
+
+  const cancelled = list.byNumber.get(normaliseVoucherNumber('26-009'))![0]
+  expect(cancelled.paidAt).toBeNull()
+  // Kept verbatim: the club may write something other than STORNO tomorrow.
+  expect(cancelled.paidText).toBe('STORNO')
+})
+
+test('two rows sharing a number are both kept, so the caller can call it ambiguous', async () => {
+  const file = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+    { lfdNr: '26-1', einzahlDat: new Date('2026-02-14'), art: 'Tandem' },
+  ])
+  const list = await readVoucherList(file)
+  expect(list.byNumber.get(normaliseVoucherNumber('26-001'))).toHaveLength(2)
+})
+
+test('rows without a number are skipped rather than keyed on empty string', async () => {
+  const file = await writeVoucherFile([
+    { lfdNr: '', einzahlDat: new Date('2026-01-14') },
+    { lfdNr: '26-002', einzahlDat: new Date('2026-01-14') },
+  ])
+  const list = await readVoucherList(file)
+  expect(list.byNumber.size).toBe(1)
+})
+
+test('a missing required header is an error naming the column', async () => {
+  const file = await writeVoucherFile([{ lfdNr: '26-001' }], {
+    headers: ['LfdNr', 'EinzahlDat', 'Betrag'],
+  })
+  await expect(readVoucherList(file)).rejects.toThrow(/Eingelöst/)
+})
+
+test('a missing file is an error, not a crash', async () => {
+  await expect(readVoucherList('C:/nope/keine-datei.xlsx')).rejects.toThrow()
+})

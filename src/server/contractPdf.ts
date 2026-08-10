@@ -45,7 +45,7 @@ const PAGE1 = {
 // STAMP_KEY below) the *only* thing standing between a corrected number and a
 // contract showing two of them. That mechanism is not an optimisation here — it
 // is the erase.
-const VOUCHER_STAMP = { x: 40, y: 806, size: 11 }
+const VOUCHER_STAMP = { x: 105, y: 796, size: 11 }
 
 const PAGE2 = {
   ort: { x: 85, y: 82 },

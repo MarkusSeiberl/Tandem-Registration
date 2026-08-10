@@ -6,6 +6,7 @@ import { registerStammdatenRoutes } from './routes/stammdaten'
 import { registerExportRoutes } from './routes/export'
 import { registerSettingsRoutes } from './routes/settings'
 import { registerBackupRoutes } from './routes/backup'
+import { registerVoucherRoutes } from './routes/voucher'
 import type { Config } from './config'
 
 export function buildServer(
@@ -26,5 +27,6 @@ export function buildServer(
   registerExportRoutes(app, db, cfgRef)
   registerBackupRoutes(app, db, cfgRef)
   registerSettingsRoutes(app, cfgRef, persist)
+  registerVoucherRoutes(app, cfgRef)
   return app
 }

@@ -1,0 +1,72 @@
+import { FastifyInstance } from 'fastify'
+import { loadVoucherList, lookupVoucher } from '../voucherList'
+import type { VoucherEntry, VoucherStatus } from '../voucherList'
+import type { Config } from '../config'
+
+export interface VoucherCheck {
+  configured: boolean
+  readable: boolean
+  status: VoucherStatus | null
+  number: string | null
+  paidAt: string | null
+  paidText: string | null
+  amount: number | null
+  art: string | null
+  service: VoucherEntry['service']
+  isAddOn: boolean
+  redeemedAt: string | null
+  error: string | null
+}
+
+const OFF: VoucherCheck = {
+  configured: false, readable: false, status: null, number: null,
+  paidAt: null, paidText: null, amount: null, art: null,
+  service: null, isAddOn: false, redeemedAt: null, error: null,
+}
+
+const isoDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null)
+
+// Every failure here is reported as data, never as a status code the manifest
+// would have to treat as broken: an unreadable voucher list is a message beside
+// a field, not a reason to stop taking registrations.
+export async function checkVoucher(cfg: Config, number: string): Promise<VoucherCheck> {
+  const path = cfg.voucherListPath?.trim()
+  if (!path) return { ...OFF }
+
+  let list
+  try {
+    list = await loadVoucherList(path)
+  } catch (err) {
+    return {
+      ...OFF,
+      configured: true,
+      error: err instanceof Error ? err.message : 'Gutscheinliste nicht lesbar.',
+    }
+  }
+
+  const { status, entry } = lookupVoucher(list, number)
+  return {
+    configured: true,
+    readable: true,
+    status,
+    number: entry?.number ?? null,
+    paidAt: isoDate(entry?.paidAt ?? null),
+    paidText: entry?.paidText ?? null,
+    amount: entry?.amount ?? null,
+    art: entry?.art ?? null,
+    service: entry?.service ?? null,
+    isAddOn: entry?.isAddOn ?? false,
+    redeemedAt: isoDate(entry?.redeemedAt ?? null),
+    error: null,
+  }
+}
+
+export function registerVoucherRoutes(app: FastifyInstance, cfgRef: { current: Config }) {
+  app.get('/api/voucher', async (req, reply) => {
+    const number = (req.query as any)?.number
+    if (typeof number !== 'string' || number.trim().length === 0) {
+      return reply.code(400).send({ error: 'Gutschein-Nr. fehlt' })
+    }
+    return reply.send(await checkVoucher(cfgRef.current, number))
+  })
+}

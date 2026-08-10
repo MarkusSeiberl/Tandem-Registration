@@ -90,6 +90,10 @@ export interface Registration {
   // Wann der Gast die Datenschutzinformation bestätigt hat. NULL bei Zeilen aus
   // der Zeit davor — das heißt nicht, dass jemand abgelehnt hätte.
   privacy_ack_at: string | null
+  // Wann wir entschieden haben, dass der Gutschein eingelöst ist, und wann das
+  // in der Gutscheinliste des Vereins angekommen ist.
+  voucher_redeemed_at: string | null
+  voucher_redeem_synced_at: string | null
 }
 
 export interface StammdatenItem {

@@ -49,6 +49,8 @@ function makeRow(overrides: Partial<Registration>): Registration {
     paid_at: null,
     notes: null,
     privacy_ack_at: '2026-07-09T09:59:00.000Z',
+    voucher_redeemed_at: null,
+    voucher_redeem_synced_at: null,
     ...overrides,
   }
 }

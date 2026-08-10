@@ -10,6 +10,7 @@ import {
   VOUCHER_SERVICES, WEIGHT_SURCHARGES,
 } from '../pricing'
 import type { Config } from '../config'
+import { redeemVoucher } from '../voucherRedeem'
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -203,6 +204,33 @@ export function registerRegistrationRoutes(
       if ('voucher_number' in body && body.voucher_number !== current.voucher_number) {
         await restampContract(current.contract_pdf_filename, body.voucher_number)
       }
+
+      // Collecting a voucher row is the moment it is spent. The write into the
+      // club's file is attempted now; if it fails, the row keeps
+      // voucher_redeemed_at without a sync stamp and the export retries it.
+      const after = db.prepare('SELECT * FROM registrations WHERE id=?').get(id) as any
+      if (paid === true && after.payment_method === 'voucher' && after.voucher_number) {
+        const outcome = await redeemVoucher(cfgRef.current, after.voucher_number, new Date())
+        if (outcome === 'written') {
+          db.prepare(`UPDATE registrations
+            SET voucher_redeemed_at=@now, voucher_redeem_synced_at=@now WHERE id=@id`)
+            .run({ id, now: new Date().toISOString() })
+        } else if (outcome === 'failed') {
+          // Ours to remember; the file gets it later.
+          db.prepare('UPDATE registrations SET voucher_redeemed_at=@now WHERE id=@id')
+            .run({ id, now: new Date().toISOString() })
+        }
+        // 'invalid', 'already_redeemed' and 'disabled' claim nothing: an invalid
+        // voucher must not sit in a retry queue that then never empties.
+      }
+      // Putting a row back to open drops a redemption that never reached the
+      // file. One that did is left alone — silently deleting a date from the
+      // club's list is worse than a stale one a human can correct.
+      if (paid === false) {
+        db.prepare(`UPDATE registrations SET voucher_redeemed_at=NULL
+          WHERE id=@id AND voucher_redeem_synced_at IS NULL`).run({ id })
+      }
+
       sse.broadcast('changed', { id })
       return db.prepare('SELECT * FROM registrations WHERE id=?').get(id)
     }

@@ -128,3 +128,21 @@ test('put settings rejects a non-numeric or negative price', async () => {
   expect(cfgRef.current.prices.jump).toBe(270)
   await app.close()
 })
+
+test('the voucher list path round-trips through the settings', async () => {
+  const { app } = testServer()
+  const res = await app.inject({
+    method: 'PUT', url: '/api/settings',
+    payload: { voucherListPath: 'C:/Verein/Tandemliste.xlsx' },
+  })
+  expect(res.statusCode).toBe(200)
+  expect(res.json().voucherListPath).toBe('C:/Verein/Tandemliste.xlsx')
+  await app.close()
+})
+
+test('the voucher list path starts out empty, which switches the feature off', async () => {
+  const { app } = testServer()
+  const res = await app.inject({ method: 'GET', url: '/api/settings' })
+  expect(res.json().voucherListPath).toBe('')
+  await app.close()
+})

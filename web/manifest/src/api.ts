@@ -100,6 +100,7 @@ export interface Settings {
   privacyText: string
   jumpLocation: string
   backupDir: string
+  voucherListPath: string
   prices: Prices
   payouts: Payouts
 }

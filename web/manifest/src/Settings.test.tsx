@@ -17,6 +17,7 @@ const CONFIG: SettingsType = {
   privacyText: 'Datenschutzinformation …',
   jumpLocation: 'Freistadt',
   backupDir: '',
+  voucherListPath: '',
   prices: { jump: 270, video: 100, video_photo: 120, weight_over_90: 40, weight_over_100: 60 },
   payouts: { tandem_master: 45, video: 60, video_photo: 80 },
 }
@@ -42,6 +43,7 @@ describe('Settings', () => {
     expect(vi.mocked(api.putSettings).mock.calls[0][0]).toEqual({
       exportDir: 'C:/Tandem', jumpLocation: 'Linz', backupDir: '',
       contractText: 'Beförderungsvertrag …', privacyText: 'Datenschutzinformation …',
+      voucherListPath: '',
     })
   })
 

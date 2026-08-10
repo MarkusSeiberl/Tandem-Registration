@@ -21,6 +21,7 @@ export function testServer(
       privacyText: '',
       jumpLocation: '',
       backupDir: '',
+      voucherListPath: '',
       prices: { ...DEFAULT_PRICES },
       payouts: { ...DEFAULT_PAYOUTS },
       ...cfgOverrides,

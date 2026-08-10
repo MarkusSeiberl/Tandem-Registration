@@ -9,6 +9,7 @@ export default function Settings() {
   const [backupDir, setBackupDir] = useState('')
   const [contractText, setContractText] = useState('')
   const [privacyText, setPrivacyText] = useState('')
+  const [voucherListPath, setVoucherListPath] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -20,13 +21,14 @@ export default function Settings() {
 
   function applySettings(cfg: {
     exportDir: string; jumpLocation: string; backupDir: string
-    contractText: string; privacyText: string
+    contractText: string; privacyText: string; voucherListPath: string
   }) {
     setExportDir(cfg.exportDir)
     setJumpLocation(cfg.jumpLocation)
     setBackupDir(cfg.backupDir)
     setContractText(cfg.contractText)
     setPrivacyText(cfg.privacyText)
+    setVoucherListPath(cfg.voucherListPath)
   }
 
   useEffect(() => {
@@ -44,7 +46,7 @@ export default function Settings() {
       // The server merges the price and payout blocks, so leaving them out here
       // keeps whatever the Stammdaten screen saved.
       const cfg = await putSettings({
-        exportDir, jumpLocation, backupDir, contractText, privacyText,
+        exportDir, jumpLocation, backupDir, contractText, privacyText, voucherListPath,
       })
       applySettings(cfg)
       setSaved(true)
@@ -108,6 +110,22 @@ export default function Settings() {
             setSaved(false)
           }}
         />
+      </label>
+
+      <label className="field">
+        Gutscheinliste (Excel-Datei)
+        <input
+          type="text"
+          value={voucherListPath}
+          onChange={(e) => {
+            setVoucherListPath(e.target.value)
+            setSaved(false)
+          }}
+        />
+        <span className="field-hint">
+          Vollständiger Pfad zur Tandemliste des Vereins. Leer lassen, wenn keine
+          Gutscheinprüfung gewünscht ist.
+        </span>
       </label>
 
       {/*

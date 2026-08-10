@@ -47,6 +47,10 @@ export interface Config {
   // einer Vertragswand untergehen darf — und weil sie sich unabhängig davon
   // ändert (neue Anschrift, neue Aufbewahrungsfrist).
   privacyText: string
+  // Absolute path to the club's Tandemliste.xlsx. Empty means the manifest does
+  // not check vouchers at all — a club without that file should never be shown
+  // machinery it did not ask for.
+  voucherListPath: string
   jumpLocation: string
   backupDir: string
   prices: Prices
@@ -117,7 +121,7 @@ export function loadConfig(dir: string): Config {
   const p = path.join(dir, 'config.json')
   const def: Config = {
     exportDir: dir, contractText: CONTRACT_TEXT, privacyText: PRIVACY_TEXT,
-    jumpLocation: '', backupDir: '',
+    jumpLocation: '', backupDir: '', voucherListPath: '',
     prices: { ...DEFAULT_PRICES }, payouts: { ...DEFAULT_PAYOUTS },
   }
   try {

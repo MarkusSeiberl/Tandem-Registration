@@ -84,6 +84,7 @@ describe('Detail', () => {
     vi.mocked(api.flyers).mockResolvedValue([{ id: 7, name: 'Peter' }])
     vi.mocked(api.getSettings).mockResolvedValue({
       exportDir: '', contractText: '', privacyText: '', jumpLocation: '', backupDir: '',
+      voucherListPath: '',
       prices: PRICES, payouts: PAYOUTS,
     })
     vi.mocked(api.patch).mockImplementation(async (_id, fields) =>

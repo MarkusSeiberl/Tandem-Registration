@@ -6,7 +6,9 @@ import path from 'path'
 export type VoucherFileRow = {
   lfdNr?: string
   einzahlDat?: Date | string | null
-  art?: string
+  // A plain string for most rows, or an ExcelJS hyperlink-cell shape to
+  // exercise a data column holding a hyperlink instead of plain text.
+  art?: string | { text: string; hyperlink: string }
   betrag?: number
   eingeloest?: Date | null
 }

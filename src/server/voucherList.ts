@@ -67,9 +67,9 @@ function headerColumns(sheet: ExcelJS.Worksheet): Map<string, number> {
   const columns = new Map<string, number>()
   const header = sheet.getRow(1)
   for (let c = 1; c <= sheet.columnCount; c++) {
-    const raw = header.getCell(c).value
+    const raw = unwrapCellValue(header.getCell(c).value)
     if (raw === null || raw === undefined) continue
-    const key = String(typeof raw === 'object' && 'text' in raw ? (raw as any).text : raw)
+    const key = String(raw)
       .trim()
       .toLowerCase()
       // The club's file spells it "Eingelöst"; tolerate an ASCII rewrite too.
@@ -79,26 +79,47 @@ function headerColumns(sheet: ExcelJS.Worksheet): Map<string, number> {
   return columns
 }
 
+// ExcelJS hands back a hyperlink (or rich-text) cell as { text, hyperlink }
+// instead of a plain scalar. Every cell reader — header or data — routes
+// through this so a hyperlinked column can't silently stringify to
+// "[object Object]" in one path while working in another.
+function unwrapCellValue(value: ExcelJS.CellValue): ExcelJS.CellValue {
+  if (value !== null && typeof value === 'object' && 'text' in value) {
+    return (value as { text: ExcelJS.CellValue }).text
+  }
+  return value
+}
+
 function cellDate(value: ExcelJS.CellValue): { date: Date | null; text: string | null } {
-  if (value instanceof Date) return { date: value, text: null }
-  if (value === null || value === undefined) return { date: null, text: null }
-  const text = String(value).trim()
+  const unwrapped = unwrapCellValue(value)
+  if (unwrapped instanceof Date) return { date: unwrapped, text: null }
+  if (unwrapped === null || unwrapped === undefined) return { date: null, text: null }
+  const text = String(unwrapped).trim()
   return { date: null, text: text.length > 0 ? text : null }
 }
 
 function cellNumber(value: ExcelJS.CellValue): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
+  const unwrapped = unwrapCellValue(value)
+  return typeof unwrapped === 'number' && Number.isFinite(unwrapped) ? unwrapped : null
 }
 
 function cellText(value: ExcelJS.CellValue): string | null {
-  if (value === null || value === undefined) return null
-  const text = String(value).trim()
+  const unwrapped = unwrapCellValue(value)
+  if (unwrapped === null || unwrapped === undefined) return null
+  const text = String(unwrapped).trim()
   return text.length > 0 ? text : null
 }
 
 export async function readVoucherList(filePath: string): Promise<VoucherList> {
   const wb = new ExcelJS.Workbook()
-  await wb.xlsx.readFile(filePath)
+  try {
+    await wb.xlsx.readFile(filePath)
+  } catch {
+    // ExcelJS throws its own English "File not found" error here, but this
+    // module is called from a route that shows the message straight to the
+    // club's operator, so it has to be German.
+    throw new Error(`Die Gutscheinliste konnte nicht gelesen werden: ${filePath}`)
+  }
   const sheet = wb.worksheets[0]
   if (!sheet) throw new Error('Die Gutscheinliste enthält kein Tabellenblatt.')
 
@@ -115,18 +136,23 @@ export async function readVoucherList(filePath: string): Promise<VoucherList> {
   }
 
   const byNumber = new Map<string, VoucherEntry[]>()
-  for (let r = 2; r <= sheet.rowCount; r++) {
-    const row = sheet.getRow(r)
+  // A hand-edited sheet's dimension metadata can disagree with its actual
+  // content, which makes sheet.rowCount an untrustworthy scan bound;
+  // eachRow walks the real rows instead. rowNumber stays the true 1-based
+  // sheet row — a later task writes a redemption date back into it.
+  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (rowNumber === 1) return
+
     const number = cellText(at(row, 'lfdnr'))
     // A blank number is a spacer or a half-typed row, not a voucher.
-    if (!number) continue
+    if (!number) return
 
     const paid = cellDate(at(row, 'einzahldat'))
     const art = cellText(at(row, 'art'))
     const { service, isAddOn } = serviceFromArt(art)
     const entry: VoucherEntry = {
       number,
-      rowNumber: r,
+      rowNumber,
       paidAt: paid.date,
       paidText: paid.text,
       amount: cellNumber(at(row, 'betrag')),
@@ -139,7 +165,7 @@ export async function readVoucherList(filePath: string): Promise<VoucherList> {
     const existing = byNumber.get(key)
     if (existing) existing.push(entry)
     else byNumber.set(key, [entry])
-  }
+  })
 
   return { sheetName: sheet.name, byNumber }
 }

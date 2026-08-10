@@ -107,5 +107,21 @@ test('a missing required header is an error naming the column', async () => {
 })
 
 test('a missing file is an error, not a crash', async () => {
-  await expect(readVoucherList('C:/nope/keine-datei.xlsx')).rejects.toThrow()
+  // The route shows this message straight to the club's operator, so
+  // ExcelJS's own English "File not found" must not leak through.
+  await expect(readVoucherList('C:/nope/keine-datei.xlsx'))
+    .rejects.toThrow('Die Gutscheinliste konnte nicht gelesen werden: C:/nope/keine-datei.xlsx')
+})
+
+test('a hyperlink cell in a data column reads as its text', async () => {
+  // ExcelJS represents a hyperlink cell as { text, hyperlink }; unwrapped
+  // naively that stringifies to "[object Object]" instead of the label.
+  const file = await writeVoucherFile([
+    { lfdNr: '26-010', art: { text: 'Tandem', hyperlink: 'https://example.com' } },
+  ])
+  const list = await readVoucherList(file)
+
+  const entry = list.byNumber.get(normaliseVoucherNumber('26-010'))![0]
+  expect(entry.art).toBe('Tandem')
+  expect(entry.service).toBe('jump')
 })

@@ -125,3 +125,80 @@ test('a hyperlink cell in a data column reads as its text', async () => {
   expect(entry.art).toBe('Tandem')
   expect(entry.service).toBe('jump')
 })
+
+import { promises as fsp } from 'fs'
+import { clearVoucherListCache, loadVoucherList, lookupVoucher } from '../src/server/voucherList'
+
+async function listOf(rows: Parameters<typeof writeVoucherFile>[0]) {
+  return readVoucherList(await writeVoucherFile(rows))
+}
+
+test('a paid, unredeemed voucher is ok', async () => {
+  const list = await listOf([{ lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' }])
+  expect(lookupVoucher(list, '26-1').status).toBe('ok')
+})
+
+test('an unpaid voucher is not valid', async () => {
+  const list = await listOf([{ lfdNr: '26-007', einzahlDat: null, art: 'Tandem' }])
+  expect(lookupVoucher(list, '26-007').status).toBe('unpaid')
+})
+
+test('text in EinzahlDat means cancelled, and the text is handed on', async () => {
+  const list = await listOf([{ lfdNr: '26-009', einzahlDat: 'STORNO', art: 'Tandem' }])
+  const result = lookupVoucher(list, '26-009')
+  expect(result.status).toBe('cancelled')
+  expect(result.entry?.paidText).toBe('STORNO')
+})
+
+test('any other text is cancelled too, not quietly accepted', async () => {
+  const list = await listOf([{ lfdNr: '26-010', einzahlDat: 'zurückgezahlt', art: 'Tandem' }])
+  expect(lookupVoucher(list, '26-010').status).toBe('cancelled')
+})
+
+test('a voucher with a redemption date is already used', async () => {
+  const list = await listOf([{
+    lfdNr: '26-002', einzahlDat: new Date('2026-01-14'),
+    art: 'Tandem', eingeloest: new Date('2026-07-12'),
+  }])
+  const result = lookupVoucher(list, '26-002')
+  expect(result.status).toBe('redeemed')
+  expect(result.entry?.redeemedAt?.toISOString().slice(0, 10)).toBe('2026-07-12')
+})
+
+test('an unknown number is not found, and an empty one is not looked up', async () => {
+  const list = await listOf([{ lfdNr: '26-001', einzahlDat: new Date('2026-01-14') }])
+  expect(lookupVoucher(list, '99-999').status).toBe('not_found')
+  expect(lookupVoucher(list, '   ').status).toBe('not_found')
+})
+
+test('two matching rows are ambiguous rather than a guess', async () => {
+  const list = await listOf([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14') },
+    { lfdNr: '26-1', einzahlDat: new Date('2026-02-14') },
+  ])
+  const result = lookupVoucher(list, '26-001')
+  expect(result.status).toBe('ambiguous')
+  expect(result.entry).toBeNull()
+})
+
+test('the list is cached until the file changes on disk', async () => {
+  clearVoucherListCache()
+  const file = await writeVoucherFile([{ lfdNr: '26-001', einzahlDat: new Date('2026-01-14') }])
+
+  const first = await loadVoucherList(file)
+  const second = await loadVoucherList(file)
+  // Same object: a OneDrive file must not be re-parsed on every keystroke.
+  expect(second).toBe(first)
+
+  // Rewriting it with a second voucher must be picked up without a restart.
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const rewritten = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14') },
+    { lfdNr: '26-002', einzahlDat: new Date('2026-01-15') },
+  ])
+  await fsp.copyFile(rewritten, file)
+
+  const third = await loadVoucherList(file)
+  expect(third).not.toBe(first)
+  expect(third.byNumber.size).toBe(2)
+})

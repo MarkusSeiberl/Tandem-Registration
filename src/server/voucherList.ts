@@ -1,5 +1,6 @@
 import type { VoucherService } from './pricing'
 import ExcelJS from 'exceljs'
+import { promises as fs } from 'fs'
 
 // The club writes a voucher number as "26-001": a year prefix, a separator and
 // a zero-padded counter. What the manifest types is whatever the guest's paper
@@ -168,4 +169,58 @@ export async function readVoucherList(filePath: string): Promise<VoucherList> {
   })
 
   return { sheetName: sheet.name, byNumber }
+}
+
+export type VoucherStatus =
+  | 'ok'
+  | 'not_found'
+  | 'ambiguous'
+  | 'unpaid'
+  | 'cancelled'
+  | 'redeemed'
+
+export interface VoucherLookup {
+  status: VoucherStatus
+  /** Null when nothing could be identified — not found, or more than one match. */
+  entry: VoucherEntry | null
+}
+
+export function lookupVoucher(list: VoucherList, raw: string): VoucherLookup {
+  const key = normaliseVoucherNumber(raw)
+  if (key.length === 0) return { status: 'not_found', entry: null }
+
+  const matches = list.byNumber.get(key)
+  if (!matches || matches.length === 0) return { status: 'not_found', entry: null }
+  // Picking one of two would be a guess about the club's money.
+  if (matches.length > 1) return { status: 'ambiguous', entry: null }
+
+  const entry = matches[0]
+  if (entry.paidText !== null) return { status: 'cancelled', entry }
+  if (entry.paidAt === null) return { status: 'unpaid', entry }
+  if (entry.redeemedAt !== null) return { status: 'redeemed', entry }
+  return { status: 'ok', entry }
+}
+
+// Parsing the workbook costs real time and the manifest asks after every pause
+// in typing. The cache is keyed on what a changed file changes — path, mtime and
+// size — so an edit the club makes mid-day still arrives without a restart.
+let cache: { path: string; mtimeMs: number; size: number; list: VoucherList } | null = null
+
+export function clearVoucherListCache(): void {
+  cache = null
+}
+
+export async function loadVoucherList(filePath: string): Promise<VoucherList> {
+  const stat = await fs.stat(filePath)
+  if (
+    cache &&
+    cache.path === filePath &&
+    cache.mtimeMs === stat.mtimeMs &&
+    cache.size === stat.size
+  ) {
+    return cache.list
+  }
+  const list = await readVoucherList(filePath)
+  cache = { path: filePath, mtimeMs: stat.mtimeMs, size: stat.size, list }
+  return list
 }

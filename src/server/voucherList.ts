@@ -204,23 +204,40 @@ export function lookupVoucher(list: VoucherList, raw: string): VoucherLookup {
 // Parsing the workbook costs real time and the manifest asks after every pause
 // in typing. The cache is keyed on what a changed file changes — path, mtime and
 // size — so an edit the club makes mid-day still arrives without a restart.
-let cache: { path: string; mtimeMs: number; size: number; list: VoucherList } | null = null
+let cache: { path: string; mtimeMs: number; size: number; cachedAt: number; list: VoucherList } | null = null
+
+// mtime+size is the primary freshness signal, but an in-place edit that lands
+// within the same timestamp tick and keeps the byte count unchanged is
+// invisible to it — the cache would then serve a stale redemption answer
+// forever. This ceiling is the backstop for exactly that blind spot: long
+// enough that a burst of keystroke-driven checks still costs one parse, short
+// enough that a stale answer can't survive a jump-day conversation with a guest.
+const MAX_CACHE_AGE_MS = 5000
 
 export function clearVoucherListCache(): void {
   cache = null
 }
 
 export async function loadVoucherList(filePath: string): Promise<VoucherList> {
-  const stat = await fs.stat(filePath)
+  let stat
+  try {
+    stat = await fs.stat(filePath)
+  } catch {
+    // fs.stat throws Node's raw English ENOENT/EACCES; readVoucherList fails
+    // on the same file for the same reason and produces the German message
+    // this module owns in one place.
+    return readVoucherList(filePath)
+  }
   if (
     cache &&
     cache.path === filePath &&
     cache.mtimeMs === stat.mtimeMs &&
-    cache.size === stat.size
+    cache.size === stat.size &&
+    Date.now() - cache.cachedAt < MAX_CACHE_AGE_MS
   ) {
     return cache.list
   }
   const list = await readVoucherList(filePath)
-  cache = { path: filePath, mtimeMs: stat.mtimeMs, size: stat.size, list }
+  cache = { path: filePath, mtimeMs: stat.mtimeMs, size: stat.size, cachedAt: Date.now(), list }
   return list
 }

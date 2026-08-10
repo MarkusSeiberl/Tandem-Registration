@@ -181,6 +181,13 @@ test('two matching rows are ambiguous rather than a guess', async () => {
   expect(result.entry).toBeNull()
 })
 
+test('a missing file is an error in German even through the cache wrapper', async () => {
+  // loadVoucherList stats the path before it ever reaches readVoucherList;
+  // that stat call must not let Node's raw English ENOENT through.
+  await expect(loadVoucherList('C:/nope/keine-datei.xlsx'))
+    .rejects.toThrow('Die Gutscheinliste konnte nicht gelesen werden: C:/nope/keine-datei.xlsx')
+})
+
 test('the list is cached until the file changes on disk', async () => {
   clearVoucherListCache()
   const file = await writeVoucherFile([{ lfdNr: '26-001', einzahlDat: new Date('2026-01-14') }])

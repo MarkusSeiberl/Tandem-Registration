@@ -121,14 +121,19 @@ test('clearing a number twice does not eat into the contract itself', async () =
   expect(text).toContain('Mustermann')
 })
 
-test('the stamp sits on the blank line, clear of the template header', async () => {
-  // Measured, not assumed: the topmost ink in Befoerderungsvertrag.pdf sits at
-  // y≈802, and the page is 842pt tall. The number is drawn at y=806 — on the
-  // blank line above the header, still inside a printer's margin.
+test('the stamp lands on page 1 and leaves the rest of the contract alone', async () => {
+  // The exact x/y in VOUCHER_STAMP is a visual decision, checked against the
+  // printed template — the template's text is vector outlines, so no assertion
+  // here can tell the blank line from a letter stroke. This test therefore
+  // covers what code can know: the number is drawn, on the first page, and
+  // nothing that was already on the contract went missing.
   const contract = await fillContractPdf(templateBytes, sampleData())
   const stamped = await stampVoucherNumber(contract, 'GS-1')
-  const page = (await PDFDocument.load(stamped)).getPages()[0]
+  const doc = await PDFDocument.load(stamped)
 
-  expect(page.getHeight()).toBeGreaterThan(806 + 11)
-  expect(await pdfText(stamped)).toContain('GS-1')
+  expect(doc.getPageCount()).toBe(2)
+  const text = await pdfText(stamped)
+  expect(text).toContain('GS-1')
+  expect(text).toContain('Mustermann')
+  expect(text).toContain('Freistadt')
 })

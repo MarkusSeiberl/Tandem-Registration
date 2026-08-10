@@ -30,12 +30,50 @@ test('reports unpaid, cancelled and unknown vouchers', async () => {
     { lfdNr: '26-007', einzahlDat: null, art: 'Tandem' },
     { lfdNr: '26-009', einzahlDat: 'STORNO', art: 'Tandem' },
   ])
-  const status = async (number: string) =>
-    (await app.inject({ method: 'GET', url: `/api/voucher?number=${number}` })).json()
+  const check = async (number: string) =>
+    app.inject({ method: 'GET', url: `/api/voucher?number=${number}` })
 
-  expect((await status('26-007')).status).toBe('unpaid')
-  expect((await status('26-009'))).toMatchObject({ status: 'cancelled', paidText: 'STORNO' })
-  expect((await status('99-999')).status).toBe('not_found')
+  const unpaid = await check('26-007')
+  expect(unpaid.statusCode).toBe(200)
+  expect(unpaid.json().status).toBe('unpaid')
+
+  const cancelled = await check('26-009')
+  expect(cancelled.statusCode).toBe(200)
+  expect(cancelled.json()).toMatchObject({ status: 'cancelled', paidText: 'STORNO' })
+
+  const unknown = await check('99-999')
+  expect(unknown.statusCode).toBe(200)
+  expect(unknown.json().status).toBe('not_found')
+  await app.close()
+})
+
+test('reports two rows sharing a normalised number as ambiguous', async () => {
+  const { app } = await serverWithList([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem', betrag: 250 },
+    { lfdNr: '26-1', einzahlDat: new Date('2026-01-15'), art: 'Tandem', betrag: 250 },
+  ])
+  const res = await app.inject({ method: 'GET', url: '/api/voucher?number=26-001' })
+
+  expect(res.statusCode).toBe(200)
+  expect(res.json().status).toBe('ambiguous')
+  await app.close()
+})
+
+test('reports a voucher already marked as redeemed, with the redemption date', async () => {
+  const { app } = await serverWithList([
+    {
+      lfdNr: '26-001',
+      einzahlDat: new Date('2026-01-14'),
+      art: 'Tandem',
+      betrag: 250,
+      eingeloest: new Date('2026-02-01'),
+    },
+  ])
+  const res = await app.inject({ method: 'GET', url: '/api/voucher?number=26-001' })
+
+  expect(res.statusCode).toBe(200)
+  expect(res.json().status).toBe('redeemed')
+  expect(res.json().redeemedAt).toContain('2026-02-01')
   await app.close()
 })
 

@@ -29,7 +29,18 @@ const isoDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null)
 // Every failure here is reported as data, never as a status code the manifest
 // would have to treat as broken: an unreadable voucher list is a message beside
 // a field, not a reason to stop taking registrations.
-export async function checkVoucher(cfg: Config, number: string): Promise<VoucherCheck> {
+//
+// The catch below is deliberately broad — it also swallows programming errors
+// that have nothing to do with the club's file, not just the file-open failure
+// readVoucherList guards on its own. Narrowing it would risk a bug turning into
+// a 500 on a jump day, so it stays broad on purpose; `log` exists so a genuine
+// bug still leaves a trace somewhere instead of only reaching the operator as
+// "Gutscheinliste nicht lesbar".
+export async function checkVoucher(
+  cfg: Config,
+  number: string,
+  log?: (err: unknown) => void
+): Promise<VoucherCheck> {
   const path = cfg.voucherListPath?.trim()
   if (!path) return { ...OFF }
 
@@ -37,6 +48,7 @@ export async function checkVoucher(cfg: Config, number: string): Promise<Voucher
   try {
     list = await loadVoucherList(path)
   } catch (err) {
+    log?.(err)
     return {
       ...OFF,
       configured: true,
@@ -67,6 +79,10 @@ export function registerVoucherRoutes(app: FastifyInstance, cfgRef: { current: C
     if (typeof number !== 'string' || number.trim().length === 0) {
       return reply.code(400).send({ error: 'Gutschein-Nr. fehlt' })
     }
-    return reply.send(await checkVoucher(cfgRef.current, number))
+    return reply.send(
+      await checkVoucher(cfgRef.current, number, (err) =>
+        app.log.error({ err }, 'Gutscheinliste konnte nicht gelesen werden')
+      )
+    )
   })
 }

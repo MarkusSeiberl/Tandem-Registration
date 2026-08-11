@@ -105,14 +105,52 @@ test('a missing number is rejected without touching the file', async () => {
   await app.close()
 })
 
+// The row the banner is meant to count: redeemed for us, not yet in the file.
+const PENDING_ROW = `INSERT INTO registrations
+  (first_name,last_name,created_at,jump_date,voucher_number,voucher_redeemed_at)
+  VALUES ('A','B','2026-08-10T10:00:00.000Z','2026-08-10','26-001',
+   '2026-08-10T10:00:00.000Z')`
+
 test('the pending count is what the manifest shows in its banner', async () => {
   clearVoucherListCache()
-  const { app, db } = testServer({ voucherListPath: '' })
+  const voucherListPath = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+  ])
+  const { app, db } = testServer({ voucherListPath })
+  db.prepare(PENDING_ROW).run()
+
+  const res = await app.inject({ method: 'GET', url: '/api/voucher/pending' })
+  expect(res.json().count).toBe(1)
+  await app.close()
+})
+
+test('a redemption whose voucher number was cleared is not counted as open', async () => {
+  clearVoucherListCache()
+  const voucherListPath = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+  ])
+  const { app, db } = testServer({ voucherListPath })
+  // The detail screen sends voucher_number: null as soon as the payment method
+  // moves off Gutschein. The export sweep has no number to write, so a banner
+  // counting this row would ask for something no export could ever deliver.
   db.prepare(`INSERT INTO registrations
     (first_name,last_name,created_at,jump_date,voucher_redeemed_at)
     VALUES ('A','B','2026-08-10T10:00:00.000Z','2026-08-10','2026-08-10T10:00:00.000Z')`).run()
 
   const res = await app.inject({ method: 'GET', url: '/api/voucher/pending' })
-  expect(res.json().count).toBe(1)
+  expect(res.json().count).toBe(0)
+  await app.close()
+})
+
+test('an unset path shows no banner, whatever the rows still say', async () => {
+  clearVoucherListCache()
+  // Clearing the path is how a club switches the feature off after trouble.
+  // Rows from the days it was in use must not keep a warning on screen that
+  // nobody can act on.
+  const { app, db } = testServer({ voucherListPath: '' })
+  db.prepare(PENDING_ROW).run()
+
+  const res = await app.inject({ method: 'GET', url: '/api/voucher/pending' })
+  expect(res.json().count).toBe(0)
   await app.close()
 })

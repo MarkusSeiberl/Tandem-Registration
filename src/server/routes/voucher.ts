@@ -93,9 +93,21 @@ export function registerVoucherRoutes(
 
   // What the manifest banner counts: redemptions we recorded that the club's
   // file has not received. Invalid vouchers are never in here by construction.
+  //
+  // The predicate is word for word the export sweep's queue (routes/export.ts).
+  // The two used to differ, and each difference was a row the banner counted
+  // that no export could ever write off: `voucher_number IS NOT NULL` excludes
+  // the row whose payment method was corrected away from Gutschein, which
+  // clears the number and leaves the redemption behind with nothing to write.
   app.get('/api/voucher/pending', async () => {
+    // An empty path is how a club switches the feature off. Without this the
+    // banner would keep counting rows from the days the feature was in use,
+    // while every redemption attempt returns 'disabled' — a warning that can
+    // never be acted on and never goes away.
+    if (!cfgRef.current.voucherListPath?.trim()) return { count: 0 }
     const row = db.prepare(`SELECT COUNT(*) AS count FROM registrations
-      WHERE voucher_redeemed_at IS NOT NULL AND voucher_redeem_synced_at IS NULL`)
+      WHERE voucher_redeemed_at IS NOT NULL AND voucher_redeem_synced_at IS NULL
+        AND voucher_number IS NOT NULL`)
       .get() as { count: number }
     return { count: row.count }
   })

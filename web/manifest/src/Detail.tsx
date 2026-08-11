@@ -14,7 +14,7 @@ import {
 import {
   atLeast, formatEuro, priceLines, serviceOfVoucher, surchargeForWeight, voucherValue,
 } from './pricing'
-import { voucherAmountText, voucherServiceText, voucherStatusText } from './voucher'
+import { formatDate, voucherAmountText, voucherServiceText, voucherStatusText } from './voucher'
 import TrashIcon from './TrashIcon'
 
 export interface DetailProps {
@@ -72,6 +72,11 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
       setVoucherCheck(null)
       return
     }
+    // The previous number's answer is about the previous number. Left on screen
+    // for the debounce window it would state what the club's list says about a
+    // voucher that is no longer in the field — a sentence about money that is
+    // wrong for what the operator is looking at.
+    setVoucherCheck(null)
     let cancelled = false
     const timer = setTimeout(() => {
       checkVoucher(number)
@@ -95,6 +100,17 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
           voucherCheck.service ? voucherValue(voucherCheck.service, prices) : null,
           formatEuro
         )
+      : null
+  // What our two stamps say about this row's redemption. A row can be put back
+  // to open while its date already stands in the club's file — the file keeps
+  // that date, so the screen has to say so, or the operator sees an open row
+  // and a list that quietly disagrees with it. A statement, never a warning:
+  // there is nothing here for anyone to fix.
+  const redemptionLine = registration.voucher_redeem_synced_at
+    ? `Einlösung am ${formatDate(registration.voucher_redeem_synced_at)} in die ` +
+      'Gutscheinliste eingetragen. Das Datum bleibt dort stehen.'
+    : registration.voucher_redeemed_at
+      ? 'Einlösung vermerkt, aber noch nicht in die Gutscheinliste geschrieben.'
       : null
   // Kameraflieger is needed whenever video is filmed — that includes a guest
   // whose voucher already covers the video, who books nothing on top.
@@ -372,6 +388,16 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
                 </span>
               </label>
             </fieldset>
+          )}
+
+          {/*
+            Outside the voucher block on purpose, directly under it: what the
+            club's file already carries stays true even after the payment method
+            is moved away from Gutschein, which is precisely when the row stops
+            naming the voucher the date sits on.
+          */}
+          {redemptionLine && (
+            <p className="field-hint voucher-redemption">{redemptionLine}</p>
           )}
 
           <label className="field">

@@ -615,6 +615,32 @@ test('un-collecting leaves a redemption the list already has', async () => {
   await app.close()
 })
 
+test('correcting the voucher number hands the new one back to the export sweep', async () => {
+  const file = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+    { lfdNr: '26-002', einzahlDat: new Date('2026-01-15'), art: 'Tandem' },
+  ])
+  const { app, id, collect } = await voucherServer(file)
+  const first = (await collect(true)).json()
+  expect(first.voucher_redeem_synced_at).not.toBeNull()
+
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`, payload: { voucher_number: '26-002' },
+  })
+
+  // The date for 26-001 stays in the club's file; the row must stop claiming it
+  // was 26-002 that reached the file, or the new voucher is never redeemed at
+  // all and nothing counts it.
+  expect(res.json().voucher_redeem_synced_at).toBeNull()
+  expect(res.json().voucher_redeemed_at).not.toBeNull()
+  expect(await eingeloestCell(file, 2)).toBeInstanceOf(Date)
+  expect(await eingeloestCell(file, 3)).toBeNull()
+
+  const pending = await app.inject({ method: 'GET', url: '/api/voucher/pending' })
+  expect(pending.json().count).toBe(1)
+  await app.close()
+})
+
 test('saving an already collected row does not go near the list again', async () => {
   const file = await writeVoucherFile([
     { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },

@@ -58,25 +58,57 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
     // Every redemption that did not reach the club's file when the row was
     // collected gets one more attempt here. This is the "at latest at export"
     // half of the promise; the collect handler is the other.
+    //
+    // Deliberately not scoped to `date`: the queue is everything still owed to
+    // the file, whatever day it was collected on. A file locked all Saturday
+    // leaves Saturday's rows outstanding, and the banner counts them on Sunday
+    // too — an export that only retried its own date could never bring that
+    // count back to zero, and nothing would tell the operator to go back and
+    // re-export Saturday. The predicate is otherwise word for word the one the
+    // banner counts (see routes/voucher.ts), so the two cannot disagree about
+    // what "still open" means.
     let redemptionsWritten = 0
     let redemptionsPending = 0
     let redemptionsInvalid = 0
     const owed = db.prepare(`SELECT id, voucher_number FROM registrations
-      WHERE jump_date=? AND voucher_redeemed_at IS NOT NULL
-        AND voucher_redeem_synced_at IS NULL AND voucher_number IS NOT NULL`).all(date) as any[]
+      WHERE voucher_redeemed_at IS NOT NULL AND voucher_redeem_synced_at IS NULL
+        AND voucher_number IS NOT NULL ORDER BY id`).all() as any[]
     for (const row of owed) {
-      const outcome = await redeemVoucher(cfgRef.current, row.voucher_number, new Date())
-      if (outcome === 'written' || outcome === 'already_redeemed') {
-        db.prepare('UPDATE registrations SET voucher_redeem_synced_at=@now WHERE id=@id')
-          .run({ id: row.id, now: new Date().toISOString() })
-        redemptionsWritten += 1
-      } else if (outcome === 'invalid') {
-        // The list says this voucher is not good after all. Take the redemption
-        // back so it stops being counted as something the file still owes.
-        db.prepare('UPDATE registrations SET voucher_redeemed_at=NULL WHERE id=@id')
-          .run({ id: row.id })
-        redemptionsInvalid += 1
-      } else if (outcome === 'failed') {
+      // One unwritable voucher must not cost the club the day's export, which is
+      // built below and is what the operator actually asked for. Same reasoning
+      // as the collect handler in routes/registrations.ts: everything about the
+      // voucher list is best-effort beside the operator's real work. A throw is
+      // counted as still open, so the next export tries the row again.
+      try {
+        const outcome = await redeemVoucher(cfgRef.current, row.voucher_number, new Date())
+        if (outcome === 'written' || outcome === 'already_redeemed') {
+          // 'already_redeemed' is read differently here than in the collect
+          // handler. There it means "the date is someone else's, claim nothing".
+          // Here the row already carries our own voucher_redeemed_at, so a date
+          // in the cell is in the normal case an earlier attempt of ours that
+          // landed after all. Either way the file now says what we wanted it to
+          // say, and treating that as written is what stops a date typed in by
+          // hand from parking the row in the queue forever.
+          db.prepare('UPDATE registrations SET voucher_redeem_synced_at=@now WHERE id=@id')
+            .run({ id: row.id, now: new Date().toISOString() })
+          redemptionsWritten += 1
+        } else if (outcome === 'invalid') {
+          // The list says this voucher is not good after all. Take the redemption
+          // back so it stops being counted as something the file still owes.
+          db.prepare('UPDATE registrations SET voucher_redeemed_at=NULL WHERE id=@id')
+            .run({ id: row.id })
+          redemptionsInvalid += 1
+        } else if (outcome === 'failed') {
+          redemptionsPending += 1
+        } else if (outcome === 'disabled') {
+          // No list configured — the club switched the feature off. Nothing is
+          // owed to a file that is not there, so this is neither written nor
+          // open; the stamps are left untouched in case a path comes back. The
+          // banner is silent for the same reason (see routes/voucher.ts).
+        }
+      } catch (err) {
+        app.log.error({ err, id: row.id },
+          'Gutschein-Einlösung konnte beim Export nicht geschrieben werden')
         redemptionsPending += 1
       }
     }

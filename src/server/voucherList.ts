@@ -86,10 +86,12 @@ export function headerColumns(sheet: ExcelJS.Worksheet): Map<string, number> {
   return columns
 }
 
-// ExcelJS hands back a hyperlink (or rich-text) cell as { text, hyperlink }
-// instead of a plain scalar. Every cell reader — header or data — routes
-// through this so a hyperlinked column can't silently stringify to
-// "[object Object]" in one path while working in another.
+// ExcelJS hands back a hyperlink cell as { text, hyperlink } instead of a plain
+// scalar. Every cell reader — header or data — routes through this so a
+// hyperlinked column can't silently stringify to "[object Object]" in one path
+// while working in another. Only that `text` shape is unwrapped: a rich-text
+// cell is { richText: [...] } and passes through untouched, so a cell the club
+// formatted word by word is not read here either.
 function unwrapCellValue(value: ExcelJS.CellValue): ExcelJS.CellValue {
   if (value !== null && typeof value === 'object' && 'text' in value) {
     return (value as { text: ExcelJS.CellValue }).text
@@ -137,7 +139,11 @@ export async function readVoucherList(filePath: string): Promise<VoucherList> {
   const missing = REQUIRED_HEADERS.filter((h) => !columns.has(h))
   if (missing.length > 0) {
     const names = missing.map((m) => (m === 'eingelöst' ? 'Eingelöst' : m === 'lfdnr' ? 'LfdNr' : 'EinzahlDat'))
-    throw new Error(`In der Gutscheinliste fehlt die Spalte ${names.join(', ')}.`)
+    // The operator reads this message as it stands, so it has to agree in
+    // number: "fehlt die Spalte LfdNr, Eingelöst" is not German.
+    throw new Error(names.length === 1
+      ? `In der Gutscheinliste fehlt die Spalte ${names[0]}.`
+      : `In der Gutscheinliste fehlen die Spalten ${names.join(', ')}.`)
   }
 
   const at = (row: ExcelJS.Row, key: string) => {
@@ -146,10 +152,11 @@ export async function readVoucherList(filePath: string): Promise<VoucherList> {
   }
 
   const byNumber = new Map<string, VoucherEntry[]>()
-  // A hand-edited sheet's dimension metadata can disagree with its actual
-  // content, which makes sheet.rowCount an untrustworthy scan bound;
-  // eachRow walks the real rows instead. rowNumber stays the true 1-based
-  // sheet row — a later task writes a redemption date back into it.
+  // eachRow visits only the rows that exist and hands each one its true 1-based
+  // sheet row number, skipping the gaps a club's list collects over the years.
+  // Counting the rows we happened to see would drift past the first gap, and
+  // the number stored here is what the redemption writer addresses when it puts
+  // a date back into this voucher's row.
   sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
     if (rowNumber === 1) return
 

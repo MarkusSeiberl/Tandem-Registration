@@ -572,6 +572,13 @@ h2 {
   opacity: 1;
 }
 
+/* What the club's file already holds for this row. Deliberately as quiet as any
+   other hint: it reports a state, and there is nothing in it to act on — the
+   date stays in the file whether the row is collected or back to open. */
+.voucher-redemption {
+  margin: 0;
+}
+
 /* The money summary at the bottom of the manifest fields: the breakdown the
    server will charge, its total, and the escape hatch for an exception. */
 .price-box {

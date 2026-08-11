@@ -216,6 +216,23 @@ export function registerRegistrationRoutes(
         // voucher_redeemed_at without a sync stamp until the export sweep
         // (Task 8) retries it.
         const after = db.prepare('SELECT * FROM registrations WHERE id=?').get(id) as any
+        // A corrected number moves the redemption to a different voucher. The
+        // date already written stays in the club's file — the same rule as
+        // un-collecting — but both our stamps described the old number: left
+        // alone, the row would claim the *new* voucher had reached the file
+        // while that voucher was in fact never redeemed at all, invisible to
+        // both the banner and the export. So both are dropped. A row that is
+        // still collected on a voucher is still a redemption we stand behind,
+        // so it is recorded afresh as unwritten and the export sweep takes it
+        // from there against the new number.
+        if ('voucher_number' in body && body.voucher_number !== current.voucher_number &&
+            current.voucher_redeemed_at) {
+          const stillOnVoucher = !!after?.paid_at &&
+            after.payment_method === 'voucher' && !!after.voucher_number
+          db.prepare(`UPDATE registrations
+            SET voucher_redeemed_at=@redeemed, voucher_redeem_synced_at=NULL WHERE id=@id`)
+            .run({ id, redeemed: stillOnVoucher ? new Date().toISOString() : null })
+        }
         // `!current.paid_at` keeps this to the transition into collected. Every
         // later save of an already-collected row would otherwise re-read the
         // whole workbook to find a date that is already there.

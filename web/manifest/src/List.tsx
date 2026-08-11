@@ -232,7 +232,12 @@ export default function List({ onSelect }: ListProps) {
       const result = await exportDay(date)
       const parts = [`Export erstellt: ${result.path} (${result.count} Einträge)`]
       if (result.redemptionsWritten > 0) {
-        parts.push(`${result.redemptionsWritten} Einlösungen eingetragen`)
+        // Same count, same wording as the banner two lines below — one of them
+        // saying "1 Einlösungen" while the other says "1 Einlösung" reads as two
+        // different numbers.
+        parts.push(result.redemptionsWritten === 1
+          ? '1 Einlösung eingetragen'
+          : `${result.redemptionsWritten} Einlösungen eingetragen`)
       }
       if (result.redemptionsPending > 0) {
         parts.push(`${result.redemptionsPending} noch offen`)

@@ -230,6 +230,24 @@ describe('List', () => {
     await screen.findByText('Keine Registrierungen für dieses Datum.')
   })
 
+  it('counts a single written redemption the way the banner counts one', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.list).mockResolvedValue([])
+    vi.mocked(api.exportDay).mockResolvedValue({
+      path: 'C:/export/Tandem_2026-07-09.xlsx', count: 1,
+      redemptionsWritten: 1, redemptionsPending: 0, redemptionsInvalid: 0,
+    })
+    render(<List onSelect={() => {}} />)
+    await screen.findByText('Keine Registrierungen für dieses Datum.')
+
+    await user.click(screen.getByRole('button', { name: 'Exportieren' }))
+
+    // The banner right above gets the singular right; this line has to agree,
+    // or one number reads as two.
+    expect(await screen.findByText(/1 Einlösung eingetragen/)).toBeInTheDocument()
+    expect(screen.queryByText(/1 Einlösungen/)).not.toBeInTheDocument()
+  })
+
   it('says how many redemptions the club list is still missing', async () => {
     vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 2 })
     render(<List onSelect={vi.fn()} />)

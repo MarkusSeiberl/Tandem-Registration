@@ -10,6 +10,7 @@ import {
   VOUCHER_SERVICES, WEIGHT_SURCHARGES,
 } from '../pricing'
 import type { Config } from '../config'
+import { redeemVoucher } from '../voucherRedeem'
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -203,8 +204,82 @@ export function registerRegistrationRoutes(
       if ('voucher_number' in body && body.voucher_number !== current.voucher_number) {
         await restampContract(current.contract_pdf_filename, body.voucher_number)
       }
-      sse.broadcast('changed', { id })
-      return db.prepare('SELECT * FROM registrations WHERE id=?').get(id)
+
+      // Everything about the voucher list is best-effort, so all of it sits
+      // inside one try: the re-SELECT can come back empty if the row was
+      // deleted between the UPDATE and here, and the two follow-up UPDATEs can
+      // hit SQLITE_BUSY. The operator's save is already committed at this
+      // point and must survive either.
+      try {
+        // Collecting a voucher row is the moment it is spent. The write into the
+        // club's file is attempted now; if it fails, the row keeps
+        // voucher_redeemed_at without a sync stamp until the export sweep
+        // (Task 8) retries it.
+        const after = db.prepare('SELECT * FROM registrations WHERE id=?').get(id) as any
+        // A corrected number moves the redemption to a different voucher. The
+        // date already written stays in the club's file — the same rule as
+        // un-collecting — but both our stamps described the old number: left
+        // alone, the row would claim the *new* voucher had reached the file
+        // while that voucher was in fact never redeemed at all, invisible to
+        // both the banner and the export. So both are dropped. A row that is
+        // still collected on a voucher is still a redemption we stand behind,
+        // so it is recorded afresh as unwritten and the export sweep takes it
+        // from there against the new number.
+        if ('voucher_number' in body && body.voucher_number !== current.voucher_number &&
+            current.voucher_redeemed_at) {
+          const stillOnVoucher = !!after?.paid_at &&
+            after.payment_method === 'voucher' && !!after.voucher_number
+          db.prepare(`UPDATE registrations
+            SET voucher_redeemed_at=@redeemed, voucher_redeem_synced_at=NULL WHERE id=@id`)
+            .run({ id, redeemed: stillOnVoucher ? new Date().toISOString() : null })
+        }
+        // `!current.paid_at` keeps this to the transition into collected. Every
+        // later save of an already-collected row would otherwise re-read the
+        // whole workbook to find a date that is already there.
+        if (paid === true && !current.paid_at &&
+            after?.payment_method === 'voucher' && after.voucher_number) {
+          const outcome = await redeemVoucher(cfgRef.current, after.voucher_number, new Date())
+          if (outcome === 'written') {
+            db.prepare(`UPDATE registrations
+              SET voucher_redeemed_at=@now, voucher_redeem_synced_at=@now WHERE id=@id`)
+              .run({ id, now: new Date().toISOString() })
+          } else if (outcome === 'failed') {
+            // Ours to remember; the export sweep (Task 8) is meant to pick
+            // this up later, but until that lands the file simply lags.
+            db.prepare('UPDATE registrations SET voucher_redeemed_at=@now WHERE id=@id')
+              .run({ id, now: new Date().toISOString() })
+          }
+          // 'invalid', 'already_redeemed' and 'disabled' claim nothing: an invalid
+          // voucher must not sit in a retry queue that then never empties.
+        }
+        // Putting a row back to open drops a redemption that never reached the
+        // file. One that did is left alone — silently deleting a date from the
+        // club's list is worse than a stale one a human can correct.
+        if (paid === false) {
+          db.prepare(`UPDATE registrations SET voucher_redeemed_at=NULL
+            WHERE id=@id AND voucher_redeem_synced_at IS NULL`).run({ id })
+        }
+      } catch (err) {
+        // Deliberately swallowed: a failure to note the redemption must never
+        // fail the operator's save. The catch does nothing beyond logging —
+        // keeping the save intact is the whole point.
+        app.log.error({ err, id }, 'Gutschein-Einlösung konnte nicht vermerkt werden')
+      }
+
+      // The UPDATE above has already committed, so a throw from here on must
+      // not turn into a 500 — that would read as the save having failed when
+      // it actually succeeded, and the operator would retry into a confusing
+      // second state. Falling back to `current` (already SELECTed before the
+      // UPDATE) covers both the broadcast throwing and the final read coming
+      // back empty or erroring; one try/catch around both statements is a
+      // smaller change than guarding each separately.
+      try {
+        sse.broadcast('changed', { id })
+        return db.prepare('SELECT * FROM registrations WHERE id=?').get(id) ?? current
+      } catch (err) {
+        app.log.error({ err, id }, 'Antwort nach dem Speichern konnte nicht aufgebaut werden')
+        return current
+      }
     }
     return current
   })

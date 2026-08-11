@@ -21,10 +21,12 @@ export function testServer(
       privacyText: '',
       jumpLocation: '',
       backupDir: '',
+      voucherListPath: '',
       prices: { ...DEFAULT_PRICES },
       payouts: { ...DEFAULT_PAYOUTS },
       ...cfgOverrides,
     },
   }
-  return { app: buildServer(openDb(':memory:'), cfgRef, templateBytes, undefined, notify), cfgRef }
+  const db = openDb(':memory:')
+  return { app: buildServer(db, cfgRef, templateBytes, undefined, notify), cfgRef, db }
 }

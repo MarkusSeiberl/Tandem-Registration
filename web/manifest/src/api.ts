@@ -3,6 +3,9 @@
 // The optional apiBase (hidden operator setting) is prepended so the manifest PC can be
 // pointed at a different server without a rebuild. Mirrors web/guest/src/api.ts.
 
+import type { VoucherCheck } from './voucher'
+export type { VoucherCheck } from './voucher'
+
 const API_BASE_KEY = 'apiBase'
 
 export function getApiBase(): string {
@@ -87,6 +90,10 @@ export interface Registration {
   // Wann der Gast die Datenschutzinformation bestätigt hat. NULL bei Zeilen aus
   // der Zeit davor — das heißt nicht, dass jemand abgelehnt hätte.
   privacy_ack_at: string | null
+  // Wann wir entschieden haben, dass der Gutschein eingelöst ist, und wann das
+  // in der Gutscheinliste des Vereins angekommen ist.
+  voucher_redeemed_at: string | null
+  voucher_redeem_synced_at: string | null
 }
 
 export interface StammdatenItem {
@@ -100,6 +107,7 @@ export interface Settings {
   privacyText: string
   jumpLocation: string
   backupDir: string
+  voucherListPath: string
   prices: Prices
   payouts: Payouts
 }
@@ -126,6 +134,9 @@ export interface ManifestPatch {
 export interface ExportResult {
   path: string
   count: number
+  redemptionsWritten: number
+  redemptionsPending: number
+  redemptionsInvalid: number
 }
 
 export interface BackupResult {
@@ -164,6 +175,12 @@ export async function patch(id: number, fields: ManifestPatch): Promise<Registra
 export async function remove(id: number): Promise<void> {
   const res = await fetch(apiUrl(`/api/registrations/${id}`), { method: 'DELETE' })
   if (!res.ok) throw new Error('Löschen fehlgeschlagen')
+}
+
+export async function checkVoucher(number: string): Promise<VoucherCheck> {
+  const res = await fetch(apiUrl(`/api/voucher?number=${encodeURIComponent(number)}`))
+  if (!res.ok) throw new Error('Gutschein konnte nicht geprüft werden')
+  return asJson<VoucherCheck>(res)
 }
 
 type StammdatenKind = 'masters' | 'flyers'
@@ -229,4 +246,10 @@ export async function createBackup(): Promise<BackupResult> {
   const res = await fetch(apiUrl('/api/backup'), { method: 'POST' })
   if (!res.ok) throw new Error(await errorMessage(res, 'Backup fehlgeschlagen'))
   return asJson<BackupResult>(res)
+}
+
+export async function pendingRedemptions(): Promise<{ count: number }> {
+  const res = await fetch(apiUrl('/api/voucher/pending'))
+  if (!res.ok) throw new Error('Offene Einlösungen konnten nicht geladen werden')
+  return asJson<{ count: number }>(res)
 }

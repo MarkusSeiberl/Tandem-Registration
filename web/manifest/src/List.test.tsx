@@ -12,6 +12,7 @@ vi.mock('./api', () => ({
   exportDay: vi.fn(),
   patch: vi.fn(),
   getApiBase: vi.fn(() => ''),
+  pendingRedemptions: vi.fn(),
 }))
 
 const openTable = () => screen.getByRole('table', { name: /^Offen/ })
@@ -49,6 +50,8 @@ function makeRow(overrides: Partial<Registration>): Registration {
     paid_at: null,
     notes: null,
     privacy_ack_at: '2026-07-09T09:59:00.000Z',
+    voucher_redeemed_at: null,
+    voucher_redeem_synced_at: null,
     ...overrides,
   }
 }
@@ -56,6 +59,7 @@ function makeRow(overrides: Partial<Registration>): Registration {
 describe('List', () => {
   beforeEach(() => {
     vi.mocked(api.masters).mockResolvedValue([])
+    vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 0 })
   })
 
   it('renders one table row per registration', async () => {
@@ -224,5 +228,30 @@ describe('List', () => {
     const dateInput = screen.getByLabelText('Datum') as HTMLInputElement
     expect(dateInput.value).toBe(today())
     await screen.findByText('Keine Registrierungen für dieses Datum.')
+  })
+
+  it('counts a single written redemption the way the banner counts one', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.list).mockResolvedValue([])
+    vi.mocked(api.exportDay).mockResolvedValue({
+      path: 'C:/export/Tandem_2026-07-09.xlsx', count: 1,
+      redemptionsWritten: 1, redemptionsPending: 0, redemptionsInvalid: 0,
+    })
+    render(<List onSelect={() => {}} />)
+    await screen.findByText('Keine Registrierungen für dieses Datum.')
+
+    await user.click(screen.getByRole('button', { name: 'Exportieren' }))
+
+    // The banner right above gets the singular right; this line has to agree,
+    // or one number reads as two.
+    expect(await screen.findByText(/1 Einlösung eingetragen/)).toBeInTheDocument()
+    expect(screen.queryByText(/1 Einlösungen/)).not.toBeInTheDocument()
+  })
+
+  it('says how many redemptions the club list is still missing', async () => {
+    vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 2 })
+    render(<List onSelect={vi.fn()} />)
+
+    expect(await screen.findByText(/2 Einlösungen noch nicht/)).toBeInTheDocument()
   })
 })

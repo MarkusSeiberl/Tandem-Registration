@@ -41,7 +41,7 @@ test('creates registrations table with correct columns', () => {
     'voucher_number', 'voucher_service',
     'extra_booking', 'weight_surcharge', 'price_override',
     'camera_flyer_id', 'created_at', 'jump_date', 'paid_at',
-    'notes', 'privacy_ack_at'
+    'notes', 'privacy_ack_at', 'voucher_redeemed_at', 'voucher_redeem_synced_at'
   ]
 
   expect(columnNames).toEqual(expectedColumns)
@@ -124,7 +124,8 @@ test('migrates a legacy database: adds new columns, drops address, drops signatu
 
   for (const added of ['gender', 'height_cm', 'street', 'postal_code', 'city', 'voucher_number',
     'contract_pdf_filename', 'voucher_service', 'weight_surcharge', 'price_override',
-    'voucher_payment_method', 'paid_at', 'notes', 'privacy_ack_at']) {
+    'voucher_payment_method', 'paid_at', 'notes', 'privacy_ack_at',
+    'voucher_redeemed_at', 'voucher_redeem_synced_at']) {
     expect(names).toContain(added)
   }
   expect(names).not.toContain('address')

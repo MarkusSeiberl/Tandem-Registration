@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Detail from './Detail'
 import * as api from './api'
@@ -13,6 +13,7 @@ vi.mock('./api', () => ({
   getSettings: vi.fn(),
   contractPdfUrl: vi.fn(() => '/api/registrations/1/contract.pdf'),
   getApiBase: vi.fn(() => ''),
+  checkVoucher: vi.fn(),
 }))
 
 const PRICES = {
@@ -55,6 +56,8 @@ function makeRegistration(overrides: Partial<Registration> = {}): Registration {
     paid_at: null,
     notes: null,
     privacy_ack_at: '2026-07-09T09:59:00.000Z',
+    voucher_redeemed_at: null,
+    voucher_redeem_synced_at: null,
     ...overrides,
   }
 }
@@ -84,6 +87,7 @@ describe('Detail', () => {
     vi.mocked(api.flyers).mockResolvedValue([{ id: 7, name: 'Peter' }])
     vi.mocked(api.getSettings).mockResolvedValue({
       exportDir: '', contractText: '', privacyText: '', jumpLocation: '', backupDir: '',
+      voucherListPath: '',
       prices: PRICES, payouts: PAYOUTS,
     })
     vi.mocked(api.patch).mockImplementation(async (_id, fields) =>
@@ -452,5 +456,174 @@ describe('Detail', () => {
       voucher_service: null,
       voucher_number: null,
     })
+  })
+
+  const OK_CHECK = {
+    configured: true, readable: true, status: 'ok' as const, number: '26-001',
+    paidAt: '2026-01-14', paidText: null, amount: 355, art: 'Tandem + Video',
+    service: 'jump_video' as const, isAddOn: false, redeemedAt: null, error: null,
+  }
+
+  async function typeVoucherNumber(user: ReturnType<typeof userEvent.setup>, number: string) {
+    await user.selectOptions(screen.getByLabelText('Zahlungsart'), 'voucher')
+    await user.type(screen.getByLabelText('Gutschein-Nr.'), number)
+  }
+
+  it('says a voucher is paid and still unused', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+
+    expect(await screen.findByText(/Bezahlt am 14\.01\.2026/)).toBeInTheDocument()
+  })
+
+  it('warns about an unpaid voucher without locking anything', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue({ ...OK_CHECK, status: 'unpaid', paidAt: null })
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-007')
+
+    expect(await screen.findByText(/Nicht bezahlt/)).toBeInTheDocument()
+    // The operator is standing in front of the guest; the software does not decide.
+    expect(screen.getByRole('button', { name: 'Speichern' })).toBeEnabled()
+  })
+
+  it('quotes whatever text stands in EinzahlDat', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue({
+      ...OK_CHECK, status: 'cancelled', paidAt: null, paidText: 'STORNO',
+    })
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-009')
+
+    expect(await screen.findByText(/STORNO/)).toBeInTheDocument()
+  })
+
+  it('says when a voucher was already redeemed', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue({
+      ...OK_CHECK, status: 'redeemed', redeemedAt: '2026-07-12',
+    })
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-002')
+
+    expect(await screen.findByText(/Bereits eingelöst am 12\.07\.2026/)).toBeInTheDocument()
+  })
+
+  it('points out an Art that does not match the chosen Leistung', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+    await screen.findByText(/Bezahlt am/)
+    await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump')
+
+    expect(await screen.findByText(/Laut Liste: Tandem \+ Video/)).toBeInTheDocument()
+  })
+
+  it('shows the amount then and now, without calling the gap a problem', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+
+    // 355 € paid then, 270 + 100 at today's table. Every older voucher is below
+    // today's price; that is the club's arrangement, so it is stated, not flagged.
+    const line = await screen.findByText(/355 € damals/)
+    expect(line.textContent).toContain('370 € heute')
+    expect(line.className).not.toContain('warn')
+  })
+
+  it('says nothing at all when no list is configured', async () => {
+    const user = userEvent.setup()
+    // Everything an answer could be built from is present and only `configured`
+    // is false, so each of the three lines below is held back by that flag alone
+    // — the one thing an empty voucherListPath is supposed to switch off.
+    vi.mocked(api.checkVoucher).mockResolvedValue({ ...OK_CHECK, configured: false })
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+    // A Leistung that disagrees with the list's Art, so the Art line has
+    // something it *could* say — without this the assertion below would hold
+    // even if the line stopped checking whether a list is configured at all.
+    await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump')
+    await waitFor(() => expect(api.checkVoucher).toHaveBeenCalledWith('26-001'))
+    // Let the resolved check reach the screen, so this tests silence and not
+    // merely a check that has not come back yet.
+    await act(async () => {})
+
+    expect(screen.queryByText(/Gutscheinliste/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Bezahlt am/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Laut Liste/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/damals/)).not.toBeInTheDocument()
+  })
+
+  it('drops the previous number’s answer as soon as the number changes', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+    expect(await screen.findByText(/Bezahlt am 14\.01\.2026/)).toBeInTheDocument()
+
+    // One more keystroke and the line on screen is a statement about the club's
+    // money for a number that is no longer in the field. Found by regex: the
+    // status lines live inside the label, so its accessible name grows as soon
+    // as an answer is on screen.
+    await user.type(screen.getByLabelText(/Gutschein-Nr\./), '2')
+    expect(screen.queryByText(/Bezahlt am 14\.01\.2026/)).not.toBeInTheDocument()
+  })
+
+  it('says a redemption reached the club list and stays there', async () => {
+    // Put back to open, but the date is already in the club's file. The file
+    // keeps it, so the screen has to say so.
+    renderDetail(makeRegistration({
+      payment_method: 'voucher', voucher_number: '26-001', voucher_service: 'jump',
+      paid_at: null,
+      voucher_redeemed_at: '2026-07-09T10:00:00.000Z',
+      voucher_redeem_synced_at: '2026-07-09T10:00:00.000Z',
+    }))
+    await screen.findByText('Zu kassieren')
+
+    const line = screen.getByText(/Einlösung am 09\.07\.2026 in die Gutscheinliste eingetragen/)
+    expect(line.textContent).toContain('Das Datum bleibt dort stehen.')
+    // A statement, not something to fix.
+    expect(line.className).not.toContain('warn')
+  })
+
+  it('says a redemption is recorded but still owed to the club list', async () => {
+    renderDetail(makeRegistration({
+      payment_method: 'voucher', voucher_number: '26-001', voucher_service: 'jump',
+      paid_at: '2026-07-09T10:00:00.000Z',
+      voucher_redeemed_at: '2026-07-09T10:00:00.000Z',
+      voucher_redeem_synced_at: null,
+    }))
+    await screen.findByText('Zu kassieren')
+
+    const line = screen.getByText(/noch nicht in die Gutscheinliste geschrieben/)
+    expect(line.textContent).toContain('Einlösung vermerkt')
+    expect(line.className).not.toContain('warn')
+  })
+
+  it('says nothing about a redemption on a row that has none', async () => {
+    renderDetail(makeRegistration({ payment_method: 'voucher', voucher_number: '26-001' }))
+    await screen.findByText('Zu kassieren')
+
+    expect(screen.queryByText(/Einlösung/)).not.toBeInTheDocument()
   })
 })

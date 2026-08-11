@@ -516,6 +516,18 @@ h2 {
   opacity: 1;
 }
 
+/* The club's list disagrees with what was typed — worth seeing, never blocking. */
+.voucher-check.warn {
+  color: var(--ember);
+  font-weight: 600;
+  opacity: 1;
+}
+
+.voucher-check.ok {
+  color: var(--text-h);
+  opacity: 0.9;
+}
+
 /* A locked field is still readable, but clearly not waiting for input. */
 .field select:disabled,
 .field input:disabled {
@@ -558,6 +570,13 @@ h2 {
   color: var(--ember);
   font-weight: 600;
   opacity: 1;
+}
+
+/* What the club's file already holds for this row. Deliberately as quiet as any
+   other hint: it reports a state, and there is nothing in it to act on — the
+   date stays in the file whether the row is collected or back to open. */
+.voucher-redemption {
+  margin: 0;
 }
 
 /* The money summary at the bottom of the manifest fields: the breakdown the

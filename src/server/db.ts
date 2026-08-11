@@ -23,7 +23,8 @@ export function openDb(path: string, nativeBinding?: string): Database.Database 
       price_override INTEGER DEFAULT 0,
       camera_flyer_id INTEGER,
       created_at TEXT, jump_date TEXT,
-      paid_at TEXT, notes TEXT, privacy_ack_at TEXT
+      paid_at TEXT, notes TEXT, privacy_ack_at TEXT,
+      voucher_redeemed_at TEXT, voucher_redeem_synced_at TEXT
     );
     CREATE TABLE IF NOT EXISTS tandem_masters (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, active INTEGER DEFAULT 1);
@@ -64,6 +65,10 @@ function migrate(db: Database.Database): void {
     // NULL on a migrated row means "registered before the acknowledgement
     // existed", not "the guest refused" — the two must stay distinguishable.
     ['privacy_ack_at', 'TEXT'],
+    // When we decided the voucher was used, and when that reached the club's
+    // Excel file. Both NULL on an old row: it predates the voucher check.
+    ['voucher_redeemed_at', 'TEXT'],
+    ['voucher_redeem_synced_at', 'TEXT'],
   ]
   for (const [name, type] of added) {
     if (!existing.has(name)) db.exec(`ALTER TABLE registrations ADD COLUMN ${name} ${type}`)

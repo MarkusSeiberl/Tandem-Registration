@@ -7,6 +7,8 @@ import path from 'path'
 import { openDb } from '../src/server/db'
 import { registerExportRoutes } from '../src/server/routes/export'
 import { DEFAULT_PAYOUTS, DEFAULT_PRICES } from '../src/server/config'
+import { writeVoucherFile } from './helpers/voucherFile'
+import { clearVoucherListCache } from '../src/server/voucherList'
 
 const tmpDirs: string[] = []
 
@@ -16,10 +18,11 @@ async function makeTmpDir() {
   return dir
 }
 
-function makeCfgRef(dir: string, jumpLocation = 'Freistadt') {
+function makeCfgRef(dir: string, jumpLocation = 'Freistadt', voucherListPath = '') {
   return {
     current: {
-      exportDir: dir, contractText: '', jumpLocation, backupDir: '',
+      exportDir: dir, contractText: '', privacyText: '', jumpLocation, backupDir: '',
+      voucherListPath,
       prices: { ...DEFAULT_PRICES }, payouts: { ...DEFAULT_PAYOUTS },
     },
   }
@@ -447,5 +450,125 @@ test('POST /api/export still works with a valid ?date=YYYY-MM-DD', async () => {
   expect(body.count).toBe(1)
   expect(body.path).toBe(path.join(dir, `Tandem_${date}.xlsx`))
 
+  await app.close()
+})
+
+test('the export writes redemptions that could not be written earlier', async () => {
+  clearVoucherListCache()
+  const voucherListPath = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+  ])
+  const db = openDb(':memory:')
+  const date = '2026-08-10'
+
+  // A row collected while the file was locked: redeemed for us, not yet written.
+  db.prepare(`INSERT INTO registrations
+    (first_name,last_name,payment_method,voucher_number,price,
+     created_at,jump_date,paid_at,voucher_redeemed_at)
+    VALUES ('A','B','voucher','26-001',20,
+     '2026-08-10T10:00:00.000Z','2026-08-10','2026-08-10T10:00:00.000Z',
+     '2026-08-10T10:00:00.000Z')`).run()
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, makeCfgRef(dir, 'Freistadt', voucherListPath))
+
+  const res = await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+
+  expect(res.json().redemptionsWritten).toBe(1)
+  expect(res.json().redemptionsPending).toBe(0)
+  const row = db.prepare('SELECT voucher_redeem_synced_at FROM registrations').get() as any
+  expect(row.voucher_redeem_synced_at).not.toBeNull()
+  await app.close()
+})
+
+test('the export writes a redemption left over from an earlier day', async () => {
+  clearVoucherListCache()
+  const voucherListPath = await writeVoucherFile([
+    { lfdNr: '26-002', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+  ])
+  const db = openDb(':memory:')
+
+  // Collected on Saturday while the file was locked. Sunday's banner counts it,
+  // so Sunday's export has to be able to write it off — otherwise the count can
+  // never reach zero and nobody is told to go back and re-export Saturday.
+  db.prepare(`INSERT INTO registrations
+    (first_name,last_name,payment_method,voucher_number,price,
+     created_at,jump_date,paid_at,voucher_redeemed_at)
+    VALUES ('Sams','Tag','voucher','26-002',20,
+     '2026-08-08T10:00:00.000Z','2026-08-08','2026-08-08T10:00:00.000Z',
+     '2026-08-08T10:00:00.000Z')`).run()
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, makeCfgRef(dir, 'Freistadt', voucherListPath))
+
+  const res = await app.inject({ method: 'POST', url: '/api/export?date=2026-08-09' })
+
+  // Sunday has no registrations of its own; the redemption is picked up anyway.
+  expect(res.json().count).toBe(0)
+  expect(res.json().redemptionsWritten).toBe(1)
+  expect(res.json().redemptionsPending).toBe(0)
+  const row = db.prepare('SELECT voucher_redeem_synced_at FROM registrations').get() as any
+  expect(row.voucher_redeem_synced_at).not.toBeNull()
+  await app.close()
+})
+
+test('a redemption that throws on its way to the file still leaves an export behind', async () => {
+  const db = openDb(':memory:')
+  const date = '2026-08-10'
+  db.prepare(`INSERT INTO registrations
+    (first_name,last_name,payment_method,voucher_number,price,
+     created_at,jump_date,paid_at,voucher_redeemed_at)
+    VALUES ('A','B','voucher','26-001',20,
+     '2026-08-10T10:00:00.000Z','2026-08-10','2026-08-10T10:00:00.000Z',
+     '2026-08-10T10:00:00.000Z')`).run()
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  // A non-string path reaches `cfg.voucherListPath?.trim()` in redeemVoucher,
+  // which sits outside that function's own try — and the settings route spreads
+  // the request body in without type-checking this key, so it is reachable.
+  // Nothing about a voucher may cost the club the day's export.
+  registerExportRoutes(app, db, makeCfgRef(dir, 'Freistadt', 42 as any))
+
+  const res = await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+
+  expect(res.statusCode).toBe(200)
+  const stat = await fs.stat(path.join(dir, `Tandem_${date}.xlsx`))
+  expect(stat.isFile()).toBe(true)
+  // Counted as still open, so the next export tries the row again.
+  expect(res.json().redemptionsPending).toBe(1)
+  const row = db.prepare('SELECT voucher_redeemed_at FROM registrations').get() as any
+  expect(row.voucher_redeemed_at).not.toBeNull()
+  await app.close()
+})
+
+test('a voucher that turned invalid leaves the queue instead of blocking it', async () => {
+  clearVoucherListCache()
+  const voucherListPath = await writeVoucherFile([
+    { lfdNr: '26-007', einzahlDat: null, art: 'Tandem' },
+  ])
+  const db = openDb(':memory:')
+  const date = '2026-08-10'
+
+  db.prepare(`INSERT INTO registrations
+    (first_name,last_name,payment_method,voucher_number,price,
+     created_at,jump_date,paid_at,voucher_redeemed_at)
+    VALUES ('A','B','voucher','26-007',20,
+     '2026-08-10T10:00:00.000Z','2026-08-10','2026-08-10T10:00:00.000Z',
+     '2026-08-10T10:00:00.000Z')`).run()
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, makeCfgRef(dir, 'Freistadt', voucherListPath))
+
+  const res = await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+
+  expect(res.json().redemptionsInvalid).toBe(1)
+  expect(res.json().redemptionsPending).toBe(0)
+  // Taken back, so it stops being counted as owed to the file.
+  const row = db.prepare('SELECT voucher_redeemed_at FROM registrations').get() as any
+  expect(row.voucher_redeemed_at).toBeNull()
   await app.close()
 })

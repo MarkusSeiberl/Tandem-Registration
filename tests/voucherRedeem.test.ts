@@ -35,8 +35,23 @@ async function cellValue(file: string, row: number, header: string) {
   return ws.getRow(row).getCell(headers.indexOf(header)).value
 }
 
+// Extract value and format of a single cell for format-aware assertion
+async function cellSnapshot(file: string, row: number, header: string): Promise<{ value: unknown; fmt: string | null }> {
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.readFile(file)
+  const ws = wb.worksheets[0]
+  const headers = ws.getRow(1).values as string[]
+  const cell = ws.getRow(row).getCell(headers.indexOf(header))
+  return {
+    value: cell.value instanceof Date ? cell.value.toISOString() : (cell.value ?? null),
+    fmt: cell.numFmt || null,
+  }
+}
+
 // The whole sheet as comparable text, one entry per row and every column of it
-// — including the trailing "Spalte1" the club's file carries.
+// — including the trailing "Spalte1" the club's file carries. Each cell is
+// recorded as both its value and its number format so style mutations that
+// propagate via ExcelJS's shared style records do not go undetected.
 async function sheetSnapshot(file: string): Promise<string[]> {
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.readFile(file)
@@ -45,8 +60,14 @@ async function sheetSnapshot(file: string): Promise<string[]> {
   ws.eachRow({ includeEmpty: true }, (row, n) => {
     const cells: string[] = []
     for (let c = 1; c <= ws.columnCount; c++) {
-      const value = row.getCell(c).value
-      cells.push(value instanceof Date ? value.toISOString() : JSON.stringify(value ?? null))
+      const cell = row.getCell(c)
+      const value = cell.value
+      const fmt = cell.numFmt || null
+      const cellData = {
+        value: value instanceof Date ? value.toISOString() : (value ?? null),
+        fmt: fmt,
+      }
+      cells.push(JSON.stringify(cellData))
     }
     rows.push(`${n}: ${cells.join(' | ')}`)
   })
@@ -138,13 +159,18 @@ test('the write changes the redeemed cell and nothing else in the sheet', async 
   const before = await sheetSnapshot(file)
   expect(await redeemVoucher(cfg, '26-001', AUG_10())).toBe('written')
   const after = await sheetSnapshot(file)
+  const afterEingeloest = await cellSnapshot(file, 2, 'Eingelöst')
 
   // Row 2 is the one that was redeemed; every other row — header, neighbour —
   // has to come back byte-for-byte identical, trailing "Spalte1" included.
   const untouched = (rows: string[]) => rows.filter((r) => !r.startsWith('2: '))
   expect(untouched(after)).toEqual(untouched(before))
   expect(before[0]).toContain('"Spalte1"')
-  // …and within the redeemed row, only the Eingelöst cell moved.
+  // …and within the redeemed row, only the Eingelöst cell's value moved. Its
+  // format must never be the explicitly-assigned 'dd.mm.yyyy' that would
+  // propagate via ExcelJS's shared records and restyle unrelated date cells.
+  expect(afterEingeloest.fmt).not.toBe('dd.mm.yyyy')
+  expect(afterEingeloest.value).toMatch(/^2026-08-10T/)
   expect(await cellValue(file, 2, 'LfdNr')).toBe('26-001')
   expect(await cellValue(file, 2, 'Betrag')).toBe(270)
   expect(await cellValue(file, 2, 'Art')).toBe('Tandem')

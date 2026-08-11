@@ -129,6 +129,27 @@ test('put settings rejects a non-numeric or negative price', async () => {
   await app.close()
 })
 
+test('put settings rejects a non-string voucherListPath', async () => {
+  const { app, cfgRef } = testServer({ voucherListPath: '' })
+  for (const bad of [123, null, { path: 'test' }, ['test']]) {
+    const res = await app.inject({ method: 'PUT', url: '/api/settings', payload: { voucherListPath: bad } })
+    expect(res.statusCode).toBe(400)
+  }
+  const res = await app.inject({ method: 'PUT', url: '/api/settings', payload: { voucherListPath: 123 } })
+  expect(res.statusCode).toBe(400)
+  expect(res.json().error).toBe('voucherListPath ungültig')
+  expect(cfgRef.current.voucherListPath).toBe('')
+  await app.close()
+})
+
+test('put settings accepts an empty voucherListPath', async () => {
+  const { app, cfgRef } = testServer({ voucherListPath: 'C:/Verein/list.xlsx' })
+  const res = await app.inject({ method: 'PUT', url: '/api/settings', payload: { voucherListPath: '' } })
+  expect(res.statusCode).toBe(200)
+  expect(cfgRef.current.voucherListPath).toBe('')
+  await app.close()
+})
+
 test('the voucher list path round-trips through the settings', async () => {
   const { app } = testServer()
   const res = await app.inject({

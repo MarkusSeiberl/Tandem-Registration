@@ -22,6 +22,13 @@ export function registerSettingsRoutes(
       reply.code(400)
       return { error: 'exportDir ungültig' }
     }
+    // voucherListPath must be a string if present, but empty string is valid (switches the
+    // feature off). A non-string here would reach .trim() calls downstream and turn an
+    // unrelated request into a 500 error.
+    if ('voucherListPath' in body && typeof body.voucherListPath !== 'string') {
+      reply.code(400)
+      return { error: 'voucherListPath ungültig' }
+    }
     for (const block of AMOUNT_BLOCKS) {
       if (!(block.field in body)) continue
       const b = body[block.field]

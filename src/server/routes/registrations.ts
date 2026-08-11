@@ -213,7 +213,8 @@ export function registerRegistrationRoutes(
       try {
         // Collecting a voucher row is the moment it is spent. The write into the
         // club's file is attempted now; if it fails, the row keeps
-        // voucher_redeemed_at without a sync stamp and the export retries it.
+        // voucher_redeemed_at without a sync stamp until the export sweep
+        // (Task 8) retries it.
         const after = db.prepare('SELECT * FROM registrations WHERE id=?').get(id) as any
         // `!current.paid_at` keeps this to the transition into collected. Every
         // later save of an already-collected row would otherwise re-read the
@@ -226,7 +227,8 @@ export function registerRegistrationRoutes(
               SET voucher_redeemed_at=@now, voucher_redeem_synced_at=@now WHERE id=@id`)
               .run({ id, now: new Date().toISOString() })
           } else if (outcome === 'failed') {
-            // Ours to remember; the file gets it later.
+            // Ours to remember; the export sweep (Task 8) is meant to pick
+            // this up later, but until that lands the file simply lags.
             db.prepare('UPDATE registrations SET voucher_redeemed_at=@now WHERE id=@id')
               .run({ id, now: new Date().toISOString() })
           }
@@ -247,8 +249,20 @@ export function registerRegistrationRoutes(
         app.log.error({ err, id }, 'Gutschein-Einlösung konnte nicht vermerkt werden')
       }
 
-      sse.broadcast('changed', { id })
-      return db.prepare('SELECT * FROM registrations WHERE id=?').get(id)
+      // The UPDATE above has already committed, so a throw from here on must
+      // not turn into a 500 — that would read as the save having failed when
+      // it actually succeeded, and the operator would retry into a confusing
+      // second state. Falling back to `current` (already SELECTed before the
+      // UPDATE) covers both the broadcast throwing and the final read coming
+      // back empty or erroring; one try/catch around both statements is a
+      // smaller change than guarding each separately.
+      try {
+        sse.broadcast('changed', { id })
+        return db.prepare('SELECT * FROM registrations WHERE id=?').get(id) ?? current
+      } catch (err) {
+        app.log.error({ err, id }, 'Antwort nach dem Speichern konnte nicht aufgebaut werden')
+        return current
+      }
     }
     return current
   })

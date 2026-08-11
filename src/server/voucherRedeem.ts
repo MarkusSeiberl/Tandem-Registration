@@ -57,6 +57,39 @@ const tempSibling = (filePath: string) =>
     `.${path.basename(filePath)}.${process.pid}-${tempCounter++}.tmp`
   )
 
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const tempSiblingPattern = (filePath: string) =>
+  new RegExp(`^\\.${escapeRegExp(path.basename(filePath))}\\.\\d+-\\d+\\.tmp$`)
+const ONE_DAY_MS = 24 * 60 * 60 * 1000
+
+// A hard kill between writing the temp file and renaming it over the target
+// leaves that sibling behind forever, and the club keeps this file in
+// OneDrive, which happily syncs the orphan to every member's machine. Before
+// the next write, anything matching our own temp-naming pattern and older
+// than a day is removed. Best-effort only: a directory we cannot list or a
+// file we cannot delete must not stop the write that is about to happen.
+async function cleanupStaleTempFiles(filePath: string): Promise<void> {
+  try {
+    const dir = path.dirname(filePath)
+    const pattern = tempSiblingPattern(filePath)
+    const entries = await fs.readdir(dir)
+    const now = Date.now()
+    for (const entry of entries) {
+      if (!pattern.test(entry)) continue
+      const full = path.join(dir, entry)
+      try {
+        const st = await fs.stat(full)
+        if (now - st.mtimeMs > ONE_DAY_MS) await fs.unlink(full)
+      } catch {
+        // Already gone, or not ours to touch right now — either way, not
+        // worth failing the write over.
+      }
+    }
+  } catch {
+    // Directory unreadable, or similar — never let cleanup block the write.
+  }
+}
+
 // One copy per day, before the first change of that day. This is the club's
 // only record of which vouchers it sold, so nothing is written to it until a
 // copy of today's state exists.
@@ -72,8 +105,13 @@ async function backupOnce(cfg: Config, filePath: string, on: Date): Promise<void
   try {
     await fs.stat(target)
     return
-  } catch {
-    // Not there yet (or unreadable) — fall through and try to create it.
+  } catch (err: any) {
+    // Only "not there yet" means it is safe to fall through and create it.
+    // Any other error (EACCES/EPERM on a backup that does exist, for example)
+    // must abort the write the same way a failed backup already does —
+    // swallowing it here would let today's pre-write snapshot be silently
+    // replaced by a copy of the already-modified file.
+    if (err?.code !== 'ENOENT') throw err
   }
 
   const temp = tempSibling(target)
@@ -125,6 +163,7 @@ async function redeemNow(
 
   let temp: string | null = null
   try {
+    await cleanupStaleTempFiles(filePath)
     await backupOnce(cfg, filePath, on)
 
     const wb = new ExcelJS.Workbook()
@@ -154,8 +193,13 @@ async function redeemNow(
     if (cell.value !== null && cell.value !== undefined && String(cell.value).trim() !== '') {
       return 'already_redeemed'
     }
+    // Only the value is set. ExcelJS shares style records between cells, so
+    // assigning `numFmt` here would silently restyle every other date cell in
+    // this column that happens to share the cell's style — rows we were never
+    // asked to touch. The column already carries its own date format for
+    // empty cells, so a written `Date` displays as a date without us
+    // reassigning anything.
     cell.value = excelDay(on)
-    cell.numFmt = 'dd.mm.yyyy'
 
     // ExcelJS's writeFile is createWriteStream(filename), i.e. flag 'w': the
     // club's list is truncated the moment it opens and stays partial for the

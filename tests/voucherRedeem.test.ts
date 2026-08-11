@@ -152,19 +152,28 @@ test('the write changes the redeemed cell and nothing else in the sheet', async 
 
 test('a redemption just after local midnight is dated that local day', async () => {
   clearVoucherListCache()
-  const file = await writeVoucherFile([
-    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
-  ])
-  const cfg = await configFor(file)
+  // Pinned east of Greenwich on purpose: `new Date(2026, 7, 10, 0, 30)` is
+  // already 10 August in UTC, so under TZ=UTC (typical in CI) this test would
+  // pass even with the old `toISOString`-based day restored. Vienna is where
+  // the club actually is, and it is the timezone this bug depends on.
+  vi.stubEnv('TZ', 'Europe/Vienna')
+  try {
+    const file = await writeVoucherFile([
+      { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+    ])
+    const cfg = await configFor(file)
 
-  // 00:30 on 10 August as the club's clock shows it. East of Greenwich that
-  // instant is still 9 August in UTC, and a UTC-derived day would write the
-  // wrong date into the club's list and reuse yesterday's backup name.
-  expect(await redeemVoucher(cfg, '26-001', new Date(2026, 7, 10, 0, 30))).toBe('written')
-  const written = await cellValue(file, 2, 'Eingelöst')
-  expect(written instanceof Date && written.toISOString().slice(0, 10)).toBe('2026-08-10')
-  const backups = await fs.readdir(path.join(cfg.exportDir, 'Gutschein-Backup'))
-  expect(backups).toEqual(['Tandemliste_2026-08-10.xlsx'])
+    // 00:30 on 10 August as the club's clock shows it. East of Greenwich that
+    // instant is still 9 August in UTC, and a UTC-derived day would write the
+    // wrong date into the club's list and reuse yesterday's backup name.
+    expect(await redeemVoucher(cfg, '26-001', new Date(2026, 7, 10, 0, 30))).toBe('written')
+    const written = await cellValue(file, 2, 'Eingelöst')
+    expect(written instanceof Date && written.toISOString().slice(0, 10)).toBe('2026-08-10')
+    const backups = await fs.readdir(path.join(cfg.exportDir, 'Gutschein-Backup'))
+    expect(backups).toEqual(['Tandemliste_2026-08-10.xlsx'])
+  } finally {
+    vi.unstubAllEnvs()
+  }
 })
 
 test('a stale row number is not written to when that row holds another voucher', async () => {

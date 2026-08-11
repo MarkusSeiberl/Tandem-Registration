@@ -27,6 +27,6 @@ export function buildServer(
   registerExportRoutes(app, db, cfgRef)
   registerBackupRoutes(app, db, cfgRef)
   registerSettingsRoutes(app, cfgRef, persist)
-  registerVoucherRoutes(app, cfgRef)
+  registerVoucherRoutes(app, db, cfgRef)
   return app
 }

@@ -12,6 +12,7 @@ vi.mock('./api', () => ({
   exportDay: vi.fn(),
   patch: vi.fn(),
   getApiBase: vi.fn(() => ''),
+  pendingRedemptions: vi.fn(),
 }))
 
 const openTable = () => screen.getByRole('table', { name: /^Offen/ })
@@ -58,6 +59,7 @@ function makeRow(overrides: Partial<Registration>): Registration {
 describe('List', () => {
   beforeEach(() => {
     vi.mocked(api.masters).mockResolvedValue([])
+    vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 0 })
   })
 
   it('renders one table row per registration', async () => {
@@ -226,5 +228,12 @@ describe('List', () => {
     const dateInput = screen.getByLabelText('Datum') as HTMLInputElement
     expect(dateInput.value).toBe(today())
     await screen.findByText('Keine Registrierungen für dieses Datum.')
+  })
+
+  it('says how many redemptions the club list is still missing', async () => {
+    vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 2 })
+    render(<List onSelect={vi.fn()} />)
+
+    expect(await screen.findByText(/2 Einlösungen noch nicht/)).toBeInTheDocument()
   })
 })

@@ -9,6 +9,7 @@ import {
 } from '../labels'
 import { collectedVia } from '../pricing'
 import { payoutSections } from '../payouts'
+import { redeemVoucher } from '../voucherRedeem'
 import type { Config } from '../config'
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -54,6 +55,32 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
     // the payout rule groups by id and reads the stored `extra_booking` enum.
     const payouts = payoutSections(rows, masters, flyers, cfgRef.current.payouts)
 
+    // Every redemption that did not reach the club's file when the row was
+    // collected gets one more attempt here. This is the "at latest at export"
+    // half of the promise; the collect handler is the other.
+    let redemptionsWritten = 0
+    let redemptionsPending = 0
+    let redemptionsInvalid = 0
+    const owed = db.prepare(`SELECT id, voucher_number FROM registrations
+      WHERE jump_date=? AND voucher_redeemed_at IS NOT NULL
+        AND voucher_redeem_synced_at IS NULL AND voucher_number IS NOT NULL`).all(date) as any[]
+    for (const row of owed) {
+      const outcome = await redeemVoucher(cfgRef.current, row.voucher_number, new Date())
+      if (outcome === 'written' || outcome === 'already_redeemed') {
+        db.prepare('UPDATE registrations SET voucher_redeem_synced_at=@now WHERE id=@id')
+          .run({ id: row.id, now: new Date().toISOString() })
+        redemptionsWritten += 1
+      } else if (outcome === 'invalid') {
+        // The list says this voucher is not good after all. Take the redemption
+        // back so it stops being counted as something the file still owes.
+        db.prepare('UPDATE registrations SET voucher_redeemed_at=NULL WHERE id=@id')
+          .run({ id: row.id })
+        redemptionsInvalid += 1
+      } else if (outcome === 'failed') {
+        redemptionsPending += 1
+      }
+    }
+
     for (const r of rows) {
       r.tandem_master_id = masters.get(r.tandem_master_id) ?? ''
       r.camera_flyer_id = flyers.get(r.camera_flyer_id) ?? ''
@@ -76,6 +103,9 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
     await fs.mkdir(dir, { recursive: true })
     const filePath = path.join(dir, `Tandem_${date}.xlsx`)
     await fs.writeFile(filePath, buf)
-    return reply.send({ path: filePath, count: rows.length })
+    return reply.send({
+      path: filePath, count: rows.length,
+      redemptionsWritten, redemptionsPending, redemptionsInvalid,
+    })
   })
 }

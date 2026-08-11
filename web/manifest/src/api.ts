@@ -134,6 +134,9 @@ export interface ManifestPatch {
 export interface ExportResult {
   path: string
   count: number
+  redemptionsWritten: number
+  redemptionsPending: number
+  redemptionsInvalid: number
 }
 
 export interface BackupResult {
@@ -243,4 +246,10 @@ export async function createBackup(): Promise<BackupResult> {
   const res = await fetch(apiUrl('/api/backup'), { method: 'POST' })
   if (!res.ok) throw new Error(await errorMessage(res, 'Backup fehlgeschlagen'))
   return asJson<BackupResult>(res)
+}
+
+export async function pendingRedemptions(): Promise<{ count: number }> {
+  const res = await fetch(apiUrl('/api/voucher/pending'))
+  if (!res.ok) throw new Error('Offene Einlösungen konnten nicht geladen werden')
+  return asJson<{ count: number }>(res)
 }

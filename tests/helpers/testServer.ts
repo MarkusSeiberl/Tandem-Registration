@@ -27,5 +27,6 @@ export function testServer(
       ...cfgOverrides,
     },
   }
-  return { app: buildServer(openDb(':memory:'), cfgRef, templateBytes, undefined, notify), cfgRef }
+  const db = openDb(':memory:')
+  return { app: buildServer(db, cfgRef, templateBytes, undefined, notify), cfgRef, db }
 }

@@ -104,3 +104,15 @@ test('a missing number is rejected without touching the file', async () => {
   expect(res.statusCode).toBe(400)
   await app.close()
 })
+
+test('the pending count is what the manifest shows in its banner', async () => {
+  clearVoucherListCache()
+  const { app, db } = testServer({ voucherListPath: '' })
+  db.prepare(`INSERT INTO registrations
+    (first_name,last_name,created_at,jump_date,voucher_redeemed_at)
+    VALUES ('A','B','2026-08-10T10:00:00.000Z','2026-08-10','2026-08-10T10:00:00.000Z')`).run()
+
+  const res = await app.inject({ method: 'GET', url: '/api/voucher/pending' })
+  expect(res.json().count).toBe(1)
+  await app.close()
+})

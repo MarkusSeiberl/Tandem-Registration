@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify'
+import type { Database } from 'better-sqlite3'
 import { loadVoucherList, lookupVoucher } from '../voucherList'
 import type { VoucherEntry, VoucherStatus } from '../voucherList'
 import type { Config } from '../config'
@@ -73,7 +74,11 @@ export async function checkVoucher(
   }
 }
 
-export function registerVoucherRoutes(app: FastifyInstance, cfgRef: { current: Config }) {
+export function registerVoucherRoutes(
+  app: FastifyInstance,
+  db: Database,
+  cfgRef: { current: Config }
+) {
   app.get('/api/voucher', async (req, reply) => {
     const number = (req.query as any)?.number
     if (typeof number !== 'string' || number.trim().length === 0) {
@@ -84,5 +89,14 @@ export function registerVoucherRoutes(app: FastifyInstance, cfgRef: { current: C
         app.log.error({ err }, 'Gutscheinliste konnte nicht gelesen werden')
       )
     )
+  })
+
+  // What the manifest banner counts: redemptions we recorded that the club's
+  // file has not received. Invalid vouchers are never in here by construction.
+  app.get('/api/voucher/pending', async () => {
+    const row = db.prepare(`SELECT COUNT(*) AS count FROM registrations
+      WHERE voucher_redeemed_at IS NOT NULL AND voucher_redeem_synced_at IS NULL`)
+      .get() as { count: number }
+    return { count: row.count }
   })
 }

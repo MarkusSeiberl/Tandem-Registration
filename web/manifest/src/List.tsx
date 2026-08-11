@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { exportDay, list, masters as fetchMasters, patch, remove } from './api'
+import { exportDay, list, masters as fetchMasters, patch, pendingRedemptions, remove } from './api'
 import type { Registration } from './api'
 import { useEvents } from './useEvents'
 import { extraBookingLabel, paymentLabel, weightSurchargeLabel } from './labels'
@@ -154,6 +154,7 @@ export default function List({ onSelect }: ListProps) {
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
   const [deleting, setDeleting] = useState(false)
   const [pendingId, setPendingId] = useState<number | null>(null)
+  const [pending, setPending] = useState(0)
 
   const refresh = useCallback(() => {
     setLoading(true)
@@ -186,6 +187,12 @@ export default function List({ onSelect }: ListProps) {
   // Live refresh: re-fetch the current date whenever the server reports a change
   // (new guest registration, or an edit saved from another manifest client).
   useEvents(refresh)
+
+  // Refreshed with the list, so a redemption written by the export disappears
+  // from the banner without a reload.
+  useEffect(() => {
+    pendingRedemptions().then((r) => setPending(r.count)).catch(() => {})
+  }, [rows])
 
   // Highest load number first — that's who boards next; unassigned (null)
   // registrations sort last.
@@ -223,7 +230,17 @@ export default function List({ onSelect }: ListProps) {
     setExporting(true)
     try {
       const result = await exportDay(date)
-      setExportMessage(`Export erstellt: ${result.path} (${result.count} Einträge)`)
+      const parts = [`Export erstellt: ${result.path} (${result.count} Einträge)`]
+      if (result.redemptionsWritten > 0) {
+        parts.push(`${result.redemptionsWritten} Einlösungen eingetragen`)
+      }
+      if (result.redemptionsPending > 0) {
+        parts.push(`${result.redemptionsPending} noch offen`)
+      }
+      if (result.redemptionsInvalid > 0) {
+        parts.push(`${result.redemptionsInvalid} ungültig, nicht eingetragen`)
+      }
+      setExportMessage(parts.join(' · '))
     } catch (err) {
       setExportMessage(err instanceof Error ? err.message : 'Export fehlgeschlagen')
     } finally {
@@ -255,6 +272,13 @@ export default function List({ onSelect }: ListProps) {
 
   return (
     <div className="list-screen">
+      {pending > 0 && (
+        <p className="hint warn">
+          {pending === 1
+            ? '1 Einlösung noch nicht in die Gutscheinliste geschrieben.'
+            : `${pending} Einlösungen noch nicht in die Gutscheinliste geschrieben.`}
+        </p>
+      )}
       <div className="list-toolbar">
         <label className="date-field">
           Datum

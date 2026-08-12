@@ -19,6 +19,7 @@ function PathField(props: {
   value: string
   onChange: (value: string) => void
   onBrowse?: () => void
+  browsing?: boolean
   state?: PathState
   hint?: string
 }) {
@@ -42,6 +43,7 @@ function PathField(props: {
             className="btn secondary"
             aria-label={props.browseLabel}
             onClick={props.onBrowse}
+            disabled={props.browsing}
           >
             Durchsuchen…
           </button>
@@ -74,6 +76,7 @@ export default function Settings() {
   // Only the machine running tandem.exe gets the dialog buttons — see
   // src/server/routes/pickPath.ts for why the server decides this.
   const [canPick, setCanPick] = useState(false)
+  const [browsing, setBrowsing] = useState(false)
   const [checks, setChecks] = useState<PathChecks>({})
 
   function applySettings(cfg: {
@@ -104,6 +107,9 @@ export default function Settings() {
   }, [])
 
   async function browse(kind: PickKind, current: string, apply: (path: string) => void) {
+    // There is one desktop, so there is one dialog. The server refuses a second
+    // one anyway; this keeps the operator from asking for it.
+    setBrowsing(true)
     try {
       const picked = await pickPath(kind, current)
       // null means the operator closed the dialog — leave what was there.
@@ -112,6 +118,8 @@ export default function Settings() {
       setSaved(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Auswahl fehlgeschlagen')
+    } finally {
+      setBrowsing(false)
     }
   }
 
@@ -164,6 +172,7 @@ export default function Settings() {
           setSaved(false)
         }}
         onBrowse={canPick ? () => browse('directory', exportDir, setExportDir) : undefined}
+        browsing={browsing}
       />
 
       <label className="field">
@@ -189,6 +198,7 @@ export default function Settings() {
           setSaved(false)
         }}
         onBrowse={canPick ? () => browse('directory', backupDir, setBackupDir) : undefined}
+        browsing={browsing}
       />
 
       <PathField
@@ -208,6 +218,7 @@ export default function Settings() {
         onBrowse={
           canPick ? () => browse('excel-file', voucherListPath, setVoucherListPath) : undefined
         }
+        browsing={browsing}
       />
 
       {/*

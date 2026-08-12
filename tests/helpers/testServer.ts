@@ -5,6 +5,7 @@ import { openDb } from '../../src/server/db'
 import { buildServer } from '../../src/server/index'
 import { DEFAULT_PAYOUTS, DEFAULT_PRICES } from '../../src/server/config'
 import type { Config } from '../../src/server/config'
+import type { PickPath } from '../../src/server/routes/pickPath'
 
 const templateBytes = fs.readFileSync(
   path.join(__dirname, '..', '..', 'assets', 'Befoerderungsvertrag.pdf')
@@ -12,7 +13,8 @@ const templateBytes = fs.readFileSync(
 
 export function testServer(
   cfgOverrides: Partial<Config> = {},
-  notify?: (guestName: string) => void
+  notify?: (guestName: string) => void,
+  pickPath?: PickPath
 ) {
   const cfgRef = {
     current: {
@@ -28,5 +30,9 @@ export function testServer(
     },
   }
   const db = openDb(':memory:')
-  return { app: buildServer(db, cfgRef, templateBytes, undefined, notify), cfgRef, db }
+  return {
+    app: buildServer(db, cfgRef, templateBytes, undefined, notify, pickPath),
+    cfgRef,
+    db,
+  }
 }

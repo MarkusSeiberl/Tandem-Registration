@@ -230,6 +230,52 @@ export async function putSettings(fields: Partial<Settings>): Promise<Settings> 
   return asJson<Settings>(res)
 }
 
+// What the operator is looking for, and what the server found at a path it was
+// asked about. Both mirror src/server/routes/{pickPath,paths}.ts.
+export type PickKind = 'directory' | 'excel-file'
+export type PathState = 'ok' | 'missing' | 'wrong-type'
+export type PathField = 'exportDir' | 'backupDir' | 'voucherListPath'
+export type PathChecks = Partial<Record<PathField, PathState>>
+
+// The dialog opens on the server's desktop, so the server decides whether this
+// caller may have it. Any failure means "no picker" — the text field alone is a
+// working screen, an error banner about a convenience feature is not.
+export async function pickerAvailable(): Promise<boolean> {
+  try {
+    const res = await fetch(apiUrl('/api/pick-path'))
+    if (!res.ok) return false
+    return (await asJson<{ available: boolean }>(res)).available === true
+  } catch {
+    return false
+  }
+}
+
+// Resolves with null when the operator closed the dialog without choosing.
+export async function pickPath(kind: PickKind, current: string): Promise<string | null> {
+  const res = await fetch(apiUrl('/api/pick-path'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind, current }),
+  })
+  if (!res.ok) throw new Error(await errorMessage(res, 'Auswahl fehlgeschlagen'))
+  return (await asJson<{ path: string | null }>(res)).path ?? null
+}
+
+// Advisory. A server that cannot answer simply produces no warnings.
+export async function checkPaths(fields: Partial<Record<PathField, string>>): Promise<PathChecks> {
+  try {
+    const res = await fetch(apiUrl('/api/paths/check'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    })
+    if (!res.ok) return {}
+    return asJson<PathChecks>(res)
+  } catch {
+    return {}
+  }
+}
+
 export function contractPdfUrl(id: number): string {
   return apiUrl(`/api/registrations/${id}/contract.pdf`)
 }

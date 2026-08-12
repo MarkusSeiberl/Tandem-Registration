@@ -7,6 +7,9 @@ import { registerExportRoutes } from './routes/export'
 import { registerSettingsRoutes } from './routes/settings'
 import { registerBackupRoutes } from './routes/backup'
 import { registerVoucherRoutes } from './routes/voucher'
+import { registerPickPathRoutes } from './routes/pickPath'
+import { registerPathRoutes } from './routes/paths'
+import type { PickPath } from './routes/pickPath'
 import type { Config } from './config'
 
 export function buildServer(
@@ -14,7 +17,8 @@ export function buildServer(
   cfgRef: { current: Config },
   contractTemplate: Buffer,
   persist?: (c: Config) => void,
-  notify?: (guestName: string) => void
+  notify?: (guestName: string) => void,
+  pickPath?: PickPath
 ): FastifyInstance {
   const app = Fastify({ bodyLimit: 5 * 1024 * 1024 }) // signatures
   const sse = new SseHub()
@@ -28,5 +32,7 @@ export function buildServer(
   registerBackupRoutes(app, db, cfgRef)
   registerSettingsRoutes(app, cfgRef, persist)
   registerVoucherRoutes(app, db, cfgRef)
+  registerPickPathRoutes(app, pickPath)
+  registerPathRoutes(app)
   return app
 }

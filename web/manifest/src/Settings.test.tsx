@@ -9,6 +9,9 @@ vi.mock('./api', () => ({
   getSettings: vi.fn(),
   putSettings: vi.fn(),
   createBackup: vi.fn(),
+  pickerAvailable: vi.fn(),
+  pickPath: vi.fn(),
+  checkPaths: vi.fn(),
 }))
 
 const CONFIG: SettingsType = {
@@ -27,6 +30,8 @@ describe('Settings', () => {
     vi.clearAllMocks()
     vi.mocked(api.getSettings).mockResolvedValue({ ...CONFIG })
     vi.mocked(api.putSettings).mockImplementation(async (fields) => ({ ...CONFIG, ...fields }))
+    vi.mocked(api.pickerAvailable).mockResolvedValue(false)
+    vi.mocked(api.checkPaths).mockResolvedValue({})
   })
 
   it('saves the directories and the jump location', async () => {
@@ -63,6 +68,94 @@ describe('Settings', () => {
     await waitFor(() => expect(api.putSettings).toHaveBeenCalled())
     expect(vi.mocked(api.putSettings).mock.calls[0][0])
       .toMatchObject({ privacyText: 'Neue Fassung' })
+  })
+
+  it('offers no browse buttons where the picker is unavailable', async () => {
+    // A tablet reaches the same screen, but the dialog would open on the host's
+    // desktop where nobody sees it — so the button is not there at all.
+    render(<Settings />)
+    await screen.findByLabelText('Export-Verzeichnis')
+
+    await waitFor(() => expect(api.pickerAvailable).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Export-Verzeichnis auswählen' }))
+      .not.toBeInTheDocument()
+  })
+
+  it('offers a browse button for each of the three path fields', async () => {
+    vi.mocked(api.pickerAvailable).mockResolvedValue(true)
+    render(<Settings />)
+
+    expect(await screen.findByRole('button', { name: 'Export-Verzeichnis auswählen' }))
+      .toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Backup-Verzeichnis auswählen' }))
+      .toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Gutscheinliste auswählen' }))
+      .toBeInTheDocument()
+    // The jump location is a place name, not a path.
+    expect(screen.queryByRole('button', { name: 'Ort auswählen' })).not.toBeInTheDocument()
+  })
+
+  it('puts the picked path into the field', async () => {
+    vi.mocked(api.pickerAvailable).mockResolvedValue(true)
+    vi.mocked(api.pickPath).mockResolvedValue('C:/Tandem/Export 2026')
+    render(<Settings />)
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Export-Verzeichnis auswählen' })
+    )
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Export-Verzeichnis') as HTMLInputElement).value)
+        .toBe('C:/Tandem/Export 2026'))
+    expect(api.pickPath).toHaveBeenCalledWith('directory', 'C:/Tandem')
+  })
+
+  it('asks for a file when picking the voucher list', async () => {
+    vi.mocked(api.pickerAvailable).mockResolvedValue(true)
+    vi.mocked(api.pickPath).mockResolvedValue('C:/Verein/Tandemliste.xlsx')
+    render(<Settings />)
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Gutscheinliste auswählen' })
+    )
+
+    await waitFor(() => expect(api.pickPath).toHaveBeenCalledWith('excel-file', ''))
+    expect((screen.getByLabelText('Gutscheinliste (Excel-Datei)') as HTMLInputElement).value)
+      .toBe('C:/Verein/Tandemliste.xlsx')
+  })
+
+  it('leaves the field alone when the dialog was cancelled', async () => {
+    vi.mocked(api.pickerAvailable).mockResolvedValue(true)
+    vi.mocked(api.pickPath).mockResolvedValue(null)
+    render(<Settings />)
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Export-Verzeichnis auswählen' })
+    )
+
+    await waitFor(() => expect(api.pickPath).toHaveBeenCalled())
+    expect((screen.getByLabelText('Export-Verzeichnis') as HTMLInputElement).value)
+      .toBe('C:/Tandem')
+  })
+
+  it('warns about a path that is not there, without blocking the save', async () => {
+    vi.mocked(api.checkPaths).mockResolvedValue({ exportDir: 'missing' })
+    render(<Settings />)
+    await screen.findByLabelText('Export-Verzeichnis')
+
+    expect(await screen.findByText('Verzeichnis existiert nicht')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(api.putSettings).toHaveBeenCalled())
+    expect(screen.getByText('Gespeichert.')).toBeInTheDocument()
+  })
+
+  it('warns when the voucher list points at a directory', async () => {
+    vi.mocked(api.checkPaths).mockResolvedValue({ voucherListPath: 'wrong-type' })
+    render(<Settings />)
+    await screen.findByLabelText('Export-Verzeichnis')
+
+    expect(await screen.findByText('Pfad ist keine Datei')).toBeInTheDocument()
   })
 
   it('leaves the amounts to the Stammdaten screen', async () => {

@@ -8,6 +8,7 @@ import { loadConfig, saveConfig } from './config'
 import { buildServer } from './index'
 import { registerStatic } from './static'
 import { notifyRegistration } from './notify'
+import { pickPathWindows } from './pickPathWin'
 
 const isPackaged = typeof (process as unknown as { pkg?: unknown }).pkg !== 'undefined'
 
@@ -48,7 +49,10 @@ const cfgRef = { current: loadConfig(dir) }
 // (also boots this file) and unit tests (which use buildServer directly, never
 // passing a notifier) stay quiet.
 const notify = isPackaged ? notifyRegistration : undefined
-const app = buildServer(db, cfgRef, contractTemplate, (c) => saveConfig(dir, c), notify)
+// The path dialogs are Windows dialogs. On any other system the settings screen
+// simply keeps its text fields — see src/server/routes/pickPath.ts.
+const pickPath = process.platform === 'win32' ? pickPathWindows : undefined
+const app = buildServer(db, cfgRef, contractTemplate, (c) => saveConfig(dir, c), notify, pickPath)
 
 app.get('/api/contract', async () => ({ text: cfgRef.current.contractText }))
 

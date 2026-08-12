@@ -1,5 +1,57 @@
-import { useEffect, useState } from 'react'
-import { createBackup, getSettings, putSettings } from './api'
+import { useEffect, useId, useState } from 'react'
+import { checkPaths, createBackup, getSettings, pickerAvailable, pickPath, putSettings } from './api'
+import type { PathChecks, PathState, PickKind } from './api'
+
+// A path field: the text is still typeable, the button is the shortcut. What the
+// warning says depends on what was expected there, so the message is built from
+// the kind rather than passed in at every call site.
+const PATH_WARNINGS: Record<PickKind, Record<Exclude<PathState, 'ok'>, string>> = {
+  directory: { missing: 'Verzeichnis existiert nicht', 'wrong-type': 'Pfad ist kein Verzeichnis' },
+  'excel-file': { missing: 'Datei existiert nicht', 'wrong-type': 'Pfad ist keine Datei' },
+}
+
+function PathField(props: {
+  label: string
+  // The button's accessible name. Spelled out rather than derived from `label`,
+  // which carries parenthesised explanations no screen reader needs to repeat.
+  browseLabel: string
+  kind: PickKind
+  value: string
+  onChange: (value: string) => void
+  onBrowse?: () => void
+  state?: PathState
+  hint?: string
+}) {
+  const id = useId()
+  const warning = props.state && props.state !== 'ok'
+    ? PATH_WARNINGS[props.kind][props.state]
+    : null
+  return (
+    <div className="field">
+      <label htmlFor={id}>{props.label}</label>
+      <div className="path-row">
+        <input
+          id={id}
+          type="text"
+          value={props.value}
+          onChange={(e) => props.onChange(e.target.value)}
+        />
+        {props.onBrowse && (
+          <button
+            type="button"
+            className="btn secondary"
+            aria-label={props.browseLabel}
+            onClick={props.onBrowse}
+          >
+            Durchsuchen…
+          </button>
+        )}
+      </div>
+      {props.hint && <span className="field-hint">{props.hint}</span>}
+      {warning && <span className="field-hint warn">{warning}</span>}
+    </div>
+  )
+}
 
 // Where the manifest writes and what it prints on a contract. The amounts it
 // charges and pays out live on the Stammdaten screen, beside the crew.
@@ -19,6 +71,11 @@ export default function Settings() {
   const [backupMessage, setBackupMessage] = useState<string | null>(null)
   const [backupError, setBackupError] = useState<string | null>(null)
 
+  // Only the machine running tandem.exe gets the dialog buttons — see
+  // src/server/routes/pickPath.ts for why the server decides this.
+  const [canPick, setCanPick] = useState(false)
+  const [checks, setChecks] = useState<PathChecks>({})
+
   function applySettings(cfg: {
     exportDir: string; jumpLocation: string; backupDir: string
     contractText: string; privacyText: string; voucherListPath: string
@@ -29,6 +86,13 @@ export default function Settings() {
     setContractText(cfg.contractText)
     setPrivacyText(cfg.privacyText)
     setVoucherListPath(cfg.voucherListPath)
+    // Whatever the server just confirmed is what gets checked — checking the
+    // fields on screen would warn about a path nobody has saved yet.
+    void checkPaths({
+      exportDir: cfg.exportDir,
+      backupDir: cfg.backupDir,
+      voucherListPath: cfg.voucherListPath,
+    }).then(setChecks)
   }
 
   useEffect(() => {
@@ -36,7 +100,20 @@ export default function Settings() {
       .then(applySettings)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Fehler beim Laden'))
       .finally(() => setLoading(false))
+    void pickerAvailable().then(setCanPick)
   }, [])
+
+  async function browse(kind: PickKind, current: string, apply: (path: string) => void) {
+    try {
+      const picked = await pickPath(kind, current)
+      // null means the operator closed the dialog — leave what was there.
+      if (picked === null) return
+      apply(picked)
+      setSaved(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Auswahl fehlgeschlagen')
+    }
+  }
 
   async function handleSave() {
     setSaving(true)
@@ -76,17 +153,18 @@ export default function Settings() {
   return (
     <div className="settings-screen">
       <h2>Einstellungen</h2>
-      <label className="field">
-        Export-Verzeichnis
-        <input
-          type="text"
-          value={exportDir}
-          onChange={(e) => {
-            setExportDir(e.target.value)
-            setSaved(false)
-          }}
-        />
-      </label>
+      <PathField
+        label="Export-Verzeichnis"
+        browseLabel="Export-Verzeichnis auswählen"
+        kind="directory"
+        value={exportDir}
+        state={checks.exportDir}
+        onChange={(value) => {
+          setExportDir(value)
+          setSaved(false)
+        }}
+        onBrowse={canPick ? () => browse('directory', exportDir, setExportDir) : undefined}
+      />
 
       <label className="field">
         Ort (für Vertragsunterschrift)
@@ -100,33 +178,37 @@ export default function Settings() {
         />
       </label>
 
-      <label className="field">
-        Backup-Verzeichnis (leer = Export-Verzeichnis)
-        <input
-          type="text"
-          value={backupDir}
-          onChange={(e) => {
-            setBackupDir(e.target.value)
-            setSaved(false)
-          }}
-        />
-      </label>
+      <PathField
+        label="Backup-Verzeichnis (leer = Export-Verzeichnis)"
+        browseLabel="Backup-Verzeichnis auswählen"
+        kind="directory"
+        value={backupDir}
+        state={checks.backupDir}
+        onChange={(value) => {
+          setBackupDir(value)
+          setSaved(false)
+        }}
+        onBrowse={canPick ? () => browse('directory', backupDir, setBackupDir) : undefined}
+      />
 
-      <label className="field">
-        Gutscheinliste (Excel-Datei)
-        <input
-          type="text"
-          value={voucherListPath}
-          onChange={(e) => {
-            setVoucherListPath(e.target.value)
-            setSaved(false)
-          }}
-        />
-        <span className="field-hint">
-          Vollständiger Pfad zur Tandemliste des Vereins. Leer lassen, wenn keine
-          Gutscheinprüfung gewünscht ist.
-        </span>
-      </label>
+      <PathField
+        label="Gutscheinliste (Excel-Datei)"
+        browseLabel="Gutscheinliste auswählen"
+        kind="excel-file"
+        value={voucherListPath}
+        state={checks.voucherListPath}
+        hint={
+          'Vollständiger Pfad zur Tandemliste des Vereins. Leer lassen, wenn keine ' +
+          'Gutscheinprüfung gewünscht ist.'
+        }
+        onChange={(value) => {
+          setVoucherListPath(value)
+          setSaved(false)
+        }}
+        onBrowse={
+          canPick ? () => browse('excel-file', voucherListPath, setVoucherListPath) : undefined
+        }
+      />
 
       {/*
         Both texts the guest gets to read before signing. They live here rather

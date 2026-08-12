@@ -16,24 +16,83 @@ function psQuote(value: string): string {
 
 export function buildPickScript(kind: PickKind, current: string): string {
   const trimmed = current.trim()
-  // The dialog must not open behind the tandem.exe console window — a program
-  // waiting on an invisible dialog looks like a program that has hung. A tiny
-  // top-most form serves as its owner and pulls it to the front.
+  // While the operator looks at the manifest in a browser, tandem.exe is a
+  // background process — Windows denies it the foreground, so a dialog it opens
+  // appears *behind* the browser window. The button then looks dead, and every
+  // further click leaves another invisible dialog behind. Two things are needed:
+  // an owner window in the middle of the screen (both dialogs place themselves
+  // relative to their owner), and a raise of the dialog window itself, because
+  // TopMost on the owner does not carry over to the shell dialog it owns.
   const header = [
     '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
     'Add-Type -AssemblyName System.Windows.Forms',
+    'Add-Type @"',
+    'using System;',
+    'using System.Runtime.InteropServices;',
+    'public class TandemWin {',
+    '  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint cmd);',
+    '  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);',
+    '  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after,'
+      + ' int x, int y, int cx, int cy, uint flags);',
+    '  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);',
+    '  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,'
+      + ' IntPtr pid);',
+    '  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+    '  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint from, uint to,'
+      + ' bool attach);',
+    '  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();',
+    '  // Windows hands the foreground to a background process only while its',
+    '  // input thread is attached to the thread that currently holds it.',
+    '  public static void Raise(IntPtr h) {',
+    '    uint fg = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);',
+    '    uint me = GetCurrentThreadId();',
+    '    AttachThreadInput(fg, me, true);',
+    '    SetForegroundWindow(h);',
+    '    AttachThreadInput(fg, me, false);',
+    '  }',
+    '}',
+    '"@',
     '$owner = New-Object System.Windows.Forms.Form',
     '$owner.TopMost = $true',
     '$owner.ShowInTaskbar = $false',
     '$owner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None',
+    '$owner.Opacity = 0',
     // Plain integers rather than System.Drawing.Size/Point, so the script needs
     // no second assembly loaded to place a window nobody is meant to see.
     "$owner.StartPosition = 'Manual'",
     '$owner.Width = 1',
     '$owner.Height = 1',
-    '$owner.Left = -2000',
-    '$owner.Top = -2000',
+    '$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds',
+    '$owner.Left = [int]($bounds.Left + $bounds.Width / 2)',
+    '$owner.Top = [int]($bounds.Top + $bounds.Height / 2)',
     '$owner.Show()',
+    // The server starts this process with windowsHide, i.e. CREATE_NO_WINDOW,
+    // and Windows applies that hide flag to the first window the process shows —
+    // the owner form above. It would stay hidden, the dialog would have nothing
+    // to centre on and would open at 0,0 behind the browser. The flag only ever
+    // affects that first call, so showing it again by hand fixes it.
+    // SW_SHOWNOACTIVATE (4): visible to Windows, but it must not steal focus —
+    // the dialog does that for itself below.
+    '[void][TandemWin]::ShowWindow($owner.Handle, 4)',
+    // GW_ENABLEDPOPUP (6) hands back the dialog the owner is currently blocked
+    // by. Raising it needs no foreground rights: HWND_TOPMOST (-1) always wins,
+    // and SetForegroundWindow then puts the keyboard where the operator looks.
+    '$raise = New-Object System.Windows.Forms.Timer',
+    '$raise.Interval = 200',
+    '$script:raiseTicks = 0',
+    // The shell folder dialog builds its window in stages, and a single raise at
+    // the first popup it hands out is too early — the window behind it takes the
+    // focus back. Keep raising for three seconds, then leave the operator alone.
+    '$raise.Add_Tick({',
+    '  $script:raiseTicks++',
+    '  $popup = [TandemWin]::GetWindow($owner.Handle, 6)',
+    '  if ($popup -ne [IntPtr]::Zero) {',
+    '    [void][TandemWin]::SetWindowPos($popup, [IntPtr]-1, 0, 0, 0, 0, 0x0003)',
+    '    [TandemWin]::Raise($popup)',
+    '  }',
+    '  if ($script:raiseTicks -ge 15) { $raise.Stop() }',
+    '})',
+    '$raise.Start()',
   ]
 
   const dialog = kind === 'directory'
@@ -63,6 +122,7 @@ export function buildPickScript(kind: PickKind, current: string): string {
     'if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {',
     `  [Console]::Out.Write(${chosen})`,
     '}',
+    '$raise.Stop()',
     '$owner.Close()',
   ]
 

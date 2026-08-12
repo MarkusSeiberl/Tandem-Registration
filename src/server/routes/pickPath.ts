@@ -21,6 +21,11 @@ function isLocal(req: FastifyRequest): boolean {
 }
 
 export function registerPickPathRoutes(app: FastifyInstance, pickPath?: PickPath) {
+  // One dialog at a time. There is a single desktop and a single operator in
+  // front of it; a second click while one is open used to stack another dialog
+  // behind the first, and every one of them had to be answered separately.
+  let dialogOpen = false
+
   app.get('/api/pick-path', async (req) => ({ available: !!pickPath && isLocal(req) }))
 
   app.post('/api/pick-path', async (req, reply) => {
@@ -37,7 +42,18 @@ export function registerPickPathRoutes(app: FastifyInstance, pickPath?: PickPath
       reply.code(400)
       return { error: 'kind ungültig' }
     }
+    if (dialogOpen) {
+      reply.code(409)
+      return { error: 'Es ist bereits ein Auswahlfenster offen' }
+    }
     const current = typeof body.current === 'string' ? body.current : ''
-    return { path: await pickPath(body.kind as PickKind, current) }
+    dialogOpen = true
+    try {
+      return { path: await pickPath(body.kind as PickKind, current) }
+    } finally {
+      // Also on a crashed dialog — otherwise one failure locks the button for
+      // the rest of the day.
+      dialogOpen = false
+    }
   })
 }

@@ -124,6 +124,27 @@ describe('Settings', () => {
       .toBe('C:/Verein/Tandemliste.xlsx')
   })
 
+  it('blocks the browse buttons while a dialog is open', async () => {
+    // The dialog belongs to the machine, not to the field: while one is open a
+    // second click could only stack another one behind it.
+    vi.mocked(api.pickerAvailable).mockResolvedValue(true)
+    let release: (path: string | null) => void = () => {}
+    vi.mocked(api.pickPath).mockReturnValue(new Promise((resolve) => { release = resolve }))
+    render(<Settings />)
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Export-Verzeichnis auswählen' })
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Export-Verzeichnis auswählen' })).toBeDisabled())
+    expect(screen.getByRole('button', { name: 'Gutscheinliste auswählen' })).toBeDisabled()
+
+    release('C:/Tandem/Export')
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Export-Verzeichnis auswählen' })).toBeEnabled())
+  })
+
   it('leaves the field alone when the dialog was cancelled', async () => {
     vi.mocked(api.pickerAvailable).mockResolvedValue(true)
     vi.mocked(api.pickPath).mockResolvedValue(null)

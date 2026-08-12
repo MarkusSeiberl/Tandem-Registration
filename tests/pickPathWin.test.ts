@@ -19,10 +19,39 @@ test('asks for a file dialog filtered to Excel files when the list is wanted', (
   expect(script).not.toContain('FolderBrowserDialog')
 })
 
-test('shows the dialog above the console window', () => {
-  // Without an owner the dialog can open behind the tandem.exe console, and the
-  // program looks hung to whoever pressed the button.
-  expect(buildPickScript('directory', '')).toContain('TopMost')
+test('raises the dialog itself to the front', () => {
+  // tandem.exe is a background process while the operator looks at the browser,
+  // so Windows refuses it the foreground and the dialog opens *behind* that
+  // window: the button looks dead and every click leaves another invisible
+  // dialog behind. The owner form being TopMost does not carry over to the shell
+  // dialog it owns, so the dialog window has to be raised on its own.
+  const script = buildPickScript('directory', '')
+  expect(script).toContain('SetWindowPos')
+  expect(script).toContain('SetForegroundWindow')
+  // The raise has to happen while the modal dialog is up, which only a timer
+  // ticking inside the dialog's own message loop can do.
+  expect(script).toContain('Timer')
+  // Being on top is not enough: without the foreground, what the operator types
+  // still goes to the browser behind the dialog. Windows grants the foreground
+  // to a background process only while its input thread is attached to the one
+  // that currently holds it.
+  expect(script).toContain('AttachThreadInput')
+})
+
+test('shows the owner window explicitly', () => {
+  // The server starts PowerShell with windowsHide, and that hide flag is applied
+  // to the first window the process shows — which is this owner form. It then
+  // stays hidden, the dialog has nothing to centre on and lands at 0,0 behind
+  // the browser. A second, explicit ShowWindow is not affected by the flag.
+  expect(buildPickScript('directory', '')).toContain('ShowWindow')
+})
+
+test('keeps the owner window on the screen', () => {
+  // The dialogs position themselves relative to their owner. An owner parked at
+  // -2000,-2000 pushed the file dialog into the top-left corner of the screen.
+  const script = buildPickScript('excel-file', '')
+  expect(script).not.toContain('-2000')
+  expect(script).toContain('PrimaryScreen')
 })
 
 test('starts the dialog at the path that is configured', () => {

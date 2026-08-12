@@ -90,6 +90,60 @@ test('reports 503 when no picker is wired up', async () => {
   await app.close()
 })
 
+test('opens only one dialog at a time', async () => {
+  // Every click used to spawn its own dialog. When they were invisible, an
+  // impatient operator stacked nine of them on the desktop, and each one had to
+  // be answered separately. One dialog is open or none is.
+  let opened = 0
+  let release: (path: string | null) => void = () => {}
+  const { app } = testServer({}, undefined, () => {
+    opened++
+    return new Promise((resolve) => { release = resolve })
+  })
+
+  const first = app.inject({
+    method: 'POST', url: '/api/pick-path', payload: { kind: 'directory', current: '' },
+  })
+  while (opened === 0) await new Promise((r) => setTimeout(r, 5))
+  const second = await app.inject({
+    method: 'POST', url: '/api/pick-path', payload: { kind: 'directory', current: '' },
+  })
+  expect(second.statusCode).toBe(409)
+  expect(opened).toBe(1)
+
+  release('C:/Tandem')
+  expect((await first).json()).toEqual({ path: 'C:/Tandem' })
+
+  // Once the dialog is answered the next click works again.
+  const third = app.inject({
+    method: 'POST', url: '/api/pick-path', payload: { kind: 'directory', current: '' },
+  })
+  while (opened === 1) await new Promise((r) => setTimeout(r, 5))
+  release('C:/Tandem/Backup')
+  expect((await third).json()).toEqual({ path: 'C:/Tandem/Backup' })
+  expect(opened).toBe(2)
+  await app.close()
+})
+
+test('lets the next dialog open after one failed', async () => {
+  let opened = 0
+  const { app } = testServer({}, undefined, async () => {
+    opened++
+    throw new Error('powershell weg')
+  })
+  const first = await app.inject({
+    method: 'POST', url: '/api/pick-path', payload: { kind: 'directory', current: '' },
+  })
+  expect(first.statusCode).toBe(500)
+  const second = await app.inject({
+    method: 'POST', url: '/api/pick-path', payload: { kind: 'directory', current: '' },
+  })
+  // A crashed dialog must not lock the button for the rest of the day.
+  expect(second.statusCode).toBe(500)
+  expect(opened).toBe(2)
+  await app.close()
+})
+
 test('rejects an unknown kind', async () => {
   let opened = false
   const { app } = testServer({}, undefined, async () => {

@@ -637,13 +637,6 @@ h2 {
   margin: 0;
 }
 
-/* The money panel is the third column. It carries no border of its own — the
-   panel it sits in is the border — so the total is the only thing in it with
-   weight. */
-.kassa-panel .price-line {
-  gap: 16px;
-}
-
 .price-line {
   display: flex;
   justify-content: space-between;

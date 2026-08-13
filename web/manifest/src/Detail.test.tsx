@@ -678,5 +678,11 @@ describe('Detail', () => {
     // nobody is looking.
     await user.selectOptions(within(zuteilung).getByLabelText('Zahlungsart'), 'voucher')
     expect(within(zuteilung).getByRole('group', { name: 'Gutschein' })).toBeInTheDocument()
+
+    // A field left behind in two panels during the move would satisfy every
+    // assertion above: each region would still find its own copy.
+    expect(screen.getAllByLabelText('Tandemmaster')).toHaveLength(1)
+    expect(screen.getAllByLabelText(/Gebuchte Leistung/)).toHaveLength(1)
+    expect(screen.getAllByLabelText(/Anmerkungen/)).toHaveLength(1)
   })
 })

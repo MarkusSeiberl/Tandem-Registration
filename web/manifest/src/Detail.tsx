@@ -500,6 +500,11 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
           </label>
         </section>
 
+        {/*
+          The money block carries no border of its own — the panel around it
+          is the border — so the total stays the only thing in this column
+          with visual weight.
+        */}
         <section className="panel kassa-panel" aria-label="Kassa">
           <h3 className="panel-title">Kassa</h3>
 

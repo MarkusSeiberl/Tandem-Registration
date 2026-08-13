@@ -440,22 +440,40 @@ h2 {
   background: #c9922b;
 }
 
-/* Detail screen: guest data and manifest fields sit side-by-side on a
-   laptop-width viewport instead of stacked, since a PC user has the
-   horizontal space a tablet guest doesn't. The back button and the trailing
-   error/save/actions row stay full-width above and below this grid. */
-.detail-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 24px;
-  margin-top: 16px;
+/* Detail screen: the guest reads across the top, and what the manifest actually
+   decides reads as three columns under it — who flies them, what they get, what
+   they pay. One 420px column of eleven fields was taller than any window while
+   two thirds of a desk monitor sat empty beside it. */
+.detail-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
+.detail-cols {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+/* Two columns as soon as there is room for two readable ones; the till joins
+   them on a desk monitor. */
 @media (min-width: 900px) {
-  .detail-grid {
-    grid-template-columns: minmax(280px, 380px) 1fr;
-    align-items: start;
+  .detail-cols {
+    grid-template-columns: repeat(2, minmax(300px, 1fr));
   }
+}
+
+@media (min-width: 1280px) {
+  .detail-cols {
+    grid-template-columns: minmax(300px, 1fr) minmax(300px, 1fr) minmax(300px, 380px);
+  }
+}
+
+/* The back button keeps its own width instead of stretching across the strip. */
+.detail-back {
+  align-self: flex-start;
 }
 
 /* The guest strip. One rule of --ember down the left edge is the whole of the
@@ -513,13 +531,6 @@ h2 {
 /* The one guest fact that costs money. */
 .fact-weight dd {
   font-weight: 700;
-}
-
-.manifest-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-width: 420px;
 }
 
 .field {
@@ -626,17 +637,11 @@ h2 {
   margin: 0;
 }
 
-/* The money summary at the bottom of the manifest fields: the breakdown the
-   server will charge, its total, and the escape hatch for an exception. */
-.price-box {
-  margin-top: 6px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel-bg);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* The money panel is the third column. It carries no border of its own — the
+   panel it sits in is the border — so the total is the only thing in it with
+   weight. */
+.kassa-panel .price-line {
+  gap: 16px;
 }
 
 .price-line {

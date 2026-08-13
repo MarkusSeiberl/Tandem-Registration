@@ -212,7 +212,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
 
   return (
     <div className="detail-screen">
-      <button type="button" className="btn secondary" onClick={onBack}>
+      <button type="button" className="btn secondary detail-back" onClick={onBack}>
         ← Zurück
       </button>
 
@@ -270,9 +270,9 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         </dl>
       </header>
 
-      <div className="detail-grid">
-        <section className="manifest-fields">
-          <h2>Manifest</h2>
+      <div className="detail-cols">
+        <section className="panel" aria-label="Zuteilung">
+          <h3 className="panel-title">Zuteilung</h3>
 
           <label className="field">
             Tandemmaster
@@ -312,9 +312,10 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
           </label>
 
           {/*
-            One block, tied to the payment method right above it: everything the
-            voucher needs appears and disappears together, and the till comes
-            after the two fields that decide its amount.
+            One block, tied to the payment method right above it and kept in the
+            same column as it: everything the voucher needs appears and
+            disappears together, and the till comes after the two fields that
+            decide its amount.
           */}
           {showVoucherNumber && (
             <fieldset className="voucher-group">
@@ -405,6 +406,10 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
           {redemptionLine && (
             <p className="field-hint voucher-redemption">{redemptionLine}</p>
           )}
+        </section>
+
+        <section className="panel" aria-label="Leistung">
+          <h3 className="panel-title">Leistung</h3>
 
           <label className="field">
             Gebuchte Leistung
@@ -476,62 +481,10 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             {!showCameraFlyer && <span className="field-hint">Kein Video gebucht.</span>}
           </label>
 
-          <div className="price-box">
-            {/*
-              Until the price table has arrived there is nothing honest to show —
-              a 0 € total would be read as "guest owes nothing".
-            */}
-            {!prices && <p className="hint">Preise werden geladen…</p>}
-
-            {prices && (
-              <>
-                <div className="price-breakdown">
-                  {lines.map((l) => (
-                    <div className="price-line" key={l.label}>
-                      <span>{l.label}</span>
-                      <span className="numeral">{formatEuro(l.amount)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="price-line price-total">
-                  <span>Zu kassieren</span>
-                  <span className="numeral">{formatEuro(due)}</span>
-                </div>
-              </>
-            )}
-
-            <label className="price-override-toggle">
-              <input
-                type="checkbox"
-                checked={priceOverride}
-                onChange={(e) => {
-                  setPriceOverride(e.target.checked)
-                  // Start the manual field from the amount currently computed, so
-                  // a small correction is a small edit — and so a price stored
-                  // before the selection changed cannot silently come back.
-                  if (e.target.checked) setPrice(computed)
-                }}
-              />
-              abweichender Preis
-            </label>
-
-            {priceOverride && (
-              <label className="field">
-                Preis (EUR)
-                <input
-                  type="number"
-                  className="numeral"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
-                />
-              </label>
-            )}
-          </div>
-
           {/*
-            Below the price box on purpose: a note about a special arrangement
-            explains the numbers above it. Placed among the dropdowns it would
-            read as one more thing to fill in on every row.
+            Last in this column on purpose: a note records the special
+            arrangement behind the three choices above it. Among the dropdowns it
+            would read as one more thing to fill in on every row.
           */}
           <label className="field">
             Anmerkungen
@@ -545,6 +498,60 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
               Besondere Vereinbarungen, Abweichungen, Sonderfälle. Steht im Excel-Export.
             </span>
           </label>
+        </section>
+
+        <section className="panel kassa-panel" aria-label="Kassa">
+          <h3 className="panel-title">Kassa</h3>
+
+          {/*
+            Until the price table has arrived there is nothing honest to show —
+            a 0 € total would be read as "guest owes nothing".
+          */}
+          {!prices && <p className="hint">Preise werden geladen…</p>}
+
+          {prices && (
+            <>
+              <div className="price-breakdown">
+                {lines.map((l) => (
+                  <div className="price-line" key={l.label}>
+                    <span>{l.label}</span>
+                    <span className="numeral">{formatEuro(l.amount)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="price-line price-total">
+                <span>Zu kassieren</span>
+                <span className="numeral">{formatEuro(due)}</span>
+              </div>
+            </>
+          )}
+
+          <label className="price-override-toggle">
+            <input
+              type="checkbox"
+              checked={priceOverride}
+              onChange={(e) => {
+                setPriceOverride(e.target.checked)
+                // Start the manual field from the amount currently computed, so
+                // a small correction is a small edit — and so a price stored
+                // before the selection changed cannot silently come back.
+                if (e.target.checked) setPrice(computed)
+              }}
+            />
+            abweichender Preis
+          </label>
+
+          {priceOverride && (
+            <label className="field">
+              Preis (EUR)
+              <input
+                type="number"
+                className="numeral"
+                value={price}
+                onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            </label>
+          )}
         </section>
       </div>
 

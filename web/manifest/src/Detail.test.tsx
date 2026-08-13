@@ -649,4 +649,34 @@ describe('Detail', () => {
 
     expect(screen.queryByText(/Einlösung/)).not.toBeInTheDocument()
   })
+
+  it('splits the manifest into who flies them, what they get and what they pay', async () => {
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    // Who flies them, and on whose money.
+    const zuteilung = screen.getByRole('region', { name: 'Zuteilung' })
+    expect(within(zuteilung).getByLabelText('Tandemmaster')).toBeInTheDocument()
+    expect(within(zuteilung).getByLabelText('Load-Nr.')).toBeInTheDocument()
+    expect(within(zuteilung).getByLabelText('Zahlungsart')).toBeInTheDocument()
+
+    // What they get.
+    const leistung = screen.getByRole('region', { name: 'Leistung' })
+    expect(within(leistung).getByLabelText(/Gebuchte Leistung/)).toBeInTheDocument()
+    expect(within(leistung).getByLabelText(/Gewichtszuschlag/)).toBeInTheDocument()
+    expect(within(leistung).getByLabelText(/Kameraflieger/)).toBeInTheDocument()
+    expect(within(leistung).getByLabelText(/Anmerkungen/)).toBeInTheDocument()
+
+    // What they pay.
+    const kassa = screen.getByRole('region', { name: 'Kassa' })
+    expect(within(kassa).getByText('Zu kassieren')).toBeInTheDocument()
+    expect(within(kassa).getByLabelText('abweichender Preis')).toBeInTheDocument()
+
+    // The voucher block still hangs off the Zahlungsart that summons it, in the
+    // same panel — a block that opened in a different column would open where
+    // nobody is looking.
+    await user.selectOptions(within(zuteilung).getByLabelText('Zahlungsart'), 'voucher')
+    expect(within(zuteilung).getByRole('group', { name: 'Gutschein' })).toBeInTheDocument()
+  })
 })

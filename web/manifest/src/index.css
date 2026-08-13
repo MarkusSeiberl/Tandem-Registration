@@ -123,10 +123,21 @@ h2 {
 
 .view {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   padding: 28px 32px;
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
+}
+
+/* The screens that lay fields out in columns rather than rows. On a desk
+   monitor a 1400px cap would leave a third of the glass empty while the middle
+   column still wraps. The list keeps the narrower cap: a table that wide is
+   harder to read across, not easier. */
+.view-wide {
+  max-width: 1720px;
 }
 
 /* Buttons */
@@ -701,10 +712,40 @@ h2 {
   color: var(--text);
 }
 
-/* Settings screen */
+/* Settings screen: two columns on a desk monitor. Everything that names a place
+   on disk goes left; the two long guest texts get a panel of their own on the
+   right that takes the height the window has instead of the height ten rows add
+   up to. The page does not scroll — the open text does. */
+.settings-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-cols {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(380px, 560px) 1fr;
+  gap: 24px;
+}
+
+.settings-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-content: start;
+}
+
+/* The one block allowed to take all the height there is. */
+.text-panel {
+  min-height: 0;
+}
+
 .settings-screen .field {
-  max-width: 480px;
-  margin-bottom: 16px;
+  margin: 0;
 }
 
 /* Path field: the text stays as wide as it can, the dialog button sits beside it
@@ -724,9 +765,56 @@ h2 {
   white-space: nowrap;
 }
 
-.backup-section {
-  margin-top: 32px;
-  padding-top: 24px;
+/* Below a wide desk monitor the two columns stack and the page may scroll —
+   which is the honest trade, since neither column fits beside the other. */
+@media (max-width: 1180px) {
+  .settings-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* A titled card. The eyebrow names what the block decides, not what the fields
+   are called — the fields already say that. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-bg);
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.6;
+}
+
+/* The one control that commits the screen, always at the bottom edge and always
+   in the same place, so a change made in the far column is saved without
+   hunting for the button that does it. */
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 4px;
+  padding: 12px 0;
   border-top: 1px solid var(--border);
-  max-width: 480px;
+  background: var(--bg);
+}
+
+.save-bar p {
+  margin: 0;
+}
+
+.save-bar .btn.primary {
+  margin-left: auto;
 }

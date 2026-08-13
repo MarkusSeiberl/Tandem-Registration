@@ -161,123 +161,146 @@ export default function Settings() {
   return (
     <div className="settings-screen">
       <h2>Einstellungen</h2>
-      <PathField
-        label="Export-Verzeichnis"
-        browseLabel="Export-Verzeichnis auswählen"
-        kind="directory"
-        value={exportDir}
-        state={checks.exportDir}
-        onChange={(value) => {
-          setExportDir(value)
-          setSaved(false)
-        }}
-        onBrowse={canPick ? () => browse('directory', exportDir, setExportDir) : undefined}
-        browsing={browsing}
-      />
 
-      <label className="field">
-        Ort (für Vertragsunterschrift)
-        <input
-          type="text"
-          value={jumpLocation}
-          onChange={(e) => {
-            setJumpLocation(e.target.value)
-            setSaved(false)
-          }}
-        />
-      </label>
+      <div className="settings-cols">
+        <div className="settings-col">
+          <section className="panel" aria-label="Pfade & Ort">
+            <h3 className="panel-title">Pfade &amp; Ort</h3>
 
-      <PathField
-        label="Backup-Verzeichnis (leer = Export-Verzeichnis)"
-        browseLabel="Backup-Verzeichnis auswählen"
-        kind="directory"
-        value={backupDir}
-        state={checks.backupDir}
-        onChange={(value) => {
-          setBackupDir(value)
-          setSaved(false)
-        }}
-        onBrowse={canPick ? () => browse('directory', backupDir, setBackupDir) : undefined}
-        browsing={browsing}
-      />
+            <PathField
+              label="Export-Verzeichnis"
+              browseLabel="Export-Verzeichnis auswählen"
+              kind="directory"
+              value={exportDir}
+              state={checks.exportDir}
+              onChange={(value) => {
+                setExportDir(value)
+                setSaved(false)
+              }}
+              onBrowse={canPick ? () => browse('directory', exportDir, setExportDir) : undefined}
+              browsing={browsing}
+            />
 
-      <PathField
-        label="Gutscheinliste (Excel-Datei)"
-        browseLabel="Gutscheinliste auswählen"
-        kind="excel-file"
-        value={voucherListPath}
-        state={checks.voucherListPath}
-        hint={
-          'Vollständiger Pfad zur Tandemliste des Vereins. Leer lassen, wenn keine ' +
-          'Gutscheinprüfung gewünscht ist.'
-        }
-        onChange={(value) => {
-          setVoucherListPath(value)
-          setSaved(false)
-        }}
-        onBrowse={
-          canPick ? () => browse('excel-file', voucherListPath, setVoucherListPath) : undefined
-        }
-        browsing={browsing}
-      />
+            <PathField
+              label="Backup-Verzeichnis (leer = Export-Verzeichnis)"
+              browseLabel="Backup-Verzeichnis auswählen"
+              kind="directory"
+              value={backupDir}
+              state={checks.backupDir}
+              onChange={(value) => {
+                setBackupDir(value)
+                setSaved(false)
+              }}
+              onBrowse={canPick ? () => browse('directory', backupDir, setBackupDir) : undefined}
+              browsing={browsing}
+            />
 
-      {/*
-        Both texts the guest gets to read before signing. They live here rather
-        than only in config.json because a wrong address or an outdated retention
-        period is a legal problem, and fixing it must not need a new build.
-      */}
-      <label className="field">
-        Datenschutztext
-        <textarea
-          rows={10}
-          value={privacyText}
-          onChange={(e) => {
-            setPrivacyText(e.target.value)
-            setSaved(false)
-          }}
-        />
-        <span className="field-hint">
-          Wird dem Gast vor der Unterschrift gezeigt und muss von ihm bestätigt werden.
-          Angaben in eckigen Klammern ersetzen.
-        </span>
-      </label>
+            <PathField
+              label="Gutscheinliste (Excel-Datei)"
+              browseLabel="Gutscheinliste auswählen"
+              kind="excel-file"
+              value={voucherListPath}
+              state={checks.voucherListPath}
+              hint={
+                'Vollständiger Pfad zur Tandemliste des Vereins. Leer lassen, wenn keine ' +
+                'Gutscheinprüfung gewünscht ist.'
+              }
+              onChange={(value) => {
+                setVoucherListPath(value)
+                setSaved(false)
+              }}
+              onBrowse={
+                canPick ? () => browse('excel-file', voucherListPath, setVoucherListPath) : undefined
+              }
+              browsing={browsing}
+            />
 
-      <label className="field">
-        Vertragstext
-        <textarea
-          rows={10}
-          value={contractText}
-          onChange={(e) => {
-            setContractText(e.target.value)
-            setSaved(false)
-          }}
-        />
-        <span className="field-hint">Der Beförderungsvertrag, den der Gast liest und unterschreibt.</span>
-      </label>
+            <label className="field">
+              Ort (für Vertragsunterschrift)
+              <input
+                type="text"
+                value={jumpLocation}
+                onChange={(e) => {
+                  setJumpLocation(e.target.value)
+                  setSaved(false)
+                }}
+              />
+            </label>
+          </section>
 
-      {error && <p className="error">{error}</p>}
-      {saved && !error && <p className="hint">Gespeichert.</p>}
+          {/*
+            Its own block because its button acts on its own: Backup erstellen
+            runs immediately and is not part of what Speichern commits.
+          */}
+          <section className="panel" aria-label="Datenbank-Backup">
+            <h3 className="panel-title">Datenbank-Backup</h3>
+            <p className="field-hint">
+              Erstellt eine Sicherungskopie der Datenbank im Backup-Verzeichnis. Verzeichnis vorher
+              speichern.
+            </p>
+            {backupError && <p className="error">{backupError}</p>}
+            {backupMessage && !backupError && <p className="hint">{backupMessage}</p>}
+            <div>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={handleBackup}
+                disabled={backingUp}
+              >
+                {backingUp ? 'Erstellt…' : 'Backup erstellen'}
+              </button>
+            </div>
+          </section>
+        </div>
 
-      <div className="actions">
+        {/*
+          Both texts the guest gets to read before signing. They live here rather
+          than only in config.json because a wrong address or an outdated retention
+          period is a legal problem, and fixing it must not need a new build.
+        */}
+        <section className="panel text-panel" aria-label="Texte">
+          <h3 className="panel-title">Texte für den Gast</h3>
+
+          <label className="field">
+            Datenschutztext
+            <textarea
+              rows={10}
+              value={privacyText}
+              onChange={(e) => {
+                setPrivacyText(e.target.value)
+                setSaved(false)
+              }}
+            />
+            <span className="field-hint">
+              Wird dem Gast vor der Unterschrift gezeigt und muss von ihm bestätigt werden.
+              Angaben in eckigen Klammern ersetzen.
+            </span>
+          </label>
+
+          <label className="field">
+            Vertragstext
+            <textarea
+              rows={10}
+              value={contractText}
+              onChange={(e) => {
+                setContractText(e.target.value)
+                setSaved(false)
+              }}
+            />
+            <span className="field-hint">
+              Der Beförderungsvertrag, den der Gast liest und unterschreibt.
+            </span>
+          </label>
+        </section>
+      </div>
+
+      <div className="save-bar">
+        {error && <p className="error">{error}</p>}
+        {saved && !error && <p className="hint">Gespeichert.</p>}
         <button type="button" className="btn primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Speichert…' : 'Speichern'}
         </button>
       </div>
-
-      <section className="backup-section">
-        <h2>Datenbank-Backup</h2>
-        <p className="hint">
-          Erstellt eine Sicherungskopie der Datenbank im Backup-Verzeichnis. Verzeichnis vorher
-          speichern.
-        </p>
-        {backupError && <p className="error">{backupError}</p>}
-        {backupMessage && !backupError && <p className="hint">{backupMessage}</p>}
-        <div className="actions">
-          <button type="button" className="btn secondary" onClick={handleBackup} disabled={backingUp}>
-            {backingUp ? 'Erstellt…' : 'Backup erstellen'}
-          </button>
-        </div>
-      </section>
     </div>
   )
 }

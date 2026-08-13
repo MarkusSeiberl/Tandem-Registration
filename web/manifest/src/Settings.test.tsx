@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Settings from './Settings'
 import * as api from './api'
@@ -68,6 +68,30 @@ describe('Settings', () => {
     await waitFor(() => expect(api.putSettings).toHaveBeenCalled())
     expect(vi.mocked(api.putSettings).mock.calls[0][0])
       .toMatchObject({ privacyText: 'Neue Fassung' })
+  })
+
+  it('groups the paths and the backup into blocks of their own', async () => {
+    render(<Settings />)
+    await screen.findByLabelText('Export-Verzeichnis')
+
+    // Everything that points at the disk, in one block: the operator sets these
+    // once at the start of a season and does not read past them again.
+    const paths = screen.getByRole('region', { name: 'Pfade & Ort' })
+    expect(within(paths).getByLabelText('Export-Verzeichnis')).toBeInTheDocument()
+    expect(within(paths).getByLabelText('Backup-Verzeichnis (leer = Export-Verzeichnis)'))
+      .toBeInTheDocument()
+    expect(within(paths).getByLabelText('Gutscheinliste (Excel-Datei)')).toBeInTheDocument()
+    expect(within(paths).getByLabelText('Ort (für Vertragsunterschrift)')).toBeInTheDocument()
+
+    // The backup button acts on its own; it is not part of what Speichern commits.
+    const backup = screen.getByRole('region', { name: 'Datenbank-Backup' })
+    expect(within(backup).getByRole('button', { name: 'Backup erstellen' })).toBeInTheDocument()
+    expect(within(backup).queryByRole('button', { name: 'Speichern' })).not.toBeInTheDocument()
+
+    // The guest texts are their own block, away from the paths.
+    const texts = screen.getByRole('region', { name: 'Texte' })
+    expect(within(texts).getByLabelText(/Datenschutztext/)).toBeInTheDocument()
+    expect(within(texts).getByLabelText(/Vertragstext/)).toBeInTheDocument()
   })
 
   it('offers no browse buttons where the picker is unavailable', async () => {

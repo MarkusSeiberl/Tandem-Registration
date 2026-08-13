@@ -100,6 +100,29 @@ describe('Detail', () => {
     expect(total()).toBe('270 €')
   })
 
+  it('reads the guest as one strip of facts above the manifest', async () => {
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    // Nothing here is editable and nothing here changes on this screen, so it
+    // reads as one line across the top rather than as a column competing for
+    // width with the fields that do change.
+    const guest = screen.getByRole('region', { name: 'Gastdaten' })
+    expect(within(guest).getByText('Anna Muster')).toBeInTheDocument()
+    expect(within(guest).getByText('weiblich')).toBeInTheDocument()
+    expect(within(guest).getByText('30')).toBeInTheDocument()
+    expect(within(guest).getByText('170 cm')).toBeInTheDocument()
+    expect(within(guest).getByText('80 kg')).toBeInTheDocument()
+    expect(within(guest).getByText('2026-07-09')).toBeInTheDocument()
+    expect(within(guest).getByText('Hauptstraße 1, 5020 Salzburg')).toBeInTheDocument()
+    expect(within(guest).getByText('anna@example.com')).toBeInTheDocument()
+    expect(within(guest).getByText('0664 1234567')).toBeInTheDocument()
+
+    // The strip states facts; it never asks for one.
+    expect(within(guest).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(within(guest).queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
   it('adds the extra and the weight surcharge to the total', async () => {
     const user = userEvent.setup()
     renderDetail()

@@ -216,55 +216,61 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         ← Zurück
       </button>
 
-      <div className="detail-grid">
-        <section className="guest-data">
-          <h2>Gastdaten</h2>
-          <dl>
-            <div className="detail-row">
-              <dt>Name</dt>
-              <dd>
-                {registration.first_name} {registration.last_name}
-              </dd>
-            </div>
-            <div className="detail-row">
-              <dt>Geschlecht</dt>
-              <dd>{genderLabel(registration.gender)}</dd>
-            </div>
-            <div className="detail-row">
-              <dt>Alter</dt>
-              <dd className="numeral">{registration.age}</dd>
-            </div>
-            <div className="detail-row">
-              <dt>Größe</dt>
-              <dd className="numeral">{registration.height_cm != null ? `${registration.height_cm} cm` : ''}</dd>
-            </div>
-            <div className="detail-row">
-              <dt>Gewicht</dt>
-              <dd className="numeral">{registration.weight_kg} kg</dd>
-            </div>
-            <div className="detail-row">
-              <dt>Adresse</dt>
-              <dd>
-                {registration.street}
-                <br />
-                {registration.postal_code} {registration.city}
-              </dd>
-            </div>
-            <div className="detail-row">
-              <dt>E-Mail</dt>
-              <dd>{registration.email}</dd>
-            </div>
-            <div className="detail-row">
-              <dt>Telefon</dt>
-              <dd>{registration.phone}</dd>
-            </div>
-            <div className="detail-row">
-              <dt>Sprungdatum</dt>
-              <dd>{registration.jump_date}</dd>
-            </div>
-          </dl>
-        </section>
+      {/*
+        The guest arrives from the kiosk and is never edited here, so all nine
+        facts read as one load-sheet line across the top instead of as a column
+        of their own. Weight is set apart because it is the one guest fact that
+        costs money: it sets the Gewichtszuschlag further down the screen.
+      */}
+      <header className="guest-strip" role="region" aria-label="Gastdaten">
+        <h2 className="guest-name">
+          {registration.first_name} {registration.last_name}
+        </h2>
 
+        <dl className="guest-facts">
+          <div className="fact">
+            <dt>Geschlecht</dt>
+            <dd>{genderLabel(registration.gender)}</dd>
+          </div>
+          <div className="fact">
+            <dt>Alter</dt>
+            <dd className="numeral">{registration.age}</dd>
+          </div>
+          <div className="fact">
+            <dt>Größe</dt>
+            <dd className="numeral">
+              {registration.height_cm != null ? `${registration.height_cm} cm` : ''}
+            </dd>
+          </div>
+          <div className="fact fact-weight">
+            <dt>Gewicht</dt>
+            <dd className="numeral">{registration.weight_kg} kg</dd>
+          </div>
+          <div className="fact">
+            <dt>Sprungdatum</dt>
+            <dd className="numeral">{registration.jump_date}</dd>
+          </div>
+        </dl>
+
+        <dl className="guest-contact">
+          <div className="fact">
+            <dt>Adresse</dt>
+            <dd>
+              {registration.street}, {registration.postal_code} {registration.city}
+            </dd>
+          </div>
+          <div className="fact">
+            <dt>E-Mail</dt>
+            <dd>{registration.email}</dd>
+          </div>
+          <div className="fact">
+            <dt>Telefon</dt>
+            <dd>{registration.phone}</dd>
+          </div>
+        </dl>
+      </header>
+
+      <div className="detail-grid">
         <section className="manifest-fields">
           <h2>Manifest</h2>
 

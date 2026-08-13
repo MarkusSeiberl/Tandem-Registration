@@ -458,25 +458,61 @@ h2 {
   }
 }
 
-.guest-data dl {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 6px 16px;
-  margin: 0 0 24px;
+/* The guest strip. One rule of --ember down the left edge is the whole of the
+   screen's boldness; every card below it stays a quiet panel. */
+.guest-strip {
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ember);
+  border-radius: 10px;
+  background: var(--panel-bg);
 }
 
-.detail-row {
-  display: contents;
+.guest-name {
+  margin: 0 0 12px;
+  font-size: 24px;
 }
 
-.guest-data dt {
-  color: var(--text);
-  opacity: 0.7;
-}
-
-.guest-data dd {
+.guest-facts,
+.guest-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 32px;
   margin: 0;
+}
+
+/* Address, mail and phone are looked up rarely — a hairline separates them from
+   the five facts the manifest reads on every row without hiding them. */
+.guest-contact {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fact dt {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.55;
+}
+
+.fact dd {
+  margin: 0;
+  font-size: 15px;
   color: var(--text-h);
+}
+
+/* The one guest fact that costs money. */
+.fact-weight dd {
+  font-weight: 700;
 }
 
 .manifest-fields {

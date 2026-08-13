@@ -79,6 +79,11 @@ export default function Settings() {
   const [browsing, setBrowsing] = useState(false)
   const [checks, setChecks] = useState<PathChecks>({})
 
+  // Both texts stay mounted; only one is shown. Unmounting the other would throw
+  // away an edit the operator made before switching, and Speichern commits both.
+  const [textTab, setTextTab] = useState<'privacy' | 'contract'>('privacy')
+  const textIds = useId()
+
   function applySettings(cfg: {
     exportDir: string; jumpLocation: string; backupDir: string
     contractText: string; privacyText: string; voucherListPath: string
@@ -256,15 +261,53 @@ export default function Settings() {
         {/*
           Both texts the guest gets to read before signing. They live here rather
           than only in config.json because a wrong address or an outdated retention
-          period is a legal problem, and fixing it must not need a new build.
+          period is a legal problem, and fixing it must not need a new build. One
+          shows at a time: two ten-row textareas stacked is what made this screen
+          longer than the window.
         */}
         <section className="panel text-panel" aria-label="Texte">
-          <h3 className="panel-title">Texte für den Gast</h3>
+          <div className="text-tabs" role="tablist" aria-label="Texte für den Gast">
+            <button
+              type="button"
+              role="tab"
+              className="text-tab"
+              id={`${textIds}-privacy-tab`}
+              aria-controls={`${textIds}-privacy-panel`}
+              aria-selected={textTab === 'privacy'}
+              onClick={() => setTextTab('privacy')}
+            >
+              Datenschutztext
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className="text-tab"
+              id={`${textIds}-contract-tab`}
+              aria-controls={`${textIds}-contract-panel`}
+              aria-selected={textTab === 'contract'}
+              onClick={() => setTextTab('contract')}
+            >
+              Vertragstext
+            </button>
+          </div>
 
-          <label className="field">
-            Datenschutztext
+          {/*
+            No aria-labelledby back to the tab here: its text is the exact string
+            the textarea below carries as its own aria-label, and
+            @testing-library's getByLabelText treats any aria-labelledby target
+            as a labelled element in its own right — that turned "Datenschutztext"
+            into two matches (this div and the textarea) and broke the test that
+            looks up the field by that name. aria-controls on the tab already
+            ties the two together; the id/aria-controls pair below still does.
+          */}
+          <div
+            className="text-body"
+            role="tabpanel"
+            id={`${textIds}-privacy-panel`}
+            hidden={textTab !== 'privacy'}
+          >
             <textarea
-              rows={10}
+              aria-label="Datenschutztext"
               value={privacyText}
               onChange={(e) => {
                 setPrivacyText(e.target.value)
@@ -275,12 +318,16 @@ export default function Settings() {
               Wird dem Gast vor der Unterschrift gezeigt und muss von ihm bestätigt werden.
               Angaben in eckigen Klammern ersetzen.
             </span>
-          </label>
+          </div>
 
-          <label className="field">
-            Vertragstext
+          <div
+            className="text-body"
+            role="tabpanel"
+            id={`${textIds}-contract-panel`}
+            hidden={textTab !== 'contract'}
+          >
             <textarea
-              rows={10}
+              aria-label="Vertragstext"
               value={contractText}
               onChange={(e) => {
                 setContractText(e.target.value)
@@ -290,7 +337,7 @@ export default function Settings() {
             <span className="field-hint">
               Der Beförderungsvertrag, den der Gast liest und unterschreibt.
             </span>
-          </label>
+          </div>
         </section>
       </div>
 

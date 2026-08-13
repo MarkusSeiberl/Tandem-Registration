@@ -818,3 +818,69 @@ h2 {
 .save-bar .btn.primary {
   margin-left: auto;
 }
+
+/* Two texts, one panel. The tab row is the only place on this screen where a
+   control names a document rather than a field, so it is set apart by a rule
+   under it rather than by a box around it. */
+.text-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.text-tab {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.text-tab:hover {
+  background: var(--row-hover);
+}
+
+.text-tab[aria-selected='true'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.text-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* `hidden` has to beat the flex display above it, or the closed tab stays open. */
+.text-body[hidden] {
+  display: none;
+}
+
+/* The text takes the height the panel has. Resizing it by hand would only make
+   the page scroll again, which is the thing this layout exists to stop. */
+.text-body textarea {
+  flex: 1;
+  min-height: 220px;
+  resize: none;
+  font: inherit;
+  padding: 10px 12px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text);
+}
+
+/* Stacked under the left column there is no window height to fill, so the text
+   takes a fixed, comfortable block instead. */
+@media (max-width: 1180px) {
+  .text-body textarea {
+    min-height: 300px;
+  }
+}

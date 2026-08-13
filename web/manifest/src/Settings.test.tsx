@@ -70,6 +70,47 @@ describe('Settings', () => {
       .toMatchObject({ privacyText: 'Neue Fassung' })
   })
 
+  it('shows one guest text at a time and switches on the tab', async () => {
+    render(<Settings />)
+    await screen.findByLabelText('Export-Verzeichnis')
+
+    // Ten rows of legal text twice over is what made this screen scroll. One at
+    // a time, in the height the window actually has.
+    expect(screen.getByLabelText('Datenschutztext')).toBeVisible()
+    expect(screen.getByLabelText('Vertragstext')).not.toBeVisible()
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Vertragstext' }))
+
+    expect(screen.getByLabelText('Vertragstext')).toBeVisible()
+    expect(screen.getByLabelText('Datenschutztext')).not.toBeVisible()
+  })
+
+  it('keeps an edit made in the tab that is no longer showing, and saves both', async () => {
+    render(<Settings />)
+    await screen.findByLabelText('Export-Verzeichnis')
+
+    await userEvent.clear(screen.getByLabelText('Datenschutztext'))
+    await userEvent.type(screen.getByLabelText('Datenschutztext'), 'Neue Datenschutzinfo')
+
+    // Switching away is not discarding. Both fields stay mounted, so Speichern
+    // still commits the text the operator cannot see at that moment.
+    await userEvent.click(screen.getByRole('tab', { name: 'Vertragstext' }))
+    await userEvent.clear(screen.getByLabelText('Vertragstext'))
+    await userEvent.type(screen.getByLabelText('Vertragstext'), 'Neuer Vertrag')
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Datenschutztext' }))
+    expect((screen.getByLabelText('Datenschutztext') as HTMLTextAreaElement).value)
+      .toBe('Neue Datenschutzinfo')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+    await waitFor(() => expect(api.putSettings).toHaveBeenCalled())
+    expect(vi.mocked(api.putSettings).mock.calls[0][0]).toMatchObject({
+      privacyText: 'Neue Datenschutzinfo',
+      contractText: 'Neuer Vertrag',
+    })
+  })
+
   it('groups the paths and the backup into blocks of their own', async () => {
     render(<Settings />)
     await screen.findByLabelText('Export-Verzeichnis')

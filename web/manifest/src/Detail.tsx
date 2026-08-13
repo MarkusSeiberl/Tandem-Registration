@@ -563,7 +563,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
       {error && <p className="error">{error}</p>}
       {saved && !error && <p className="hint">Gespeichert.</p>}
 
-      <div className="actions">
+      <div className="save-bar detail-actions">
         <a
           className="btn secondary"
           href={contractPdfUrl(registration.id)}

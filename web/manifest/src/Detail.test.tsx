@@ -685,4 +685,20 @@ describe('Detail', () => {
     expect(screen.getAllByLabelText(/Gebuchte Leistung/)).toHaveLength(1)
     expect(screen.getAllByLabelText(/Anmerkungen/)).toHaveLength(1)
   })
+
+  it('keeps every action that leaves this row in one bar', async () => {
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    const bar = document.querySelector('.save-bar')
+    expect(bar).not.toBeNull()
+
+    const actions = within(bar as HTMLElement)
+    expect(actions.getByRole('link', { name: 'Vertrag öffnen' })).toBeInTheDocument()
+    expect(actions.getByRole('button', { name: 'Urkunde drucken' })).toBeInTheDocument()
+    expect(actions.getByRole('button', { name: 'Speichern' })).toBeInTheDocument()
+    // Set apart from the rest so it is never the button next to Speichern.
+    expect(actions.getByRole('button', { name: /Registrierung löschen/ }))
+      .toHaveClass('detail-delete')
+  })
 })

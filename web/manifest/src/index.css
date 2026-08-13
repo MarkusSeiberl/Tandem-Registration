@@ -918,3 +918,27 @@ h2 {
     min-height: 300px;
   }
 }
+
+/* Speichern sits between the two secondary actions and the delete, not at the
+   far edge of the bar — `.save-bar .btn.primary { margin-left: auto }` would
+   push it past them. */
+.detail-actions .btn.primary {
+  margin-left: 0;
+}
+
+/* Three columns, and the money is the one an operator glances back at while
+   changing the other two. On a desk monitor it follows them down. */
+@media (min-width: 1280px) {
+  .kassa-panel {
+    position: sticky;
+    top: 28px;
+  }
+}
+
+/* Quality floor: the tab and panel controls added here are keyboard-reachable,
+   so they have to be keyboard-visible too. */
+.text-tab:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

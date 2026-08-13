@@ -244,6 +244,22 @@ describe('Settings', () => {
     expect(await screen.findByText('Pfad ist keine Datei')).toBeInTheDocument()
   })
 
+  it('names the text panel that is showing', async () => {
+    render(<Settings />)
+    await screen.findByLabelText('Export-Verzeichnis')
+
+    // A tab panel with no accessible name announces as an unlabelled group.
+    // It cannot borrow the tab's wording: the textarea inside already carries
+    // that as its own label, and a label query would then match both.
+    expect(screen.getByRole('tabpanel', { name: 'Datenschutz' })).toBeInTheDocument()
+    expect(screen.queryByRole('tabpanel', { name: 'Vertrag' })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Vertragstext' }))
+
+    expect(screen.getByRole('tabpanel', { name: 'Vertrag' })).toBeInTheDocument()
+    expect(screen.queryByRole('tabpanel', { name: 'Datenschutz' })).not.toBeInTheDocument()
+  })
+
   it('leaves the amounts to the Stammdaten screen', async () => {
     render(<Settings />)
     await screen.findByLabelText('Export-Verzeichnis')

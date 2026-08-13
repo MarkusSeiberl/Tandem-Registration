@@ -292,18 +292,15 @@ export default function Settings() {
           </div>
 
           {/*
-            No aria-labelledby back to the tab here: its text is the exact string
-            the textarea below carries as its own aria-label, and
-            @testing-library's getByLabelText treats any aria-labelledby target
-            as a labelled element in its own right — that turned "Datenschutztext"
-            into two matches (this div and the textarea) and broke the test that
-            looks up the field by that name. aria-controls on the tab already
-            ties the two together; the id/aria-controls pair below still does.
+            Named separately from its tab rather than via aria-labelledby: a
+            name containing the tab's own wording would collide with the
+            textarea's aria-label in label-text queries.
           */}
           <div
             className="text-body"
             role="tabpanel"
             id={`${textIds}-privacy-panel`}
+            aria-label="Datenschutz"
             hidden={textTab !== 'privacy'}
           >
             <textarea
@@ -324,6 +321,7 @@ export default function Settings() {
             className="text-body"
             role="tabpanel"
             id={`${textIds}-contract-panel`}
+            aria-label="Vertrag"
             hidden={textTab !== 'contract'}
           >
             <textarea

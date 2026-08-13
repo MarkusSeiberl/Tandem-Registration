@@ -15,7 +15,7 @@
 - **All UI copy stays German**, exactly as it reads today. Every existing label string is load-bearing for tests — do not reword `Export-Verzeichnis`, `Ort (für Vertragsunterschrift)`, `Backup-Verzeichnis (leer = Export-Verzeichnis)`, `Gutscheinliste (Excel-Datei)`, `Datenschutztext`, `Vertragstext`, `Speichern`, `Backup erstellen`, `Tandemmaster`, `Load-Nr.`, `Zahlungsart`, `Gutschein-Nr.`, `Gutschein-Leistung`, `Zuzahlung bezahlt mit`, `Gebuchte Leistung`, `Gewichtszuschlag`, `Kameraflieger`, `Anmerkungen`, `Zu kassieren`, `abweichender Preis`, `Preis (EUR)`.
 - **Class names asserted by tests must survive**: `.price-total`, `.numeral`, `.voucher-status`, `.field-hint`, `.voucher-check`, and the `<fieldset>`/`<legend>` pair that gives the voucher block `role="group"` with the accessible name `Gutschein`.
 - **Accessibility floor:** every panel is a `<section aria-label="…">` so it exposes `role="region"`; tabs use `role="tablist"`/`role="tab"`/`role="tabpanel"`; keyboard focus stays visible; no motion added.
-- **Test command:** `npm --prefix web/manifest run test`. Type check: `npm --prefix web/manifest exec tsc -b`.
+- **Test command:** `npm --prefix web/manifest run test`. Type check: `npm --prefix web/manifest exec -- tsc -b`.
 
 ## Design direction
 
@@ -414,7 +414,7 @@ Expected: PASS — all tests in `Settings.test.tsx`, including the pre-existing 
 
 - [ ] **Step 8: Type check**
 
-Run: `npm --prefix web/manifest exec tsc -b`
+Run: `npm --prefix web/manifest exec -- tsc -b`
 
 Expected: no output, exit code 0.
 
@@ -667,7 +667,7 @@ Expected: PASS. The pre-existing test `edits the texts the guest is shown before
 
 - [ ] **Step 7: Type check**
 
-Run: `npm --prefix web/manifest exec tsc -b`
+Run: `npm --prefix web/manifest exec -- tsc -b`
 
 Expected: no output, exit code 0.
 
@@ -861,7 +861,7 @@ Expected: PASS — the new test plus all 38 pre-existing `Detail` tests.
 
 - [ ] **Step 6: Type check**
 
-Run: `npm --prefix web/manifest exec tsc -b`
+Run: `npm --prefix web/manifest exec -- tsc -b`
 
 Expected: no output, exit code 0.
 
@@ -1289,7 +1289,7 @@ Expected: PASS — all `Detail` tests. `total()` still resolves because `.price-
 
 - [ ] **Step 7: Type check**
 
-Run: `npm --prefix web/manifest exec tsc -b`
+Run: `npm --prefix web/manifest exec -- tsc -b`
 
 Expected: no output, exit code 0.
 
@@ -1426,7 +1426,7 @@ Run: `npm --prefix web/manifest run lint`
 
 Expected: `Found 0 warnings and 0 errors`.
 
-Run: `npm --prefix web/manifest exec tsc -b`
+Run: `npm --prefix web/manifest exec -- tsc -b`
 
 Expected: no output, exit code 0.
 

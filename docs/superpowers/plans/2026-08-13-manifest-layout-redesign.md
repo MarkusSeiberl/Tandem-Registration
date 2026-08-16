@@ -1424,7 +1424,7 @@ Expected: PASS — every test in `Betraege.test.tsx`, `Detail.test.tsx`, `List.t
 
 Run: `npm --prefix web/manifest run lint`
 
-Expected: `Found 0 warnings and 0 errors`.
+Expected: exit code 0, with no findings printed — oxlint prints nothing on success.
 
 Run: `npm --prefix web/manifest exec -- tsc -b`
 

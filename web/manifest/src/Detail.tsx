@@ -222,7 +222,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         of their own. Weight is set apart because it is the one guest fact that
         costs money: it sets the Gewichtszuschlag further down the screen.
       */}
-      <header className="guest-strip" role="region" aria-label="Gastdaten">
+      <section className="guest-strip" aria-label="Gastdaten">
         <h2 className="guest-name">
           {registration.first_name} {registration.last_name}
         </h2>
@@ -268,7 +268,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             <dd>{registration.phone}</dd>
           </div>
         </dl>
-      </header>
+      </section>
 
       <div className="detail-cols">
         <section className="panel" aria-label="Zuteilung">
@@ -560,9 +560,6 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         </section>
       </div>
 
-      {error && <p className="error">{error}</p>}
-      {saved && !error && <p className="hint">Gespeichert.</p>}
-
       <div className="save-bar detail-actions">
         <a
           className="btn secondary"
@@ -585,6 +582,17 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         <button type="button" className="btn primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Speichert…' : 'Speichern'}
         </button>
+        {/*
+          Lives in the bar, not below it, because the buttons that produce it live
+          here: Speichern and Registrierung löschen are pinned to the viewport, so
+          an operator scrolled away from the top would never see feedback left in
+          the page's normal flow. Placed after Speichern and before the
+          auto-margined delete button — in the space that margin already opens up
+          — so neither button's horizontal position depends on whether a message
+          is showing.
+        */}
+        {error && <p className="error">{error}</p>}
+        {saved && !error && <p className="hint">Gespeichert.</p>}
         {/* Set apart from the rest so it is never the button next to Speichern. */}
         <button
           type="button"

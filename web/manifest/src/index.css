@@ -519,7 +519,7 @@ h2 {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text);
-  opacity: 0.55;
+  opacity: 0.7;
 }
 
 .fact dd {
@@ -542,7 +542,8 @@ h2 {
 
 .field input,
 .field select,
-.field textarea {
+.field textarea,
+.text-body textarea {
   font: inherit;
   padding: 8px 10px;
   border: 2px solid var(--border);
@@ -557,9 +558,10 @@ h2 {
   min-height: 62px;
 }
 
-/* Sits under a field to explain what it means without competing with the label
-   above it — used for the voucher/extra distinction and for the guest's weight
-   beside the surcharge picker. */
+/* Sits under a field to explain what it means, or under a panel title to
+   explain what the panel does — without competing with the label or eyebrow
+   above it. Used for the voucher/extra distinction, the guest's weight beside
+   the surcharge picker, and the backup block's explanation on Einstellungen. */
 .field-hint {
   font-size: 12px;
   color: var(--text);
@@ -770,16 +772,11 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  align-content: start;
 }
 
 /* The one block allowed to take all the height there is. */
 .text-panel {
   min-height: 0;
-}
-
-.settings-screen .field {
-  margin: 0;
 }
 
 /* Path field: the text stays as wide as it can, the dialog button sits beside it
@@ -800,8 +797,10 @@ h2 {
 }
 
 /* Below a wide desk monitor the two columns stack and the page may scroll —
-   which is the honest trade, since neither column fits beside the other. */
-@media (max-width: 1180px) {
+   which is the honest trade, since neither column fits beside the other. Same
+   1280px the Detail screen goes to three columns at, so above it the text
+   column never ends up narrower than the paths column beside it. */
+@media (max-width: 1280px) {
   .settings-cols {
     grid-template-columns: 1fr;
   }
@@ -826,7 +825,7 @@ h2 {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text);
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
 /* The one control that commits the screen, always at the bottom edge and always
@@ -898,22 +897,20 @@ h2 {
 }
 
 /* The text takes the height the panel has. Resizing it by hand would only make
-   the page scroll again, which is the thing this layout exists to stop. */
+   the page scroll again, which is the thing this layout exists to stop. Padding
+   is the one metric it doesn't share with the field rule above — roomier,
+   because this is the only textarea that fills a whole panel of prose rather
+   than sitting under a label. */
 .text-body textarea {
   flex: 1;
   min-height: 220px;
   resize: none;
-  font: inherit;
   padding: 10px 12px;
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel-bg);
-  color: var(--text);
 }
 
 /* Stacked under the left column there is no window height to fill, so the text
    takes a fixed, comfortable block instead. */
-@media (max-width: 1180px) {
+@media (max-width: 1280px) {
   .text-body textarea {
     min-height: 300px;
   }
@@ -921,8 +918,10 @@ h2 {
 
 /* Speichern sits between the two secondary actions and the delete, not at the
    far edge of the bar — `.save-bar .btn.primary { margin-left: auto }` would
-   push it past them. */
-.detail-actions .btn.primary {
+   push it past them. Chained onto `.save-bar` rather than left as a same-
+   specificity override, so it wins because it names both classes, not because
+   it happens to come later in the file. */
+.save-bar.detail-actions .btn.primary {
   margin-left: 0;
 }
 

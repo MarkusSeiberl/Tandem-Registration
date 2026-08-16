@@ -687,6 +687,7 @@ describe('Detail', () => {
   })
 
   it('keeps every action that leaves this row in one bar', async () => {
+    const user = userEvent.setup()
     renderDetail()
     await screen.findByText('Zu kassieren')
 
@@ -700,5 +701,11 @@ describe('Detail', () => {
     // Set apart from the rest so it is never the button next to Speichern.
     expect(actions.getByRole('button', { name: /Registrierung löschen/ }))
       .toHaveClass('detail-delete')
+
+    // The message the button produces has to land in the same pinned strip —
+    // below it, on a screen that scrolls, an operator working at the top would
+    // never see it.
+    await user.click(actions.getByRole('button', { name: 'Speichern' }))
+    expect(await actions.findByText('Gespeichert.')).toBeInTheDocument()
   })
 })

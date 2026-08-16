@@ -461,7 +461,10 @@ describe('Detail', () => {
 
     await user.click(screen.getByRole('button', { name: 'Registrierung löschen' }))
 
-    expect(await screen.findByText('Löschen fehlgeschlagen')).toBeInTheDocument()
+    // Queried through the bar, not the document: the button that failed is
+    // pinned to the viewport, so a message anywhere else can be off-screen.
+    const bar = within(document.querySelector('.save-bar') as HTMLElement)
+    expect(await bar.findByText('Löschen fehlgeschlagen')).toBeInTheDocument()
     expect(onBack).not.toHaveBeenCalled()
     confirm.mockRestore()
   })

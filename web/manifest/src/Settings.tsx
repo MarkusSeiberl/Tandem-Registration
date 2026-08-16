@@ -340,8 +340,16 @@ export default function Settings() {
       </div>
 
       <div className="save-bar">
-        {error && <p className="error">{error}</p>}
-        {saved && !error && <p className="hint">Gespeichert.</p>}
+        {/*
+          Always mounted, even with nothing to say: a live region has to be in
+          the accessibility tree before its text changes, or the change is not
+          announced. Saving leaves focus on the button that did it, so this is
+          the only thing that tells a screen reader the save happened.
+        */}
+        <div className="save-feedback" role="status" aria-live="polite">
+          {error && <p className="error">{error}</p>}
+          {saved && !error && <p className="hint">Gespeichert.</p>}
+        </div>
         <button type="button" className="btn primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Speichert…' : 'Speichern'}
         </button>

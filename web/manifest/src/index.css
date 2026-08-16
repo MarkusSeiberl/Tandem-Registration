@@ -566,6 +566,10 @@ h2 {
   font-size: 12px;
   color: var(--text);
   opacity: 0.65;
+  /* Most of these are spans, but the ones written as paragraphs sit in flex
+     columns where the UA's block margin does not collapse — it would set that
+     one hint further from its neighbours than the container's own gap. */
+  margin: 0;
 }
 
 /* The selected surcharge no longer matches the weight the guest entered. Worth
@@ -630,13 +634,6 @@ h2 {
   color: var(--ember);
   font-weight: 600;
   opacity: 1;
-}
-
-/* What the club's file already holds for this row. Deliberately as quiet as any
-   other hint: it reports a state, and there is nothing in it to act on — the
-   date stays in the file whether the row is collected or back to open. */
-.voucher-redemption {
-  margin: 0;
 }
 
 .price-line {
@@ -796,10 +793,14 @@ h2 {
   white-space: nowrap;
 }
 
-/* Below a wide desk monitor the two columns stack and the page may scroll —
-   which is the honest trade, since neither column fits beside the other. Same
-   1280px the Detail screen goes to three columns at, so above it the text
-   column never ends up narrower than the paths column beside it. */
+/* Below the width where the Detail screen takes three columns, these two stack
+   and the page may scroll — the honest trade, since neither column fits beside
+   the other. The paths track is a definite minmax, so it takes its full 560px
+   before the text track sees any leftover: the text column is the wider of the
+   two only from about 1424px up. Between the breakpoint and there it is the
+   narrower one, at 417px and up — tighter than intended but still a workable
+   block of prose, and the alternative (stacking until 1424px) would make a
+   1366px laptop scroll, which is the thing this layout exists to stop. */
 @media (max-width: 1280px) {
   .settings-cols {
     grid-template-columns: 1fr;
@@ -836,6 +837,10 @@ h2 {
   bottom: 0;
   z-index: 1;
   display: flex;
+  /* A message beside four buttons runs out of room before the window does. The
+     bar takes a second line rather than letting the buttons shrink until their
+     labels break — a button whose words wrap reads as a broken control. */
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
   margin-top: 4px;
@@ -844,8 +849,14 @@ h2 {
   background: var(--bg);
 }
 
-.save-bar p {
+/* The server's own words come through here, so the message can be long. Without
+   `min-width: 0` it would refuse to shrink past its longest word and squeeze the
+   buttons instead; it wraps first, they keep their labels. Empty it takes no
+   width — only one of the bar's gaps, which the auto margin beside it absorbs. */
+.save-bar p,
+.save-feedback {
   margin: 0;
+  min-width: 0;
 }
 
 .save-bar .btn.primary {

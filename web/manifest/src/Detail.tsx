@@ -404,7 +404,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             naming the voucher the date sits on.
           */}
           {redemptionLine && (
-            <p className="field-hint voucher-redemption">{redemptionLine}</p>
+            <p className="field-hint">{redemptionLine}</p>
           )}
         </section>
 
@@ -591,8 +591,10 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
           — so neither button's horizontal position depends on whether a message
           is showing.
         */}
-        {error && <p className="error">{error}</p>}
-        {saved && !error && <p className="hint">Gespeichert.</p>}
+        <div className="save-feedback" role="status" aria-live="polite">
+          {error && <p className="error">{error}</p>}
+          {saved && !error && <p className="hint">Gespeichert.</p>}
+        </div>
         {/* Set apart from the rest so it is never the button next to Speichern. */}
         <button
           type="button"

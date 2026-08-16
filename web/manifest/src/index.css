@@ -123,10 +123,21 @@ h2 {
 
 .view {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   padding: 28px 32px;
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
+}
+
+/* The screens that lay fields out in columns rather than rows. On a desk
+   monitor a 1400px cap would leave a third of the glass empty while the middle
+   column still wraps. The list keeps the narrower cap: a table that wide is
+   harder to read across, not easier. */
+.view-wide {
+  max-width: 1720px;
 }
 
 /* Buttons */
@@ -429,50 +440,97 @@ h2 {
   background: #c9922b;
 }
 
-/* Detail screen: guest data and manifest fields sit side-by-side on a
-   laptop-width viewport instead of stacked, since a PC user has the
-   horizontal space a tablet guest doesn't. The back button and the trailing
-   error/save/actions row stay full-width above and below this grid. */
-.detail-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 24px;
-  margin-top: 16px;
+/* Detail screen: the guest reads across the top, and what the manifest actually
+   decides reads as three columns under it — who flies them, what they get, what
+   they pay. One 420px column of eleven fields was taller than any window while
+   two thirds of a desk monitor sat empty beside it. */
+.detail-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
+.detail-cols {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+/* Two columns as soon as there is room for two readable ones; the till joins
+   them on a desk monitor. */
 @media (min-width: 900px) {
-  .detail-grid {
-    grid-template-columns: minmax(280px, 380px) 1fr;
-    align-items: start;
+  .detail-cols {
+    grid-template-columns: repeat(2, minmax(300px, 1fr));
   }
 }
 
-.guest-data dl {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 6px 16px;
-  margin: 0 0 24px;
+@media (min-width: 1280px) {
+  .detail-cols {
+    grid-template-columns: minmax(300px, 1fr) minmax(300px, 1fr) minmax(300px, 380px);
+  }
 }
 
-.detail-row {
-  display: contents;
+/* The back button keeps its own width instead of stretching across the strip. */
+.detail-back {
+  align-self: flex-start;
 }
 
-.guest-data dt {
+/* The guest strip. One rule of --ember down the left edge is the whole of the
+   screen's boldness; every card below it stays a quiet panel. */
+.guest-strip {
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ember);
+  border-radius: 10px;
+  background: var(--panel-bg);
+}
+
+.guest-name {
+  margin: 0 0 12px;
+  font-size: 24px;
+}
+
+.guest-facts,
+.guest-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 32px;
+  margin: 0;
+}
+
+/* Address, mail and phone are looked up rarely — a hairline separates them from
+   the five facts the manifest reads on every row without hiding them. */
+.guest-contact {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fact dt {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--text);
   opacity: 0.7;
 }
 
-.guest-data dd {
+.fact dd {
   margin: 0;
+  font-size: 15px;
   color: var(--text-h);
 }
 
-.manifest-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-width: 420px;
+/* The one guest fact that costs money. */
+.fact-weight dd {
+  font-weight: 700;
 }
 
 .field {
@@ -484,7 +542,8 @@ h2 {
 
 .field input,
 .field select,
-.field textarea {
+.field textarea,
+.text-body textarea {
   font: inherit;
   padding: 8px 10px;
   border: 2px solid var(--border);
@@ -499,13 +558,18 @@ h2 {
   min-height: 62px;
 }
 
-/* Sits under a field to explain what it means without competing with the label
-   above it — used for the voucher/extra distinction and for the guest's weight
-   beside the surcharge picker. */
+/* Sits under a field to explain what it means, or under a panel title to
+   explain what the panel does — without competing with the label or eyebrow
+   above it. Used for the voucher/extra distinction, the guest's weight beside
+   the surcharge picker, and the backup block's explanation on Einstellungen. */
 .field-hint {
   font-size: 12px;
   color: var(--text);
   opacity: 0.65;
+  /* Most of these are spans, but the ones written as paragraphs sit in flex
+     columns where the UA's block margin does not collapse — it would set that
+     one hint further from its neighbours than the container's own gap. */
+  margin: 0;
 }
 
 /* The selected surcharge no longer matches the weight the guest entered. Worth
@@ -570,26 +634,6 @@ h2 {
   color: var(--ember);
   font-weight: 600;
   opacity: 1;
-}
-
-/* What the club's file already holds for this row. Deliberately as quiet as any
-   other hint: it reports a state, and there is nothing in it to act on — the
-   date stays in the file whether the row is collected or back to open. */
-.voucher-redemption {
-  margin: 0;
-}
-
-/* The money summary at the bottom of the manifest fields: the breakdown the
-   server will charge, its total, and the escape hatch for an exception. */
-.price-box {
-  margin-top: 6px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel-bg);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .price-line {
@@ -701,10 +745,35 @@ h2 {
   color: var(--text);
 }
 
-/* Settings screen */
-.settings-screen .field {
-  max-width: 480px;
-  margin-bottom: 16px;
+/* Settings screen: two columns on a desk monitor. Everything that names a place
+   on disk goes left; the two long guest texts get a panel of their own on the
+   right that takes the height the window has instead of the height ten rows add
+   up to. The page does not scroll — the open text does. */
+.settings-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-cols {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(380px, 560px) 1fr;
+  gap: 24px;
+}
+
+.settings-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* The one block allowed to take all the height there is. */
+.text-panel {
+  min-height: 0;
 }
 
 /* Path field: the text stays as wide as it can, the dialog button sits beside it
@@ -724,9 +793,162 @@ h2 {
   white-space: nowrap;
 }
 
-.backup-section {
-  margin-top: 32px;
-  padding-top: 24px;
+/* Below the width where the Detail screen takes three columns, these two stack
+   and the page may scroll — the honest trade, since neither column fits beside
+   the other. The paths track is a definite minmax, so it takes its full 560px
+   before the text track sees any leftover: the text column is the wider of the
+   two only from about 1424px up. Between the breakpoint and there it is the
+   narrower one, at 417px and up — tighter than intended but still a workable
+   block of prose, and the alternative (stacking until 1424px) would make a
+   1366px laptop scroll, which is the thing this layout exists to stop. */
+@media (max-width: 1280px) {
+  .settings-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* A titled card. The eyebrow names what the block decides, not what the fields
+   are called — the fields already say that. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-bg);
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.7;
+}
+
+/* The one control that commits the screen, always at the bottom edge and always
+   in the same place, so a change made in the far column is saved without
+   hunting for the button that does it. */
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  /* A message beside four buttons runs out of room before the window does. The
+     bar takes a second line rather than letting the buttons shrink until their
+     labels break — a button whose words wrap reads as a broken control. */
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 4px;
+  padding: 12px 0;
   border-top: 1px solid var(--border);
-  max-width: 480px;
+  background: var(--bg);
+}
+
+/* The server's own words come through here, so the message can be long. Without
+   `min-width: 0` it would refuse to shrink past its longest word and squeeze the
+   buttons instead; it wraps first, they keep their labels. Empty it takes no
+   width — only one of the bar's gaps, which the auto margin beside it absorbs. */
+.save-bar p,
+.save-feedback {
+  margin: 0;
+  min-width: 0;
+}
+
+.save-bar .btn.primary {
+  margin-left: auto;
+}
+
+/* Two texts, one panel. The tab row is the only place on this screen where a
+   control names a document rather than a field, so it is set apart by a rule
+   under it rather than by a box around it. */
+.text-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.text-tab {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.text-tab:hover {
+  background: var(--row-hover);
+}
+
+.text-tab[aria-selected='true'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.text-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* `hidden` has to beat the flex display above it, or the closed tab stays open. */
+.text-body[hidden] {
+  display: none;
+}
+
+/* The text takes the height the panel has. Resizing it by hand would only make
+   the page scroll again, which is the thing this layout exists to stop. Padding
+   is the one metric it doesn't share with the field rule above — roomier,
+   because this is the only textarea that fills a whole panel of prose rather
+   than sitting under a label. */
+.text-body textarea {
+  flex: 1;
+  min-height: 220px;
+  resize: none;
+  padding: 10px 12px;
+}
+
+/* Stacked under the left column there is no window height to fill, so the text
+   takes a fixed, comfortable block instead. */
+@media (max-width: 1280px) {
+  .text-body textarea {
+    min-height: 300px;
+  }
+}
+
+/* Speichern sits between the two secondary actions and the delete, not at the
+   far edge of the bar — `.save-bar .btn.primary { margin-left: auto }` would
+   push it past them. Chained onto `.save-bar` rather than left as a same-
+   specificity override, so it wins because it names both classes, not because
+   it happens to come later in the file. */
+.save-bar.detail-actions .btn.primary {
+  margin-left: 0;
+}
+
+/* Three columns, and the money is the one an operator glances back at while
+   changing the other two. On a desk monitor it follows them down. */
+@media (min-width: 1280px) {
+  .kassa-panel {
+    position: sticky;
+    top: 28px;
+  }
+}
+
+/* Quality floor: the tab and panel controls added here are keyboard-reachable,
+   so they have to be keyboard-visible too. */
+.text-tab:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

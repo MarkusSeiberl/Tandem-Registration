@@ -212,61 +212,67 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
 
   return (
     <div className="detail-screen">
-      <button type="button" className="btn secondary" onClick={onBack}>
+      <button type="button" className="btn secondary detail-back" onClick={onBack}>
         ← Zurück
       </button>
 
-      <div className="detail-grid">
-        <section className="guest-data">
-          <h2>Gastdaten</h2>
-          <dl>
-            <div className="detail-row">
-              <dt>Name</dt>
-              <dd>
-                {registration.first_name} {registration.last_name}
-              </dd>
-            </div>
-            <div className="detail-row">
-              <dt>Geschlecht</dt>
-              <dd>{genderLabel(registration.gender)}</dd>
-            </div>
-            <div className="detail-row">
-              <dt>Alter</dt>
-              <dd className="numeral">{registration.age}</dd>
-            </div>
-            <div className="detail-row">
-              <dt>Größe</dt>
-              <dd className="numeral">{registration.height_cm != null ? `${registration.height_cm} cm` : ''}</dd>
-            </div>
-            <div className="detail-row">
-              <dt>Gewicht</dt>
-              <dd className="numeral">{registration.weight_kg} kg</dd>
-            </div>
-            <div className="detail-row">
-              <dt>Adresse</dt>
-              <dd>
-                {registration.street}
-                <br />
-                {registration.postal_code} {registration.city}
-              </dd>
-            </div>
-            <div className="detail-row">
-              <dt>E-Mail</dt>
-              <dd>{registration.email}</dd>
-            </div>
-            <div className="detail-row">
-              <dt>Telefon</dt>
-              <dd>{registration.phone}</dd>
-            </div>
-            <div className="detail-row">
-              <dt>Sprungdatum</dt>
-              <dd>{registration.jump_date}</dd>
-            </div>
-          </dl>
-        </section>
+      {/*
+        The guest arrives from the kiosk and is never edited here, so all nine
+        facts read as one load-sheet line across the top instead of as a column
+        of their own. Weight is set apart because it is the one guest fact that
+        costs money: it sets the Gewichtszuschlag further down the screen.
+      */}
+      <section className="guest-strip" aria-label="Gastdaten">
+        <h2 className="guest-name">
+          {registration.first_name} {registration.last_name}
+        </h2>
 
-        <section className="manifest-fields">
-          <h2>Manifest</h2>
+        <dl className="guest-facts">
+          <div className="fact">
+            <dt>Geschlecht</dt>
+            <dd>{genderLabel(registration.gender)}</dd>
+          </div>
+          <div className="fact">
+            <dt>Alter</dt>
+            <dd className="numeral">{registration.age}</dd>
+          </div>
+          <div className="fact">
+            <dt>Größe</dt>
+            <dd className="numeral">
+              {registration.height_cm != null ? `${registration.height_cm} cm` : ''}
+            </dd>
+          </div>
+          <div className="fact fact-weight">
+            <dt>Gewicht</dt>
+            <dd className="numeral">{registration.weight_kg} kg</dd>
+          </div>
+          <div className="fact">
+            <dt>Sprungdatum</dt>
+            <dd className="numeral">{registration.jump_date}</dd>
+          </div>
+        </dl>
+
+        <dl className="guest-contact">
+          <div className="fact">
+            <dt>Adresse</dt>
+            <dd>
+              {registration.street}, {registration.postal_code} {registration.city}
+            </dd>
+          </div>
+          <div className="fact">
+            <dt>E-Mail</dt>
+            <dd>{registration.email}</dd>
+          </div>
+          <div className="fact">
+            <dt>Telefon</dt>
+            <dd>{registration.phone}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <div className="detail-cols">
+        <section className="panel" aria-label="Zuteilung">
+          <h3 className="panel-title">Zuteilung</h3>
 
           <label className="field">
             Tandemmaster
@@ -306,9 +312,10 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
           </label>
 
           {/*
-            One block, tied to the payment method right above it: everything the
-            voucher needs appears and disappears together, and the till comes
-            after the two fields that decide its amount.
+            One block, tied to the payment method right above it and kept in the
+            same column as it: everything the voucher needs appears and
+            disappears together, and the till comes after the two fields that
+            decide its amount.
           */}
           {showVoucherNumber && (
             <fieldset className="voucher-group">
@@ -397,8 +404,12 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             naming the voucher the date sits on.
           */}
           {redemptionLine && (
-            <p className="field-hint voucher-redemption">{redemptionLine}</p>
+            <p className="field-hint">{redemptionLine}</p>
           )}
+        </section>
+
+        <section className="panel" aria-label="Leistung">
+          <h3 className="panel-title">Leistung</h3>
 
           <label className="field">
             Gebuchte Leistung
@@ -470,62 +481,10 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             {!showCameraFlyer && <span className="field-hint">Kein Video gebucht.</span>}
           </label>
 
-          <div className="price-box">
-            {/*
-              Until the price table has arrived there is nothing honest to show —
-              a 0 € total would be read as "guest owes nothing".
-            */}
-            {!prices && <p className="hint">Preise werden geladen…</p>}
-
-            {prices && (
-              <>
-                <div className="price-breakdown">
-                  {lines.map((l) => (
-                    <div className="price-line" key={l.label}>
-                      <span>{l.label}</span>
-                      <span className="numeral">{formatEuro(l.amount)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="price-line price-total">
-                  <span>Zu kassieren</span>
-                  <span className="numeral">{formatEuro(due)}</span>
-                </div>
-              </>
-            )}
-
-            <label className="price-override-toggle">
-              <input
-                type="checkbox"
-                checked={priceOverride}
-                onChange={(e) => {
-                  setPriceOverride(e.target.checked)
-                  // Start the manual field from the amount currently computed, so
-                  // a small correction is a small edit — and so a price stored
-                  // before the selection changed cannot silently come back.
-                  if (e.target.checked) setPrice(computed)
-                }}
-              />
-              abweichender Preis
-            </label>
-
-            {priceOverride && (
-              <label className="field">
-                Preis (EUR)
-                <input
-                  type="number"
-                  className="numeral"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
-                />
-              </label>
-            )}
-          </div>
-
           {/*
-            Below the price box on purpose: a note about a special arrangement
-            explains the numbers above it. Placed among the dropdowns it would
-            read as one more thing to fill in on every row.
+            Last in this column on purpose: a note records the special
+            arrangement behind the three choices above it. Among the dropdowns it
+            would read as one more thing to fill in on every row.
           */}
           <label className="field">
             Anmerkungen
@@ -540,12 +499,68 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             </span>
           </label>
         </section>
+
+        {/*
+          The money block carries no border of its own — the panel around it
+          is the border — so the total stays the only thing in this column
+          with visual weight.
+        */}
+        <section className="panel kassa-panel" aria-label="Kassa">
+          <h3 className="panel-title">Kassa</h3>
+
+          {/*
+            Until the price table has arrived there is nothing honest to show —
+            a 0 € total would be read as "guest owes nothing".
+          */}
+          {!prices && <p className="hint">Preise werden geladen…</p>}
+
+          {prices && (
+            <>
+              <div className="price-breakdown">
+                {lines.map((l) => (
+                  <div className="price-line" key={l.label}>
+                    <span>{l.label}</span>
+                    <span className="numeral">{formatEuro(l.amount)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="price-line price-total">
+                <span>Zu kassieren</span>
+                <span className="numeral">{formatEuro(due)}</span>
+              </div>
+            </>
+          )}
+
+          <label className="price-override-toggle">
+            <input
+              type="checkbox"
+              checked={priceOverride}
+              onChange={(e) => {
+                setPriceOverride(e.target.checked)
+                // Start the manual field from the amount currently computed, so
+                // a small correction is a small edit — and so a price stored
+                // before the selection changed cannot silently come back.
+                if (e.target.checked) setPrice(computed)
+              }}
+            />
+            abweichender Preis
+          </label>
+
+          {priceOverride && (
+            <label className="field">
+              Preis (EUR)
+              <input
+                type="number"
+                className="numeral"
+                value={price}
+                onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            </label>
+          )}
+        </section>
       </div>
 
-      {error && <p className="error">{error}</p>}
-      {saved && !error && <p className="hint">Gespeichert.</p>}
-
-      <div className="actions">
+      <div className="save-bar detail-actions">
         <a
           className="btn secondary"
           href={contractPdfUrl(registration.id)}
@@ -567,6 +582,19 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         <button type="button" className="btn primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Speichert…' : 'Speichern'}
         </button>
+        {/*
+          Lives in the bar, not below it, because the buttons that produce it live
+          here: Speichern and Registrierung löschen are pinned to the viewport, so
+          an operator scrolled away from the top would never see feedback left in
+          the page's normal flow. Placed after Speichern and before the
+          auto-margined delete button — in the space that margin already opens up
+          — so neither button's horizontal position depends on whether a message
+          is showing.
+        */}
+        <div className="save-feedback" role="status" aria-live="polite">
+          {error && <p className="error">{error}</p>}
+          {saved && !error && <p className="hint">Gespeichert.</p>}
+        </div>
         {/* Set apart from the rest so it is never the button next to Speichern. */}
         <button
           type="button"

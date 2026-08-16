@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Settings from './Settings'
 import * as api from './api'
@@ -68,6 +68,71 @@ describe('Settings', () => {
     await waitFor(() => expect(api.putSettings).toHaveBeenCalled())
     expect(vi.mocked(api.putSettings).mock.calls[0][0])
       .toMatchObject({ privacyText: 'Neue Fassung' })
+  })
+
+  it('shows one guest text at a time and switches on the tab', async () => {
+    render(<Settings />)
+    await screen.findByLabelText('Export-Verzeichnis')
+
+    // Ten rows of legal text twice over is what made this screen scroll. One at
+    // a time, in the height the window actually has.
+    expect(screen.getByLabelText('Datenschutztext')).toBeVisible()
+    expect(screen.getByLabelText('Vertragstext')).not.toBeVisible()
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Vertragstext' }))
+
+    expect(screen.getByLabelText('Vertragstext')).toBeVisible()
+    expect(screen.getByLabelText('Datenschutztext')).not.toBeVisible()
+  })
+
+  it('keeps an edit made in the tab that is no longer showing, and saves both', async () => {
+    render(<Settings />)
+    await screen.findByLabelText('Export-Verzeichnis')
+
+    await userEvent.clear(screen.getByLabelText('Datenschutztext'))
+    await userEvent.type(screen.getByLabelText('Datenschutztext'), 'Neue Datenschutzinfo')
+
+    // Switching away is not discarding. Both fields stay mounted, so Speichern
+    // still commits the text the operator cannot see at that moment.
+    await userEvent.click(screen.getByRole('tab', { name: 'Vertragstext' }))
+    await userEvent.clear(screen.getByLabelText('Vertragstext'))
+    await userEvent.type(screen.getByLabelText('Vertragstext'), 'Neuer Vertrag')
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Datenschutztext' }))
+    expect((screen.getByLabelText('Datenschutztext') as HTMLTextAreaElement).value)
+      .toBe('Neue Datenschutzinfo')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+    await waitFor(() => expect(api.putSettings).toHaveBeenCalled())
+    expect(vi.mocked(api.putSettings).mock.calls[0][0]).toMatchObject({
+      privacyText: 'Neue Datenschutzinfo',
+      contractText: 'Neuer Vertrag',
+    })
+  })
+
+  it('groups the paths and the backup into blocks of their own', async () => {
+    render(<Settings />)
+    await screen.findByLabelText('Export-Verzeichnis')
+
+    // Everything that points at the disk, in one block: the operator sets these
+    // once at the start of a season and does not read past them again.
+    const paths = screen.getByRole('region', { name: 'Pfade & Ort' })
+    expect(within(paths).getByLabelText('Export-Verzeichnis')).toBeInTheDocument()
+    expect(within(paths).getByLabelText('Backup-Verzeichnis (leer = Export-Verzeichnis)'))
+      .toBeInTheDocument()
+    expect(within(paths).getByLabelText('Gutscheinliste (Excel-Datei)')).toBeInTheDocument()
+    expect(within(paths).getByLabelText('Ort (für Vertragsunterschrift)')).toBeInTheDocument()
+
+    // The backup button acts on its own; it is not part of what Speichern commits.
+    const backup = screen.getByRole('region', { name: 'Datenbank-Backup' })
+    expect(within(backup).getByRole('button', { name: 'Backup erstellen' })).toBeInTheDocument()
+    expect(within(backup).queryByRole('button', { name: 'Speichern' })).not.toBeInTheDocument()
+
+    // The guest texts are their own block, away from the paths.
+    const texts = screen.getByRole('region', { name: 'Texte' })
+    expect(within(texts).getByLabelText(/Datenschutztext/)).toBeInTheDocument()
+    expect(within(texts).getByLabelText(/Vertragstext/)).toBeInTheDocument()
   })
 
   it('offers no browse buttons where the picker is unavailable', async () => {
@@ -177,6 +242,22 @@ describe('Settings', () => {
     await screen.findByLabelText('Export-Verzeichnis')
 
     expect(await screen.findByText('Pfad ist keine Datei')).toBeInTheDocument()
+  })
+
+  it('names the text panel that is showing', async () => {
+    render(<Settings />)
+    await screen.findByLabelText('Export-Verzeichnis')
+
+    // A tab panel with no accessible name announces as an unlabelled group.
+    // It cannot borrow the tab's wording: the textarea inside already carries
+    // that as its own label, and a label query would then match both.
+    expect(screen.getByRole('tabpanel', { name: 'Datenschutz' })).toBeInTheDocument()
+    expect(screen.queryByRole('tabpanel', { name: 'Vertrag' })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Vertragstext' }))
+
+    expect(screen.getByRole('tabpanel', { name: 'Vertrag' })).toBeInTheDocument()
+    expect(screen.queryByRole('tabpanel', { name: 'Datenschutz' })).not.toBeInTheDocument()
   })
 
   it('leaves the amounts to the Stammdaten screen', async () => {

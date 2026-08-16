@@ -63,7 +63,7 @@ function App() {
           </button>
         </nav>
 
-        <main className="view">
+        <main className={view === 'list' ? 'view' : 'view view-wide'}>
           {view === 'list' && <List onSelect={openDetail} />}
           {view === 'detail' && selected && (
             <Detail registration={selected} onBack={closeDetail} onSaved={setSelected} />

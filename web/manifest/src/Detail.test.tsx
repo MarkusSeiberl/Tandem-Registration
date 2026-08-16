@@ -100,6 +100,29 @@ describe('Detail', () => {
     expect(total()).toBe('270 €')
   })
 
+  it('reads the guest as one strip of facts above the manifest', async () => {
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    // Nothing here is editable and nothing here changes on this screen, so it
+    // reads as one line across the top rather than as a column competing for
+    // width with the fields that do change.
+    const guest = screen.getByRole('region', { name: 'Gastdaten' })
+    expect(within(guest).getByText('Anna Muster')).toBeInTheDocument()
+    expect(within(guest).getByText('weiblich')).toBeInTheDocument()
+    expect(within(guest).getByText('30')).toBeInTheDocument()
+    expect(within(guest).getByText('170 cm')).toBeInTheDocument()
+    expect(within(guest).getByText('80 kg')).toBeInTheDocument()
+    expect(within(guest).getByText('2026-07-09')).toBeInTheDocument()
+    expect(within(guest).getByText('Hauptstraße 1, 5020 Salzburg')).toBeInTheDocument()
+    expect(within(guest).getByText('anna@example.com')).toBeInTheDocument()
+    expect(within(guest).getByText('0664 1234567')).toBeInTheDocument()
+
+    // The strip states facts; it never asks for one.
+    expect(within(guest).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(within(guest).queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
   it('adds the extra and the weight surcharge to the total', async () => {
     const user = userEvent.setup()
     renderDetail()
@@ -438,7 +461,10 @@ describe('Detail', () => {
 
     await user.click(screen.getByRole('button', { name: 'Registrierung löschen' }))
 
-    expect(await screen.findByText('Löschen fehlgeschlagen')).toBeInTheDocument()
+    // Queried through the bar, not the document: the button that failed is
+    // pinned to the viewport, so a message anywhere else can be off-screen.
+    const bar = within(document.querySelector('.save-bar') as HTMLElement)
+    expect(await bar.findByText('Löschen fehlgeschlagen')).toBeInTheDocument()
     expect(onBack).not.toHaveBeenCalled()
     confirm.mockRestore()
   })
@@ -625,5 +651,64 @@ describe('Detail', () => {
     await screen.findByText('Zu kassieren')
 
     expect(screen.queryByText(/Einlösung/)).not.toBeInTheDocument()
+  })
+
+  it('splits the manifest into who flies them, what they get and what they pay', async () => {
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    // Who flies them, and on whose money.
+    const zuteilung = screen.getByRole('region', { name: 'Zuteilung' })
+    expect(within(zuteilung).getByLabelText('Tandemmaster')).toBeInTheDocument()
+    expect(within(zuteilung).getByLabelText('Load-Nr.')).toBeInTheDocument()
+    expect(within(zuteilung).getByLabelText('Zahlungsart')).toBeInTheDocument()
+
+    // What they get.
+    const leistung = screen.getByRole('region', { name: 'Leistung' })
+    expect(within(leistung).getByLabelText(/Gebuchte Leistung/)).toBeInTheDocument()
+    expect(within(leistung).getByLabelText(/Gewichtszuschlag/)).toBeInTheDocument()
+    expect(within(leistung).getByLabelText(/Kameraflieger/)).toBeInTheDocument()
+    expect(within(leistung).getByLabelText(/Anmerkungen/)).toBeInTheDocument()
+
+    // What they pay.
+    const kassa = screen.getByRole('region', { name: 'Kassa' })
+    expect(within(kassa).getByText('Zu kassieren')).toBeInTheDocument()
+    expect(within(kassa).getByLabelText('abweichender Preis')).toBeInTheDocument()
+
+    // The voucher block still hangs off the Zahlungsart that summons it, in the
+    // same panel — a block that opened in a different column would open where
+    // nobody is looking.
+    await user.selectOptions(within(zuteilung).getByLabelText('Zahlungsart'), 'voucher')
+    expect(within(zuteilung).getByRole('group', { name: 'Gutschein' })).toBeInTheDocument()
+
+    // A field left behind in two panels during the move would satisfy every
+    // assertion above: each region would still find its own copy.
+    expect(screen.getAllByLabelText('Tandemmaster')).toHaveLength(1)
+    expect(screen.getAllByLabelText(/Gebuchte Leistung/)).toHaveLength(1)
+    expect(screen.getAllByLabelText(/Anmerkungen/)).toHaveLength(1)
+  })
+
+  it('keeps every action that leaves this row in one bar', async () => {
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    const bar = document.querySelector('.save-bar')
+    expect(bar).not.toBeNull()
+
+    const actions = within(bar as HTMLElement)
+    expect(actions.getByRole('link', { name: 'Vertrag öffnen' })).toBeInTheDocument()
+    expect(actions.getByRole('button', { name: 'Urkunde drucken' })).toBeInTheDocument()
+    expect(actions.getByRole('button', { name: 'Speichern' })).toBeInTheDocument()
+    // Set apart from the rest so it is never the button next to Speichern.
+    expect(actions.getByRole('button', { name: /Registrierung löschen/ }))
+      .toHaveClass('detail-delete')
+
+    // The message the button produces has to land in the same pinned strip —
+    // below it, on a screen that scrolls, an operator working at the top would
+    // never see it.
+    await user.click(actions.getByRole('button', { name: 'Speichern' }))
+    expect(await actions.findByText('Gespeichert.')).toBeInTheDocument()
   })
 })

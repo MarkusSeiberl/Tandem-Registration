@@ -94,7 +94,12 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   await expect(row).toBeVisible()
   await row.click()
 
-  await expect(page.getByRole('heading', { name: 'Manifest' })).toBeVisible()
+  // The manifest fields no longer sit under one "Manifest" heading — they are
+  // split across the three panels named for the decisions this screen makes.
+  // Landing on the screen means all three are there.
+  await expect(page.getByRole('heading', { name: 'Zuteilung' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Leistung', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Kassa' })).toBeVisible()
 
   // The guest's new fields must have survived the trip to the server.
   await expect(page.getByText('männlich')).toBeVisible()

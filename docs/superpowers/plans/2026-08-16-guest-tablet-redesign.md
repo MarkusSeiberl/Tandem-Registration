@@ -2,23 +2,38 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make every screen of the guest registration app fit an iPad 11 in both orientations, so a guest never scrolls the page to reach the next step.
+**Goal:** Make every screen of the guest registration app fit a Lenovo Tab 11 in both orientations, so a guest never scrolls the page to reach the next step.
 
 **Architecture:** The page stops being the scroller. `#root` is pinned to the visual viewport's height and every screen becomes a three-band grid — head, body, pinned actions — where only the body may scroll, and only when the on-screen keyboard has taken the room away. The two long screens are then relaid out to fit that band: "Deine Daten" into two columns across the full tablet width, and "Teilnahmebedingungen" into a boarding pass whose perforation runs vertically in landscape, with the data-protection notice moved out of the flow into a sheet.
 
 **Tech Stack:** React 19, TypeScript, Vite, Vitest + @testing-library/react (jsdom), Playwright, oxlint. No new runtime dependencies.
 
+## The measured problem
+
+Chromium at the target's CSS-pixel sizes, before any change:
+
+| Screen | Hochkant 800×1280 | Quer 1280×800 |
+|---|---|---|
+| Willkommen | fits | fits |
+| Deine Daten | **+296px** | **+776px** |
+| Teilnahmebedingungen | **+360px** | **+242px** |
+| … Datenschutz aufgeklappt | **+888px** | **+924px** |
+
+Landscape is the hard case for the form and portrait for the contract, but the cause is one thing in both: every screen is a single 560–900px column centred in a much wider tablet, so half the width sits empty while the content runs off the bottom. Re-measure with the same method after each task rather than trusting these numbers to stay put.
+
 ## Global Constraints
 
-- **Target device:** iPad 11 (A16 / Air M2) — 1180×820 CSS px. **Both orientations must work:** portrait 820×1180 and landscape 1180×820.
+- **Target device:** Lenovo Tab 11, Android Chrome — **design to 1280×800 CSS px**. **Both orientations must work:** portrait 800×1280 and landscape 1280×800.
+  - Where that number comes from: the Tab M11 (1920×1200 physical) and the Tab P11 / P11 Gen 2 (2000×1200 physical) both report a device pixel ratio of 1.5, giving 1280×800 and 1333×800 CSS px respectively. 1280×800 is the smaller envelope, so building to it covers both; on a P11 the extra 53px of landscape width is slack, not a second layout.
+  - **This differs from a 4:3 tablet in both directions and both matter.** Landscape is relatively wider (1.60 vs 1.44), which gives the contract's two-column split more room than it would have had. Portrait is *narrower* — 800px against 820 — which is where the form's two columns are tightest: 800 − 48 padding − 32 gap leaves 360px per column, and the PLZ/Wohnort row has to survive inside that. Verify it at 800px, not at a desktop width.
 - **The acceptance criterion:** on every screen, in both orientations, with the keyboard closed, `.screen-body` must not be scrollable (`scrollHeight <= clientHeight + 1`) and `.screen-actions` must lie fully inside the viewport. Task 6 encodes this as a permanent Playwright gate.
-- **The one sanctioned exception:** while the iPad keyboard is open, `.screen-body` may scroll. The keyboard removes ~340px of an 820px landscape screen; no layout can fit 11 fields into what remains. What must *never* happen is the guest losing sight of the action bar — that is what `--app-h` exists for.
+- **The one sanctioned exception:** while the on-screen keyboard is open, `.screen-body` may scroll. Gboard takes roughly 45% of an 800px landscape screen; no layout fits 11 fields into what remains. What must *never* happen is the guest losing sight of the action bar — that is what the viewport meta and `--app-h` in Task 1 exist for.
 - **No new design tokens.** Only these may be used: `--ink`, `--sky`, `--sky-deep`, `--ember`, `--text`, `--text-h`, `--bg`, `--panel-bg`, `--border`, `--accent`, `--accent-dark`, `--accent-contrast`, `--error`, `--sans`, `--mono`.
 - **All German copy is unchanged.** No user-visible string may be added, removed, or reworded — including the field labels, the four `<legend>` texts (`Person`, `Körperdaten`, `Adresse`, `Kontakt`), the validation messages, `Bitte den gesamten Vertrag lesen — nach unten scrollen, um fortzufahren.`, `Datenschutzinformation lesen`, `Datenschutzinformation zuklappen`, and every button label. Where this plan needs a control that did not exist before, it reuses an existing string.
 - **Class names the tests depend on must survive:** `.scroll-hint`, `.contract-text`, `.signature-pad` (on a `<canvas>`), `.privacy-check` with an `<input>` inside, `.error`. `tests/e2e/flow.spec.ts` selects all of these directly.
 - **The read gate is law.** "Weiter" on the contract screen stays disabled until all three of: the contract text has been scrolled to its end, a signature has been drawn, and the data-protection box is ticked. A contract short enough to need no scrolling counts as read on load.
 - **Signature payload is unchanged.** The canvas backing store stays 700×280 so `signature_png` keeps the dimensions the contract PDF stamps.
-- **Accessibility floor:** visible keyboard focus on every control, tap targets ≥ 44px, the sheet in Task 3 is a real modal (focus moves in, Escape closes, focus returns), `prefers-reduced-motion` respected.
+- **Accessibility floor:** visible keyboard focus on every control, tap targets ≥ 48px (Android's Material minimum, not iOS's 44), the sheet in Task 3 is a real modal (focus moves in, Escape closes, focus returns), `prefers-reduced-motion` respected.
 - **Commands** (run from the repo root):
   - Guest unit tests: `npm --prefix web/guest run test`
   - Guest type check: `npm --prefix web/guest exec -- tsc -b --force`
@@ -34,7 +49,7 @@ The club already has a visual identity in this app and the brief is to sharpen i
 
 **Colour.** Unchanged. `--sky-deep → --sky → --bg` stays the Welcome altitude gradient and appears nowhere else. `--ember` keeps its single job: the one thing waiting on the guest (the active step tick, the read-gate hint). `--accent` stays "go". `--error` stays wrong.
 
-**Type.** One correction, for the tablet. `h1` drops 40px → 34px: on an 820px-tall landscape screen a 40px heading plus its margin spends 64px restating the screen the guest is already looking at. The `<legend>` elements drop from 20px/600 to 13px/700 uppercase with `0.08em` letter-spacing — the same eyebrow treatment the manifest app uses for `.panel-title`, which buys back 14px per group and makes the two apps read as one product. Labels stay 18px and inputs stay 22px in a 56px-tall box: those are the tap targets and shrinking them is how a tablet form gets worse.
+**Type.** One correction, for the tablet. `h1` drops 40px → 34px: on an 800px-tall landscape screen a 40px heading plus its margin spends 64px restating the screen the guest is already looking at. The `<legend>` elements drop from 20px/600 to 13px/700 uppercase with `0.08em` letter-spacing — the same eyebrow treatment the manifest app uses for `.panel-title`, which buys back 14px per group and makes the two apps read as one product. Labels stay 18px and inputs stay 22px in a 56px-tall box: those are the tap targets and shrinking them is how a tablet form gets worse.
 
 **Layout.** Three bands, everywhere:
 
@@ -56,7 +71,8 @@ The club already has a visual identity in this app and the brief is to sharpen i
 
 | File | Responsibility | Task |
 |---|---|---|
-| `web/guest/src/useViewportHeight.ts` | **new** — publishes `--app-h` from `visualViewport` so the pinned actions stay above the iPad keyboard | 1 |
+| `web/guest/index.html` | the viewport meta tells Android Chrome to shrink the layout viewport when the keyboard opens | 1 |
+| `web/guest/src/useViewportHeight.ts` | **new** — publishes `--app-h` from `visualViewport` so the pinned actions stay above the on-screen keyboard | 1 |
 | `web/guest/src/useViewportHeight.test.ts` | **new** — tests for the above | 1 |
 | `web/guest/src/index.css` | the shell primitives, the form grid, the sheet, the boarding pass, the orientation rules | 1–5 |
 | `web/guest/src/StepTicks.tsx` | **new** — the progress dots, moved out of `App.tsx` so the screens can render them without importing their own parent | 1 |
@@ -78,6 +94,7 @@ The club already has a visual identity in this app and the brief is to sharpen i
 - Create: `web/guest/src/useViewportHeight.ts`
 - Create: `web/guest/src/useViewportHeight.test.ts`
 - Create: `web/guest/src/StepTicks.tsx`
+- Modify: `web/guest/index.html`
 - Modify: `web/guest/src/App.tsx`
 - Modify: `web/guest/src/Welcome.tsx`
 - Modify: `web/guest/src/Done.tsx`
@@ -126,26 +143,27 @@ afterEach(() => {
 
 describe('useViewportHeight', () => {
   it('publishes the visual viewport height on mount', () => {
-    fakeViewport(820)
+    fakeViewport(800)
     renderHook(() => useViewportHeight())
-    expect(document.documentElement.style.getPropertyValue('--app-h')).toBe('820px')
+    expect(document.documentElement.style.getPropertyValue('--app-h')).toBe('800px')
   })
 
   it('follows the viewport shrinking when the keyboard opens', () => {
-    const vv = fakeViewport(820)
+    const vv = fakeViewport(800)
     renderHook(() => useViewportHeight())
 
-    // What an iPad does when the on-screen keyboard comes up: the visual
-    // viewport shrinks while the layout viewport does not, so `svh` units would
-    // leave the action bar behind the keyboard.
-    vv.height = 480
+    // Gboard on an 800px landscape screen: the visual viewport shrinks by
+    // roughly 45%. On a Chrome too old for `interactive-widget` the layout
+    // viewport does not follow, so `svh` alone would leave the action bar
+    // behind the keyboard.
+    vv.height = 440
     vv.emit('resize')
 
-    expect(document.documentElement.style.getPropertyValue('--app-h')).toBe('480px')
+    expect(document.documentElement.style.getPropertyValue('--app-h')).toBe('440px')
   })
 
   it('stops listening when the app unmounts', () => {
-    const vv = fakeViewport(820)
+    const vv = fakeViewport(800)
     const { unmount } = renderHook(() => useViewportHeight())
     unmount()
     expect(vv.listenerCount('resize')).toBe(0)
@@ -176,11 +194,16 @@ import { useEffect } from 'react'
 /**
  * Publishes the visual viewport's height as `--app-h`.
  *
- * The app shell is pinned to the window so the page itself never scrolls. `svh`
- * alone would be wrong on the one occasion that matters: the iPad's on-screen
- * keyboard shrinks the *visual* viewport without touching the layout viewport,
- * so a shell sized in `svh` keeps its full height and pushes the action bar
- * behind the keyboard. Reading the real number back keeps "Weiter" on screen.
+ * The app shell is pinned to the window so the page itself never scrolls, and
+ * the one thing that must never happen is the guest losing sight of "Weiter"
+ * when the keyboard comes up.
+ *
+ * `interactive-widget=resizes-content` in index.html is the primary fix: it
+ * tells Android Chrome to shrink the layout viewport, which makes `100svh`
+ * correct on its own. This hook is the belt to that pair of braces — the flag
+ * is honoured by Chrome 108+ and ignored by everything older, and a kiosk
+ * tablet is exactly the device nobody updates. Reading `visualViewport.height`
+ * back works either way.
  *
  * Where there is no visualViewport (jsdom, older engines) this writes nothing
  * and the `100svh` fallback in the CSS stands.
@@ -195,8 +218,8 @@ export function useViewportHeight(): void {
     }
     apply()
 
-    // `scroll` as well as `resize`: iOS moves the visual viewport around while
-    // the keyboard animates, and only reports some of that as a resize.
+    // `scroll` as well as `resize`: the visual viewport is also offset, not only
+    // resized, while the keyboard animates in and out.
     vv.addEventListener('resize', apply)
     vv.addEventListener('scroll', apply)
     return () => {
@@ -213,7 +236,28 @@ Run: `npm --prefix web/guest run test -- useViewportHeight`
 
 Expected: PASS — 4 tests.
 
-- [ ] **Step 5: Write the shell CSS**
+- [ ] **Step 5: Tell Chrome to shrink the page for the keyboard**
+
+In `web/guest/index.html`, replace the viewport meta:
+
+```html
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+```
+
+with:
+
+```html
+    <!--
+      `interactive-widget=resizes-content`: when Gboard opens, shrink the layout
+      viewport rather than sliding the page up under it. Without this the shell
+      keeps its full height and the pinned action bar ends up behind the
+      keyboard — see useViewportHeight.ts, which covers the Chrome versions that
+      ignore this flag.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content" />
+```
+
+- [ ] **Step 6: Write the shell CSS**
 
 In `web/guest/src/index.css`, replace the `#root` rule:
 
@@ -269,7 +313,10 @@ with:
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 16px;
   width: 100%;
-  max-width: 1100px;
+  /* Wide enough to use the whole short side of the tablet in landscape (1280,
+     or 1333 on a Tab P11) without letting a desktop browser stretch the form
+     into two columns nobody can scan. */
+  max-width: 1200px;
   margin: 0 auto;
   text-align: center;
   padding:
@@ -325,7 +372,7 @@ h1 {
 becomes:
 
 ```css
-/* 34px, not 40px: on an 820px-tall landscape screen the heading and its margin
+/* 34px, not 40px: on an 800px-tall landscape screen the heading and its margin
    were spending 64px to restate the screen the guest is already looking at.
    The margin goes too — `.screen` sets the gap between the bands. */
 h1 {
@@ -360,7 +407,7 @@ becomes:
 }
 ```
 
-- [ ] **Step 6: Move the step ticks into their own module**
+- [ ] **Step 7: Move the step ticks into their own module**
 
 `StepTicks` is currently declared in `App.tsx` and rendered as a *sibling* of the screen, which puts it outside the shell. It has to move inside each screen's head band — but `App` already imports `Form` and `Contract`, so having those import it back from `App` would make the module graph circular. Give it its own file instead.
 
@@ -471,7 +518,7 @@ function App() {
 export default App
 ```
 
-- [ ] **Step 7: Convert Welcome to the shell**
+- [ ] **Step 8: Convert Welcome to the shell**
 
 Replace the returned JSX in `web/guest/src/Welcome.tsx` (keep the imports, `TAP_COUNT`, `TAP_WINDOW_MS` and `handleLogoTap` exactly as they are):
 
@@ -548,7 +595,7 @@ with:
 }
 ```
 
-- [ ] **Step 8: Convert Done to the shell**
+- [ ] **Step 9: Convert Done to the shell**
 
 Replace the whole of `web/guest/src/Done.tsx` with:
 
@@ -606,13 +653,13 @@ to:
 }
 ```
 
-- [ ] **Step 9: Run the guest suite**
+- [ ] **Step 10: Run the guest suite**
 
 Run: `npm --prefix web/guest run test`
 
 Expected: PASS — every test in `useViewportHeight.test.ts`, `Form.test.tsx`, `Contract.test.tsx`.
 
-- [ ] **Step 10: Type check and lint**
+- [ ] **Step 11: Type check and lint**
 
 Run: `npm --prefix web/guest exec -- tsc -b --force`
 
@@ -622,10 +669,11 @@ Run: `npm --prefix web/guest run lint`
 
 Expected: no output, exit code 0.
 
-- [ ] **Step 11: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
-git add web/guest/src/useViewportHeight.ts web/guest/src/useViewportHeight.test.ts \
+git add web/guest/index.html \
+        web/guest/src/useViewportHeight.ts web/guest/src/useViewportHeight.test.ts \
         web/guest/src/StepTicks.tsx web/guest/src/App.tsx \
         web/guest/src/Welcome.tsx web/guest/src/Done.tsx \
         web/guest/src/index.css
@@ -937,7 +985,10 @@ with:
 
 /* Form screen. The old 560px column left half a tablet empty while the fields
    ran off the bottom; across the full width the same eleven fields fit the
-   short side of an iPad in landscape with room to spare. */
+   800px short side of the tablet in either orientation.
+
+   Portrait is the tight case, not landscape: 800 - 48 padding - 32 gap leaves
+   360px a column, which is what the PLZ/Wohnort row has to live inside. */
 .form-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1265,7 +1316,7 @@ with:
   display: flex;
   flex-direction: column;
   gap: 16px;
-  width: min(100%, 820px);
+  width: min(100%, 760px);
   max-height: 100%;
   padding: 24px;
   border-radius: 20px;
@@ -1329,7 +1380,7 @@ git commit -m "feat(guest): read the data-protection notice over the screen, not
 **The layout.** Portrait keeps one column; landscape splits at the perforation, which turns vertical:
 
 ```
-  portrait 820x1180              landscape 1180x820
+  portrait 800x1280              landscape 1280x800
 ┌───────────────────────┐   ┌────────────────┊───────────────┐
 │  contract text  (1fr) │   │                ┊ Datenschutz   │
 │                       │   │ contract text  ┊ [x] gelesen   │
@@ -1868,12 +1919,15 @@ Create `tests/e2e/guest-fits.spec.ts`:
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-// The guest app is used on an iPad 11 handed to a guest. Every screen has to
+// The guest app runs on a Lenovo Tab 11 handed to a guest. Every screen has to
 // fit it in whichever way the guest happens to be holding it — the operator
 // cannot lean over and scroll for them.
+//
+// 1280x800 is the CSS-pixel size of a Tab M11 (1920x1200 at dpr 1.5). A Tab P11
+// is 1333x800 — wider, same height — so passing here passes there too.
 const ORIENTATIONS = [
-  { name: 'hochkant', width: 820, height: 1180 },
-  { name: 'quer', width: 1180, height: 820 },
+  { name: 'hochkant', width: 800, height: 1280 },
+  { name: 'quer', width: 1280, height: 800 },
 ]
 
 const GUEST = {
@@ -1903,7 +1957,7 @@ async function expectFits(page: Page, label: string) {
 }
 
 for (const o of ORIENTATIONS) {
-  test(`die Gast-Anmeldung passt auf ein iPad 11 (${o.name})`, async ({ page }) => {
+  test(`die Gast-Anmeldung passt auf ein Lenovo Tab 11 (${o.name})`, async ({ page }) => {
     await page.setViewportSize({ width: o.width, height: o.height })
     await page.goto('/guest/')
 
@@ -1986,7 +2040,7 @@ Expected: exit code 0, `tandem.exe` packaged.
 
 ```bash
 git add tests/e2e/guest-fits.spec.ts
-git commit -m "test(e2e): hold the guest app to an iPad 11 in both orientations"
+git commit -m "test(e2e): hold the guest app to a Lenovo Tab 11 in both orientations"
 ```
 
 ---

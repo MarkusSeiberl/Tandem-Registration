@@ -296,9 +296,18 @@ export default function Form({ onNext, onCancel }: FormProps) {
             {showError('gender') && <p className="error">{showError('gender')}</p>}
           </div>
 
+          {/*
+            inputMode="tel" rather than "numeric" on the three whole-number
+            fields: it is the dial pad, with targets big enough for a stranger
+            holding an unfamiliar tablet, and it always carries an action key —
+            "numeric" pads on some Android keyboards have none, which would
+            leave Enter-to-advance dead on exactly these fields. The * and #
+            keys produce nothing in a type="number" input, which is the wanted
+            outcome anyway.
+          */}
           <div className="field">
             <label htmlFor="age">Alter</label>
-            <input id="age" type="number" inputMode="numeric" min={1} max={120} {...field('age')} />
+            <input id="age" type="number" inputMode="tel" min={1} max={120} {...field('age')} />
             {showError('age') && <p className="error">{showError('age')}</p>}
           </div>
         </fieldset>
@@ -309,13 +318,13 @@ export default function Form({ onNext, onCancel }: FormProps) {
           <div className="field-row">
             <div className="field">
               <label htmlFor="height_cm">Größe (cm)</label>
-              <input id="height_cm" type="number" inputMode="numeric" min={100} max={220} {...field('height')} />
+              <input id="height_cm" type="number" inputMode="tel" min={100} max={220} {...field('height')} />
               {showError('height') && <p className="error">{showError('height')}</p>}
             </div>
 
             <div className="field">
               <label htmlFor="weight_kg">Gewicht (kg)</label>
-              <input id="weight_kg" type="number" inputMode="numeric" min={20} max={200} {...field('weight')} />
+              <input id="weight_kg" type="number" inputMode="tel" min={20} max={200} {...field('weight')} />
               {showError('weight') && <p className="error">{showError('weight')}</p>}
             </div>
           </div>
@@ -330,11 +339,15 @@ export default function Form({ onNext, onCancel }: FormProps) {
             {showError('street') && <p className="error">{showError('street')}</p>}
           </div>
 
-          {/* PLZ is narrow, Wohnort takes the rest — see .field-row in index.css. */}
+          {/* PLZ is narrow, Wohnort takes the rest — see .field-row in index.css.
+              No inputMode on the PLZ: the code is only checked for presence,
+              because guests from outside AT bring non-numeric ones (see the
+              matching note in src/server/validation.ts). A digits-only pad would
+              shut out precisely the guests that rule was written for. */}
           <div className="field-row">
             <div className="field field-plz">
               <label htmlFor="postal_code">PLZ</label>
-              <input id="postal_code" type="text" inputMode="numeric" autoComplete="postal-code" {...field('postalCode')} />
+              <input id="postal_code" type="text" autoComplete="postal-code" {...field('postalCode')} />
               {showError('postalCode') && <p className="error">{showError('postalCode')}</p>}
             </div>
 

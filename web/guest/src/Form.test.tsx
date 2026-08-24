@@ -181,6 +181,31 @@ describe('Form', () => {
   })
 })
 
+// Which on-screen keyboard each field asks for. The guest holds a tablet, so a
+// wrong keyboard is not a cosmetic detail: it is a field they cannot fill.
+describe('Form keyboards', () => {
+  it.each(['Alter', 'Größe (cm)', 'Gewicht (kg)'])(
+    'asks for the dial pad on %s',
+    (label) => {
+      render(<Form onNext={vi.fn()} />)
+      expect(screen.getByLabelText(label)).toHaveAttribute('inputmode', 'tel')
+    },
+  )
+
+  // The server accepts non-numeric postal codes on purpose (see the note in
+  // src/server/validation.ts), so a digits-only pad would lock out exactly the
+  // guests that rule exists for.
+  it('leaves PLZ on the normal keyboard so a UK code can be typed', () => {
+    render(<Form onNext={vi.fn()} />)
+    expect(screen.getByLabelText('PLZ')).not.toHaveAttribute('inputmode')
+  })
+
+  it('keeps the telephone keyboard on Telefon', () => {
+    render(<Form onNext={vi.fn()} />)
+    expect(screen.getByLabelText('Telefon')).toHaveAttribute('type', 'tel')
+  })
+})
+
 // Field-to-field navigation. The form is filled in on a tablet with no Tab key,
 // so the cursor has to be movable by Enter and by the two arrow buttons.
 describe('Form field navigation', () => {

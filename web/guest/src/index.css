@@ -679,6 +679,17 @@ p {
   flex-wrap: wrap;
 }
 
+/* Portrait leaves each column 360px, and three options need 456px: they wrapped
+   2 + 1, and the odd one out read as if it belonged to the field below. Stacked
+   they are three even, full-width targets, and portrait is the orientation with
+   height to spend. Landscape keeps them in a row — there the field spans the
+   group and they fit. */
+@media (orientation: portrait) {
+  .radio-row {
+    flex-direction: column;
+  }
+}
+
 .radio-row .radio-option {
   display: flex;
   align-items: center;

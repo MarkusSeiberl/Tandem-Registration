@@ -553,3 +553,66 @@ p {
   margin-top: 12px;
   font-size: 16px;
 }
+
+/* Feldnavigation: the two arrows that walk the cursor through the form.
+
+   Pinned rather than in flow, because their whole purpose is to be reachable
+   while the Android keyboard covers the lower half of the tablet.
+   `interactive-widget=resizes-content` (index.html) shrinks the layout viewport
+   so `fixed` already lands above the keyboard on Chrome 108+; `--app-h`, set by
+   useViewportHeight, is what carries older engines, and falls back to the full
+   window height when no visualViewport exists. */
+.field-nav {
+  position: fixed;
+  right: 20px;
+  top: calc(var(--app-h, 100vh) - 20px);
+  transform: translateY(-100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 20;
+}
+
+.field-nav-btn {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--panel-bg);
+  color: var(--text);
+  cursor: pointer;
+  /* Kills the 300ms tap delay and the grey flash on Android. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.18);
+  transition: transform 0.08s ease;
+}
+
+.field-nav-btn svg {
+  width: 30px;
+  height: 30px;
+}
+
+.field-nav-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.field-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* The arrows float over the form, so the last field needs room to clear them
+   once the guest scrolls to the bottom. */
+.form-screen form {
+  padding-bottom: 96px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field-nav-btn {
+    transition: none;
+  }
+}

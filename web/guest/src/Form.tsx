@@ -1,5 +1,9 @@
-import { useState } from 'react'
-import type { ChangeEvent, FormEvent } from 'react'
+import { useRef, useState } from 'react'
+import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react'
+import FieldNav from './FieldNav'
+import { FIELD_CHAIN, firstErrorField, nextField, prevField } from './useFieldChain'
+import type { FieldName } from './useFieldChain'
+import { useViewportHeight } from './useViewportHeight'
 
 // Mirrors src/server/validation.ts validateGuest() rules exactly, so the guest
 // gets instant German feedback before the server ever sees the payload.
@@ -62,6 +66,8 @@ interface Errors {
   phone?: string
 }
 
+const LAST_FIELD: FieldName = FIELD_CHAIN[FIELD_CHAIN.length - 1]
+
 function isInt(v: string, lo: number, hi: number): boolean {
   if (!/^\d+$/.test(v.trim())) return false
   const n = Number(v)
@@ -101,31 +107,48 @@ export default function Form({ onNext, onCancel }: FormProps) {
   })
   const [touched, setTouched] = useState<Record<string, boolean>>({})
 
+  // Which field the cursor sits in. Fed by every field's onFocus rather than by
+  // the arrows themselves, so that tapping straight into a field mid-form leaves
+  // the arrows continuing from *there* and not from wherever they last landed.
+  const [active, setActive] = useState<FieldName | null>(null)
+
+  const inputs = useRef<Partial<Record<FieldName, HTMLInputElement | null>>>({})
+  const genderRadios = useRef<(HTMLInputElement | null)[]>([])
+
+  // Keeps the arrows above the Android keyboard on engines that ignore
+  // interactive-widget=resizes-content in index.html.
+  useViewportHeight()
+
   const errors = validate(values)
   const isValid = Object.keys(errors).length === 0
 
-  // Every field here is mandatory — there is no optional guest datum. `required`
-  // and aria-required say so before the guest has left a field empty, which the
-  // error messages can only do afterwards. The form keeps `noValidate`, so the
-  // browser's own English bubbles stay out of the way of the German messages.
-  function field(name: keyof RawValues) {
-    return {
-      value: values[name],
-      required: true,
-      'aria-required': true,
-      'aria-invalid': showError(name as keyof Errors) ? true : undefined,
-      onChange: (e: ChangeEvent<HTMLInputElement>) =>
-        setValues((prev) => ({ ...prev, [name]: e.target.value })),
-      onBlur: () => setTouched((prev) => ({ ...prev, [name]: true })),
+  function focusField(name: FieldName) {
+    if (name === 'gender') {
+      // A radio group has no single element to focus: the browser's own target
+      // is whichever radio is checked, and the first one when none is.
+      const radios = genderRadios.current.filter((r): r is HTMLInputElement => r !== null)
+      const target = radios.find((r) => r.checked) ?? radios[0]
+      target?.focus()
+      return
     }
+    inputs.current[name]?.focus()
   }
 
-  function showError(name: keyof Errors): string | undefined {
-    return touched[name] ? errors[name] : undefined
+  function goNext() {
+    // From nowhere, the first field — so the arrow is a way *into* the form too.
+    const target = active === null ? FIELD_CHAIN[0] : nextField(active)
+    if (target) focusField(target)
   }
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault()
+  function goPrev() {
+    if (active === null) return
+    const target = prevField(active)
+    if (target) focusField(target)
+  }
+
+  // Shared by the submit button and by Enter in the last field, so the two can
+  // never drift apart.
+  function attemptSubmit() {
     setTouched({
       firstName: true,
       lastName: true,
@@ -139,7 +162,13 @@ export default function Form({ onNext, onCancel }: FormProps) {
       email: true,
       phone: true,
     })
-    if (!isValid) return
+    if (!isValid) {
+      // Send the guest to the hole they reach first, not to whichever error the
+      // object happens to list first.
+      const target = firstErrorField(errors)
+      if (target) focusField(target)
+      return
+    }
     onNext({
       first_name: values.firstName.trim(),
       last_name: values.lastName.trim(),
@@ -154,6 +183,51 @@ export default function Form({ onNext, onCancel }: FormProps) {
       email: values.email.trim(),
       phone: values.phone.trim(),
     })
+  }
+
+  // Every field here is mandatory — there is no optional guest datum. `required`
+  // and aria-required say so before the guest has left a field empty, which the
+  // error messages can only do afterwards. The form keeps `noValidate`, so the
+  // browser's own English bubbles stay out of the way of the German messages.
+  function field(name: keyof RawValues) {
+    const isLast = name === LAST_FIELD
+    return {
+      value: values[name],
+      required: true,
+      'aria-required': true,
+      'aria-invalid': showError(name as keyof Errors) ? true : undefined,
+      // Labels the Android Enter key before the guest presses it the first time.
+      enterKeyHint: isLast ? ('done' as const) : ('next' as const),
+      ref: (el: HTMLInputElement | null) => {
+        inputs.current[name] = el
+      },
+      onChange: (e: ChangeEvent<HTMLInputElement>) =>
+        setValues((prev) => ({ ...prev, [name]: e.target.value })),
+      onFocus: () => setActive(name),
+      onKeyDown: (e: KeyboardEvent<HTMLInputElement>) => {
+        if (e.key !== 'Enter') return
+        // Always cancel the native submit: a form with a single submit button
+        // submits on Enter in any field, which is precisely the behaviour that
+        // made the guest's Enter key useless for moving on.
+        e.preventDefault()
+        if (isLast) {
+          attemptSubmit()
+          return
+        }
+        const target = nextField(name)
+        if (target) focusField(target)
+      },
+      onBlur: () => setTouched((prev) => ({ ...prev, [name]: true })),
+    }
+  }
+
+  function showError(name: keyof Errors): string | undefined {
+    return touched[name] ? errors[name] : undefined
+  }
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    attemptSubmit()
   }
 
   return (
@@ -189,13 +263,27 @@ export default function Form({ onNext, onCancel }: FormProps) {
               aria-required="true"
               aria-invalid={showError('gender') ? true : undefined}
             >
-              {GENDERS.map((g) => (
+              {GENDERS.map((g, i) => (
                 <label key={g.value} className="radio-option">
                   <input
                     type="radio"
                     name="gender"
                     value={g.value}
                     checked={values.gender === g.value}
+                    ref={(el) => {
+                      genderRadios.current[i] = el
+                    }}
+                    onFocus={() => setActive('gender')}
+                    // The radios are not built by field(), so they need their
+                    // own Enter: without it Enter here reaches the form and
+                    // submits, throwing every error message on the screen at a
+                    // guest who is only three fields in.
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return
+                      e.preventDefault()
+                      const target = nextField('gender')
+                      if (target) focusField(target)
+                    }}
                     onChange={() => {
                       setValues((prev) => ({ ...prev, gender: g.value }))
                       setTouched((prev) => ({ ...prev, gender: true }))
@@ -285,6 +373,13 @@ export default function Form({ onNext, onCancel }: FormProps) {
           </button>
         </div>
       </form>
+
+      <FieldNav
+        canPrev={active !== null && prevField(active) !== null}
+        canNext={active === null || nextField(active) !== null}
+        onPrev={goPrev}
+        onNext={goNext}
+      />
     </section>
   )
 }

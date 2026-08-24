@@ -180,3 +180,100 @@ describe('Form', () => {
     expect(screen.getByRole('button', { name: 'Weiter' })).toBeEnabled()
   })
 })
+
+// Field-to-field navigation. The form is filled in on a tablet with no Tab key,
+// so the cursor has to be movable by Enter and by the two arrow buttons.
+describe('Form field navigation', () => {
+  it('moves the cursor to the next field on Enter instead of submitting', async () => {
+    const user = userEvent.setup()
+    const onNext = vi.fn()
+    render(<Form onNext={onNext} />)
+
+    await user.click(screen.getByLabelText('Vorname'))
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByLabelText('Nachname')).toHaveFocus()
+    expect(onNext).not.toHaveBeenCalled()
+  })
+
+  it('lands on the gender group on the way from Nachname to Alter', async () => {
+    const user = userEvent.setup()
+    render(<Form onNext={vi.fn()} />)
+
+    await user.click(screen.getByLabelText('Nachname'))
+    await user.keyboard('{Enter}')
+
+    const radios = screen.getAllByRole('radio')
+    expect(radios.some((r) => r === document.activeElement)).toBe(true)
+  })
+
+  it('moves on from the gender group on Enter without submitting the form', async () => {
+    const user = userEvent.setup()
+    const onNext = vi.fn()
+    render(<Form onNext={onNext} />)
+
+    await user.click(screen.getByRole('radio', { name: 'weiblich' }))
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByLabelText('Alter')).toHaveFocus()
+    expect(onNext).not.toHaveBeenCalled()
+    // The radios sit inside the form, so an unhandled Enter would submit and
+    // paint every error message at once.
+    expect(screen.queryByText('Vorname fehlt')).not.toBeInTheDocument()
+  })
+
+  it('moves the cursor with the arrow buttons in both directions', async () => {
+    const user = userEvent.setup()
+    render(<Form onNext={vi.fn()} />)
+
+    await user.click(screen.getByLabelText('Vorname'))
+    await user.click(screen.getByRole('button', { name: 'Nächstes Feld' }))
+    expect(screen.getByLabelText('Nachname')).toHaveFocus()
+
+    await user.click(screen.getByRole('button', { name: 'Vorheriges Feld' }))
+    expect(screen.getByLabelText('Vorname')).toHaveFocus()
+  })
+
+  it('disables the arrows at each end of the chain', async () => {
+    const user = userEvent.setup()
+    render(<Form onNext={vi.fn()} />)
+
+    await user.click(screen.getByLabelText('Vorname'))
+    expect(screen.getByRole('button', { name: 'Vorheriges Feld' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Nächstes Feld' })).toBeEnabled()
+
+    await user.click(screen.getByLabelText('Telefon'))
+    expect(screen.getByRole('button', { name: 'Nächstes Feld' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Vorheriges Feld' })).toBeEnabled()
+  })
+
+  it('submits on Enter in the last field once everything is valid', async () => {
+    const user = userEvent.setup()
+    const onNext = vi.fn()
+    render(<Form onNext={onNext} />)
+
+    await fillValid(user)
+    await user.click(screen.getByLabelText('Telefon'))
+    await user.keyboard('{Enter}')
+
+    expect(onNext).toHaveBeenCalledTimes(1)
+  })
+
+  it('jumps to the first field in error on Enter in the last field', async () => {
+    const user = userEvent.setup()
+    const onNext = vi.fn()
+    render(<Form onNext={onNext} />)
+
+    await fillValid(user)
+    // Two holes; the guest must be sent to the earlier one, not the later.
+    await user.clear(screen.getByLabelText('Wohnort'))
+    await user.clear(screen.getByLabelText('Alter'))
+
+    await user.click(screen.getByLabelText('Telefon'))
+    await user.keyboard('{Enter}')
+
+    expect(onNext).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Alter')).toHaveFocus()
+    expect(screen.getByText('Alter ungültig (1–120)')).toBeInTheDocument()
+  })
+})

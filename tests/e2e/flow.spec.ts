@@ -239,3 +239,63 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   expect(payoutLines).toContainEqual(['Vergütung Videoflieger', null, null])
   expect(payoutLines).toContainEqual(['ohne Kameraflieger', '1 × 80,00 €', 80])
 })
+
+// The tablet handed to the guest has no Tab key, so the Enter key has to carry
+// the cursor through all eleven fields on its own. Real browser, real focus —
+// jsdom cannot prove that Enter does not submit the form out from under us.
+test('guest fills the whole form using only the Enter key', async ({ page }) => {
+  await page.goto('/guest/')
+  await page.getByRole('button', { name: 'Anmeldung starten' }).click()
+
+  await page.getByLabel('Vorname').click()
+
+  // Gender sits third in the chain and is a radio group: it takes an arrow key
+  // to choose, not typing. Everything else is typed and then stepped over.
+  await page.keyboard.type(GUEST.firstName)
+  await page.keyboard.press('Enter')
+  await page.keyboard.type(GUEST.lastName)
+  await page.keyboard.press('Enter')
+
+  // Nothing is chosen yet, so the cursor lands on the first radio of the group
+  // rather than on the one this guest wants.
+  await expect(page.getByRole('radio', { name: 'weiblich' })).toBeFocused()
+  await page.getByRole('radio', { name: GUEST.gender }).check()
+  await page.keyboard.press('Enter')
+  await expect(page.getByLabel('Alter')).toBeFocused()
+
+  for (const value of [GUEST.age, GUEST.height, GUEST.weight, GUEST.street,
+                       GUEST.postalCode, GUEST.city, GUEST.email]) {
+    await page.keyboard.type(value)
+    await page.keyboard.press('Enter')
+  }
+
+  // Last field: Enter submits rather than moving on.
+  await expect(page.getByLabel('Telefon')).toBeFocused()
+  await page.keyboard.type(GUEST.phone)
+  await page.keyboard.press('Enter')
+
+  await expect(page.getByRole('heading', { name: 'Teilnahmebedingungen' })).toBeVisible()
+})
+
+// The arrows are the fallback for the four numeric fields, whose on-screen pad
+// may not carry an Enter key at all, and for the gender group.
+test('the arrow buttons walk the cursor and stop at both ends', async ({ page }) => {
+  await page.goto('/guest/')
+  await page.getByRole('button', { name: 'Anmeldung starten' }).click()
+
+  const back = page.getByRole('button', { name: 'Vorheriges Feld' })
+  const forward = page.getByRole('button', { name: 'Nächstes Feld' })
+
+  await page.getByLabel('Vorname').click()
+  await expect(back).toBeDisabled()
+
+  await forward.click()
+  await expect(page.getByLabel('Nachname')).toBeFocused()
+
+  await back.click()
+  await expect(page.getByLabel('Vorname')).toBeFocused()
+
+  await page.getByLabel('Telefon').click()
+  await expect(forward).toBeDisabled()
+  await expect(back).toBeEnabled()
+})

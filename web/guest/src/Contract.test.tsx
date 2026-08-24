@@ -229,4 +229,16 @@ describe('Contract', () => {
     expect(body.querySelector('.privacy-check')).not.toBeNull()
     expect(body.querySelector('canvas.signature-pad')).not.toBeNull()
   })
+
+  it('keeps the signature image at the size the contract PDF stamps', async () => {
+    render(<Contract onNext={() => {}} />)
+    await screen.findByText('Vertragstext hier.')
+
+    // The pad is displayed at whatever width its column has, but the PNG that
+    // goes to the server must not change size with it — src/server/contractPdf.ts
+    // places it at fixed dimensions.
+    const canvas = document.querySelector('canvas.signature-pad') as HTMLCanvasElement
+    expect(canvas.width).toBe(700)
+    expect(canvas.height).toBe(280)
+  })
 })

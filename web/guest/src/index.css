@@ -675,14 +675,18 @@ p {
   flex: 1;
 }
 
-/* Signature pad (contract screen) */
+/* Signature pad (contract screen). Displayed at the stub's width and the 700x280
+   aspect its backing store has, so the stroke is never stretched; the backing
+   store itself stays 700x280 whatever the display size, because that is what
+   src/server/contractPdf.ts stamps. `point()` maps between the two. */
 .signature-pad {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 700 / 280;
   border: 2px solid var(--border);
   border-radius: 12px;
   background: #fff;
   touch-action: none;
-  max-width: 100%;
-  margin-bottom: 8px;
 }
 
 /* Done screen */

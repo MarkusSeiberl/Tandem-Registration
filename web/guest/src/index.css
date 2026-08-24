@@ -353,14 +353,41 @@ p {
   margin-bottom: 16px;
 }
 
-.privacy-text {
-  max-height: 40vh;
+/* The notice, over the screen. Its own scroller, so a long text never reaches
+   the layout underneath: opening it used to add ~900px to a page that has to
+   fit a tablet, and moved the signature pad while it was at it. */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(8, 25, 47, 0.6);
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(100%, 760px);
+  max-height: 100%;
+  padding: 24px;
+  border-radius: 20px;
+  background: var(--panel-bg);
+  text-align: left;
+}
+
+.sheet-body {
+  min-height: 0;
   overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px 20px;
-  margin-bottom: 16px;
   font-size: 17px;
+}
+
+.sheet-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* Big tap target: this is ticked on a tablet, often with a gloved finger. */

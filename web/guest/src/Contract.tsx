@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactNode, UIEvent as ReactUIEvent } from 'react'
 import { getContract, getPrivacyText } from './api'
+import PrivacySheet from './PrivacySheet'
 
 export interface ContractProps {
   onNext: (signaturePng: string) => void
@@ -235,12 +236,6 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
                 {privacyOpen ? 'Datenschutzinformation zuklappen' : 'Datenschutzinformation lesen'}
               </button>
 
-              {privacyOpen && (
-                <div className="privacy-text" role="region" aria-label="Datenschutzinformation">
-                  <p style={{ whiteSpace: 'pre-wrap' }}>{privacyText}</p>
-                </div>
-              )}
-
               <label className="privacy-check">
                 <input
                   type="checkbox"
@@ -297,6 +292,8 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
           {submitting ? 'Wird gesendet…' : 'Weiter'}
         </button>
       </div>
+
+      {privacyOpen && <PrivacySheet text={privacyText} onClose={() => setPrivacyOpen(false)} />}
     </section>
   )
 }

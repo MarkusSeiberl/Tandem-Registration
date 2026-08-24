@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import Contract from './Contract'
 import * as api from './api'
 
@@ -146,5 +147,49 @@ describe('Contract', () => {
     await waitFor(() =>
       screen.getByText('Es liegt derzeit kein Vertragstext vor. Bitte wende dich an das Personal.')
     )
+  })
+
+  it('opens the data-protection notice over the screen, not inside it', async () => {
+    const user = userEvent.setup()
+    render(<Contract onNext={() => {}} />)
+    await screen.findByText('Vertragstext hier.')
+
+    await user.click(screen.getByRole('button', { name: 'Datenschutzinformation lesen' }))
+
+    const sheet = await screen.findByRole('dialog', { name: 'Datenschutzinformation' })
+    expect(sheet).toHaveAttribute('aria-modal', 'true')
+    expect(within(sheet).getByText('Datenschutzinformation hier.')).toBeInTheDocument()
+  })
+
+  it('closes the notice and leaves the box the guest already ticked alone', async () => {
+    const user = userEvent.setup()
+    render(<Contract onNext={() => {}} />)
+    await screen.findByText('Vertragstext hier.')
+
+    const box = document.querySelector('.privacy-check input') as HTMLInputElement
+    await user.click(box)
+    expect(box.checked).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'Datenschutzinformation lesen' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Datenschutzinformation' })
+    await user.click(within(sheet).getByRole('button', { name: 'Datenschutzinformation zuklappen' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    // Reading the notice must not undo the consent — the guest would have to
+    // find and tick it a second time with no idea why.
+    expect((document.querySelector('.privacy-check input') as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('closes the notice on Escape', async () => {
+    const user = userEvent.setup()
+    render(<Contract onNext={() => {}} />)
+    await screen.findByText('Vertragstext hier.')
+
+    await user.click(screen.getByRole('button', { name: 'Datenschutzinformation lesen' }))
+    await screen.findByRole('dialog', { name: 'Datenschutzinformation' })
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

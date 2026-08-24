@@ -192,4 +192,41 @@ describe('Contract', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
+
+  it('keeps the read gate shut until the contract has been scrolled to its end', async () => {
+    render(<Contract onNext={() => {}} />)
+
+    // jsdom reports every box as 0x0, so the "does it already fit?" effect has
+    // to be defeated explicitly before the gate can be exercised at all — and
+    // before the text arrives, because that effect runs the moment it does and
+    // nothing ever closes the gate again once it has opened.
+    const text = document.querySelector('.contract-text') as HTMLElement
+    Object.defineProperty(text, 'scrollHeight', { value: 2000, configurable: true })
+    Object.defineProperty(text, 'clientHeight', { value: 400, configurable: true })
+
+    await screen.findByText('Vertragstext hier.')
+
+    expect(screen.getByText(/Bitte den gesamten Vertrag lesen/)).toBeInTheDocument()
+
+    fireEvent.scroll(text, { target: { scrollTop: 1600 } })
+
+    expect(screen.queryByText(/Bitte den gesamten Vertrag lesen/)).not.toBeInTheDocument()
+  })
+
+  it('puts every action in the pinned band and the reading in the body', async () => {
+    render(<Contract onNext={() => {}} onCancel={() => {}} />)
+    await screen.findByText('Vertragstext hier.')
+
+    const actions = within(document.querySelector('.screen-actions') as HTMLElement)
+    expect(actions.getByRole('button', { name: 'Abbrechen' })).toBeInTheDocument()
+    expect(actions.getByRole('button', { name: 'Löschen' })).toBeInTheDocument()
+    expect(actions.getByRole('button', { name: 'Weiter' })).toBeInTheDocument()
+
+    // The contract, the consent and the signature are one card in the body —
+    // the band that is allowed to give when the keyboard takes the room.
+    const body = document.querySelector('.screen-body') as HTMLElement
+    expect(body.querySelector('.contract-text')).not.toBeNull()
+    expect(body.querySelector('.privacy-check')).not.toBeNull()
+    expect(body.querySelector('canvas.signature-pad')).not.toBeNull()
+  })
 })

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactNode, UIEvent as ReactUIEvent } from 'react'
 import { getContract, getPrivacyText } from './api'
 import PrivacySheet from './PrivacySheet'
+import StepTicks from './StepTicks'
 
 export interface ContractProps {
   onNext: (signaturePng: string) => void
@@ -181,100 +182,117 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
 
   return (
     <section className="screen contract-screen">
-      <h1>Teilnahmebedingungen</h1>
-      <div className="boarding-card">
-        <div
-          ref={textRef}
-          className="contract-text"
-          role="region"
-          aria-label="Teilnahmebedingungen"
-          onScroll={handleScroll}
-        >
-          {loading && <p>Lade Vertragstext…</p>}
-          {!loading && loadError && <p className="error">{loadError}</p>}
-          {!loading && !loadError && text.trim().length === 0 && (
-            <p>Es liegt derzeit kein Vertragstext vor. Bitte wende dich an das Personal.</p>
-          )}
-          {!loading && !loadError && text.trim().length > 0 && (
-            <p style={{ whiteSpace: 'pre-wrap' }}>{renderWithBoldPhrases(text)}</p>
-          )}
-        </div>
-
-        <div className="perforation" />
-
-        {!scrolledToEnd && (
-          <p className="scroll-hint">
-            Bitte den gesamten Vertrag lesen — nach unten scrollen, um fortzufahren.
-          </p>
-        )}
-
-        {/*
-          Above the signature, because it has to be read before signing — and
-          separate from the contract text above it, because that is the whole
-          point of pulling it out of the contract.
-        */}
-        <div className="privacy-section">
-          <h2>Datenschutz</h2>
-          <p>
-            Wir verarbeiten deine Daten, um deinen Tandemsprung durchzuführen und abzurechnen.
-            Die vollständige Datenschutzinformation kannst du hier aufklappen.
-          </p>
-
-          {privacyText.trim().length === 0 ? (
-            <p className="error">
-              Die Datenschutzinformation konnte nicht geladen werden. Bitte wende dich an das
-              Personal.
-            </p>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="btn secondary privacy-toggle"
-                aria-expanded={privacyOpen}
-                onClick={() => setPrivacyOpen((open) => !open)}
-              >
-                {privacyOpen ? 'Datenschutzinformation zuklappen' : 'Datenschutzinformation lesen'}
-              </button>
-
-              <label className="privacy-check">
-                <input
-                  type="checkbox"
-                  checked={privacyAccepted}
-                  onChange={(e) => setPrivacyAccepted(e.target.checked)}
-                />
-                Ich habe die Datenschutzinformation gelesen und stimme der Verarbeitung meiner
-                Daten zur Abwicklung des Tandemsprungs zu.
-              </label>
-            </>
-          )}
-        </div>
-
-        <div className="sign-section">
-          <h2>Unterschrift</h2>
-          <p>Mit deiner Unterschrift bestätigst du, den Vertrag gelesen und akzeptiert zu haben.</p>
-          <canvas
-            ref={canvasRef}
-            width={CANVAS_WIDTH}
-            height={CANVAS_HEIGHT}
-            className="signature-pad"
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={stopDrawing}
-            onPointerLeave={stopDrawing}
-            onPointerCancel={stopDrawing}
-          />
-        </div>
+      <div className="screen-head">
+        <h1>Teilnahmebedingungen</h1>
+        <StepTicks step={1} />
       </div>
 
-      {errors && errors.length > 0 && (
-        <ul className="error">
-          {errors.map((err) => (
-            <li key={err}>{err}</li>
-          ))}
-        </ul>
-      )}
+      <div className="screen-body">
+        <div className="boarding-card">
+          {/*
+            One side of the tear: the contract and the hint that belongs to it.
+            They are wrapped together because in landscape the card's children
+            are its columns, and the hint is not a column — it is a caption on
+            the text above it.
+          */}
+          <div className="card-main">
+            <div
+              ref={textRef}
+              className="contract-text"
+              role="region"
+              aria-label="Teilnahmebedingungen"
+              onScroll={handleScroll}
+            >
+              {loading && <p>Lade Vertragstext…</p>}
+              {!loading && loadError && <p className="error">{loadError}</p>}
+              {!loading && !loadError && text.trim().length === 0 && (
+                <p>Es liegt derzeit kein Vertragstext vor. Bitte wende dich an das Personal.</p>
+              )}
+              {!loading && !loadError && text.trim().length > 0 && (
+                <p style={{ whiteSpace: 'pre-wrap' }}>{renderWithBoldPhrases(text)}</p>
+              )}
+            </div>
 
-      <div className="actions">
+            {!scrolledToEnd && (
+              <p className="scroll-hint">
+                Bitte den gesamten Vertrag lesen — nach unten scrollen, um fortzufahren.
+              </p>
+            )}
+          </div>
+
+          <div className="perforation" />
+
+          {/* The other side: everything the guest does rather than reads. */}
+          <div className="card-stub">
+            {/*
+              Above the signature, because it has to be read before signing — and
+              separate from the contract text beside it, because that is the whole
+              point of pulling it out of the contract.
+            */}
+            <div className="privacy-section">
+              <h2>Datenschutz</h2>
+              <p>
+                Wir verarbeiten deine Daten, um deinen Tandemsprung durchzuführen und abzurechnen.
+                Die vollständige Datenschutzinformation kannst du hier aufklappen.
+              </p>
+
+              {privacyText.trim().length === 0 ? (
+                <p className="error">
+                  Die Datenschutzinformation konnte nicht geladen werden. Bitte wende dich an das
+                  Personal.
+                </p>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="btn secondary privacy-toggle"
+                    aria-expanded={privacyOpen}
+                    onClick={() => setPrivacyOpen((open) => !open)}
+                  >
+                    {privacyOpen ? 'Datenschutzinformation zuklappen' : 'Datenschutzinformation lesen'}
+                  </button>
+
+                  <label className="privacy-check">
+                    <input
+                      type="checkbox"
+                      checked={privacyAccepted}
+                      onChange={(e) => setPrivacyAccepted(e.target.checked)}
+                    />
+                    Ich habe die Datenschutzinformation gelesen und stimme der Verarbeitung meiner
+                    Daten zur Abwicklung des Tandemsprungs zu.
+                  </label>
+                </>
+              )}
+            </div>
+
+            <div className="sign-section">
+              <h2>Unterschrift</h2>
+              <p>Mit deiner Unterschrift bestätigst du, den Vertrag gelesen und akzeptiert zu haben.</p>
+              <canvas
+                ref={canvasRef}
+                width={CANVAS_WIDTH}
+                height={CANVAS_HEIGHT}
+                className="signature-pad"
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={stopDrawing}
+                onPointerLeave={stopDrawing}
+                onPointerCancel={stopDrawing}
+              />
+            </div>
+          </div>
+        </div>
+
+        {errors && errors.length > 0 && (
+          <ul className="error">
+            {errors.map((err) => (
+              <li key={err}>{err}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="screen-actions">
         {onCancel && (
           <button type="button" className="btn secondary" onClick={onCancel} disabled={submitting}>
             Abbrechen

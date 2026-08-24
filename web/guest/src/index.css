@@ -293,19 +293,19 @@ p {
 /* Contract screen: the vertragstext and signature pad sit inside one
    ticket-like card with a perforated divider, echoing the tear-off
    Gutschein box on the club's own paper contract. */
+/* The card is the screen's body now, not a block inside it: it takes the height
+   there is and hands it to the contract text, which is the only part with more
+   to show than fits. */
 .boarding-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 20px;
   background: var(--panel-bg);
   overflow: hidden;
-  margin-bottom: 8px;
-}
-
-.boarding-card .contract-text {
-  border: none;
-  border-radius: 0;
-  margin: 0;
 }
 
 .boarding-card .perforation {
@@ -347,6 +347,82 @@ p {
   padding: 24px;
   text-align: left;
   border-top: 1px solid var(--border);
+}
+
+/* The read side of the tear: the contract plus the hint captioning it. */
+.card-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Everything the guest does rather than reads. In portrait it sits below the
+   tear; in landscape it *is* the stub, beside it. It scrolls on its own so a
+   long consent sentence can never push the signature pad out of the card. */
+.card-stub {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.boarding-card .privacy-section,
+.boarding-card .sign-section {
+  padding: 20px 24px;
+}
+
+/*
+ * Landscape: the tear runs vertically and the card reads like the boarding pass
+ * it is drawn as — the contract on the wide side, the part you sign on the
+ * stub. Portrait keeps the horizontal tear, which is the only way two full-width
+ * blocks can share a narrow screen.
+ */
+@media (orientation: landscape) {
+  .boarding-card {
+    flex-direction: row;
+  }
+
+  /* The contract gets the wide side; the stub gets enough for a signature. */
+  .card-main {
+    flex: 1 1 58%;
+  }
+
+  .card-stub {
+    flex: 1 1 42%;
+  }
+
+  .boarding-card .perforation {
+    height: auto;
+    width: 0;
+    border-top: none;
+    border-left: 2px dashed var(--border);
+  }
+
+  /* The two punched notches turn with the tear: top and bottom instead of
+     left and right. */
+  .boarding-card .perforation::before,
+  .boarding-card .perforation::after {
+    top: auto;
+    left: -10px;
+    right: auto;
+  }
+
+  .boarding-card .perforation::before {
+    top: -10px;
+  }
+
+  .boarding-card .perforation::after {
+    bottom: -10px;
+  }
+
+  /* The privacy block loses its rule in landscape: the vertical tear beside it
+     already separates it from the contract, and a second line would only box
+     it in. */
+  .boarding-card .privacy-section {
+    border-top: none;
+  }
 }
 
 .privacy-toggle {
@@ -417,16 +493,16 @@ p {
   text-align: left;
 }
 
+/* Takes whatever height the card has left and scrolls inside it. This is the
+   one scroller the guest is *meant* to use — it is the read gate. */
 .contract-text {
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  max-height: 40vh;
   overflow-y: auto;
   text-align: left;
-  border: 1px solid var(--border);
   background: var(--panel-bg);
-  border-radius: 12px;
   padding: 20px 24px;
-  margin-bottom: 24px;
   font-size: 18px;
 }
 

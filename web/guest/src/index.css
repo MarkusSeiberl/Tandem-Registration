@@ -60,8 +60,12 @@ button,
   user-select: none;
 }
 
+/* The window is the app's frame, not a scrolling document: nothing here may
+   grow the page. `--app-h` is the visual viewport (see useViewportHeight.ts);
+   `100svh` is the fallback for engines that do not report one. */
 #root {
-  min-height: 100svh;
+  height: var(--app-h, 100svh);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -72,13 +76,16 @@ button,
   flex-direction: column;
 }
 
+/* 34px, not 40px: on an 800px-tall landscape screen the heading and its margin
+   were spending 64px to restate the screen the guest is already looking at.
+   The margin goes too — `.screen` sets the gap between the bands. */
 h1 {
   font-family: var(--sans);
   font-weight: 800;
   letter-spacing: -0.01em;
   color: var(--text-h);
-  font-size: 40px;
-  margin: 0 0 24px;
+  font-size: 34px;
+  margin: 0;
   line-height: 120%;
 }
 
@@ -94,17 +101,53 @@ p {
   margin: 0 0 16px;
 }
 
+/* Three bands: what the screen is, what it asks for, and what closes it. Only
+   the middle one may ever scroll, and on a tablet with the keyboard down it
+   does not — see tests/e2e/guest-fits.spec.ts, which holds this to it. */
 .screen {
   flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  width: 100%;
+  /* Wide enough to use the whole short side of the tablet in landscape (1280,
+     or 1333 on a Tab P11) without letting a desktop browser stretch the form
+     into two columns nobody can scan. */
+  max-width: 1200px;
+  margin: 0 auto;
+  text-align: center;
+  padding:
+    max(20px, env(safe-area-inset-top))
+    max(24px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom))
+    max(24px, env(safe-area-inset-left));
+}
+
+.screen-head {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 32px 24px;
-  text-align: center;
-  max-width: 900px;
-  margin: 0 auto;
+  gap: 12px;
+}
+
+/* The only scroll container in the app. With the keyboard down its content
+   fits and it does not scroll; with the keyboard up it is what gives, so the
+   head and the actions stay where the guest last saw them. */
+.screen-body {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   width: 100%;
+}
+
+.screen-actions {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
 }
 
 /* Welcome screen: full-bleed "altitude" gradient (deep sky at the top fading
@@ -112,10 +155,17 @@ p {
    tablet rather than centered with the rest of the copy. */
 .welcome-screen {
   max-width: none;
-  justify-content: space-between;
   background: linear-gradient(180deg, var(--sky-deep) 0%, var(--sky) 45%, var(--bg) 100%);
   padding-top: max(56px, env(safe-area-inset-top));
   padding-bottom: max(56px, env(safe-area-inset-bottom));
+}
+
+/* The gradient's own composition: brand at altitude, the invitation in the
+   middle air, the CTA down in the thumb-reachable third. The body band centres
+   its one line rather than stacking it at the top. */
+.welcome-screen .screen-body,
+.done-screen .screen-body {
+  justify-content: center;
 }
 
 .welcome-screen h1,
@@ -185,8 +235,10 @@ p {
 /* The "go" light: a soft pulse on the one button that starts the whole
    flow, echoing the dispatch light by a jump-plane's door. Reduced motion
    turns it into a plain steady button. */
+/* The "go" light: a soft pulse on the one button that starts the whole flow,
+   echoing the dispatch light by a jump-plane's door. `margin-top: auto` is
+   gone — the actions band is already pinned to the bottom of the shell. */
 .welcome-screen .btn.big {
-  margin-top: auto;
   animation: pulse-go 2.4s ease-in-out infinite;
 }
 
@@ -220,7 +272,6 @@ p {
   display: flex;
   justify-content: center;
   gap: 10px;
-  padding-top: 20px;
 }
 
 .step-tick {

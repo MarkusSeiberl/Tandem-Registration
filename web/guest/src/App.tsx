@@ -6,18 +6,9 @@ import Contract from './Contract'
 import Done from './Done'
 import HiddenSettings from './HiddenSettings'
 import { submitRegistration } from './api'
+import { useViewportHeight } from './useViewportHeight'
 
 type Screen = 'welcome' | 'form' | 'contract' | 'done'
-
-// A guest mid-flow always knows how much of Form -> Contract is left.
-function StepTicks({ step }: { step: 0 | 1 }) {
-  return (
-    <div className="step-ticks" aria-hidden="true">
-      <span className={`step-tick ${step > 0 ? 'done' : 'active'}`} />
-      <span className={`step-tick ${step === 1 ? 'active' : ''}`} />
-    </div>
-  )
-}
 
 function App() {
   const [screen, setScreen] = useState<Screen>('welcome')
@@ -25,6 +16,8 @@ function App() {
   const [formValues, setFormValues] = useState<FormValues | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitErrors, setSubmitErrors] = useState<string[] | null>(null)
+
+  useViewportHeight()
 
   function resetToWelcome() {
     setScreen('welcome')
@@ -62,27 +55,21 @@ function App() {
         />
       )}
       {screen === 'form' && (
-        <>
-          <StepTicks step={0} />
-          <Form
-            onNext={(values) => {
-              setFormValues(values)
-              setScreen('contract')
-            }}
-            onCancel={resetToWelcome}
-          />
-        </>
+        <Form
+          onNext={(values) => {
+            setFormValues(values)
+            setScreen('contract')
+          }}
+          onCancel={resetToWelcome}
+        />
       )}
       {screen === 'contract' && (
-        <>
-          <StepTicks step={1} />
-          <Contract
-            onNext={handleSign}
-            onCancel={resetToWelcome}
-            submitting={submitting}
-            errors={submitErrors}
-          />
-        </>
+        <Contract
+          onNext={handleSign}
+          onCancel={resetToWelcome}
+          submitting={submitting}
+          errors={submitErrors}
+        />
       )}
       {screen === 'done' && <Done onTimeout={resetToWelcome} />}
 

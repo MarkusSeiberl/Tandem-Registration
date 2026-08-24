@@ -9,7 +9,14 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Anmeldung" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!--
+      `interactive-widget=resizes-content`: when Gboard opens, shrink the layout
+      viewport rather than sliding the page up under it. Without this the shell
+      keeps its full height and the pinned action bar ends up behind the
+      keyboard — see useViewportHeight.ts, which covers the Chrome versions that
+      ignore this flag.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content" />
     <title>Tandemsprung Anmeldung</title>
   </head>
   <body>

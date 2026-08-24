@@ -72,6 +72,10 @@ button,
 
 .app-root {
   flex: 1;
+  /* Without this the wrapper keeps its content's height (a flex item defaults to
+     min-height:auto), grows past #root and takes the pinned action band below
+     the window with it — #root's overflow:hidden only clips it out of sight. */
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -349,8 +353,12 @@ p {
   border-top: 1px solid var(--border);
 }
 
-/* The read side of the tear: the contract plus the hint captioning it. */
+/* The read side of the tear: the contract plus the hint captioning it. It takes
+   the room the stub does not need — without the grow, the contract text falls
+   back to its own minimum and portrait ends up reading a long contract through
+   an 86px window. */
 .card-main {
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -368,9 +376,16 @@ p {
   overflow-y: auto;
 }
 
+/* Tight enough that the consent, the notice button and the pad all fit the stub
+   in landscape: at 20px they came to 609px in the 587px the card has, and the
+   pad — the one control the screen exists for — was the part below the fold. */
 .boarding-card .privacy-section,
 .boarding-card .sign-section {
-  padding: 20px 24px;
+  padding: 16px 24px;
+}
+
+.boarding-card h2 {
+  margin-bottom: 6px;
 }
 
 /*
@@ -423,10 +438,46 @@ p {
   .boarding-card .privacy-section {
     border-top: none;
   }
+
+  /* The pad takes the height the stub has left rather than a fixed share of its
+     width. Sized from the width it came to 174px whatever the window, which on
+     a shorter one put the one control this screen exists for below the stub's
+     own scroll — reachable, but only by scrolling, which is the thing this
+     redesign is here to remove. Width follows from the height through the same
+     700/280 aspect, so the stroke is still never stretched. */
+  .boarding-card .sign-section {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sign-section .signature-pad {
+    flex: 1;
+    width: auto;
+    height: auto;
+    min-height: 96px;
+    max-width: 100%;
+    align-self: flex-start;
+  }
 }
 
 .privacy-toggle {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+}
+
+/* Inside the card these two are supporting text and a way to read more, not the
+   screen's actions — those are pinned in the band below, at full size. Sized
+   down they leave the stub enough height for a signature pad worth signing on,
+   and the button still clears Android's 48px tap target. */
+.boarding-card .privacy-section p {
+  font-size: 16px;
+}
+
+.boarding-card .privacy-toggle {
+  font-size: 18px;
+  min-height: 48px;
+  padding: 12px 20px;
 }
 
 /* The notice, over the screen. Its own scroller, so a long text never reaches
@@ -534,10 +585,15 @@ p {
 }
 
 .field {
-  margin-bottom: 18px;
+  margin-bottom: 12px;
   display: flex;
   flex-direction: column;
   text-align: left;
+}
+
+/* The last field in a group has the group's own margin under it already. */
+.field-group > *:last-child {
+  margin-bottom: 0;
 }
 
 .field label {
@@ -583,7 +639,7 @@ p {
   min-width: 0;
   border: none;
   padding: 0;
-  margin: 0 0 20px;
+  margin: 0 0 16px;
 }
 
 .field-group:last-child {
@@ -601,7 +657,7 @@ p {
   color: var(--text);
   opacity: 0.7;
   padding: 0;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 /* The radio group's caption is a <span>, not a <label> (it labels three inputs,
@@ -660,11 +716,15 @@ p {
   display: flex;
   gap: 16px;
   align-items: flex-start;
+  margin-bottom: 12px;
 }
 
+/* The row carries the spacing for both of its fields; two stacked margins here
+   would put a gap under a row that has nothing under it. */
 .field-row .field {
   flex: 1;
   min-width: 0;
+  margin-bottom: 0;
 }
 
 .field-row .field-plz {
@@ -673,6 +733,32 @@ p {
 
 .field-row .field-city {
   flex: 1;
+}
+
+/*
+ * Landscape. Two columns of groups is what the club chose and what portrait
+ * gets; on the wide side of the tablet that is not enough on its own — Person
+ * and Körperdaten stacked run 602px into the 543px the shell has to give, and
+ * the only way to close that with one field per line is to shrink the labels,
+ * the inputs or the radios, which is exactly how a tablet form gets worse.
+ * So the groups keep their columns and the fields inside them pair up.
+ */
+@media (orientation: landscape) {
+  .field-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 24px;
+    align-items: start;
+  }
+
+  /* Three things want the group's full width: the eyebrow that names it, a
+     row that is already two fields wide, and the gender options, which wrap to
+     a second line in half a column. */
+  .field-group legend,
+  .field-group > .field-row,
+  .field-group > .field:has(.radio-row) {
+    grid-column: 1 / -1;
+  }
 }
 
 /* Signature pad (contract screen). Displayed at the stub's width and the 700x280

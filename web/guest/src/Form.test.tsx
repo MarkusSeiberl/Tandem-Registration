@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Form from './Form'
 
@@ -178,5 +178,62 @@ describe('Form', () => {
     await user.type(screen.getByLabelText('PLZ'), 'SW1A 1AA')
 
     expect(screen.getByRole('button', { name: 'Weiter' })).toBeEnabled()
+  })
+
+  it('deals the four groups into two columns', () => {
+    render(<Form onNext={() => {}} />)
+
+    const columns = document.querySelectorAll('.form-col')
+    expect(columns).toHaveLength(2)
+
+    const left = within(columns[0] as HTMLElement)
+    const right = within(columns[1] as HTMLElement)
+
+    // The guest reads themselves down the left and where to reach them down
+    // the right; a field in the wrong column is a field they hunt for.
+    expect(left.getByLabelText('Vorname')).toBeInTheDocument()
+    expect(left.getByLabelText('Nachname')).toBeInTheDocument()
+    expect(left.getByLabelText('Alter')).toBeInTheDocument()
+    expect(left.getByLabelText('Größe (cm)')).toBeInTheDocument()
+    expect(left.getByLabelText('Gewicht (kg)')).toBeInTheDocument()
+    expect(left.getByRole('radiogroup', { name: 'Geschlecht' })).toBeInTheDocument()
+
+    expect(right.getByLabelText('Straße und Hausnummer')).toBeInTheDocument()
+    expect(right.getByLabelText('PLZ')).toBeInTheDocument()
+    expect(right.getByLabelText('Wohnort')).toBeInTheDocument()
+    expect(right.getByLabelText('E-Mail')).toBeInTheDocument()
+    expect(right.getByLabelText('Telefon')).toBeInTheDocument()
+  })
+
+  it('asks for each field exactly once', () => {
+    render(<Form onNext={() => {}} />)
+
+    // A two-column rewrite is exactly the edit that duplicates a field into
+    // both columns, and `within(column)` above cannot see that.
+    for (const label of [
+      'Vorname', 'Nachname', 'Alter', 'Größe (cm)', 'Gewicht (kg)',
+      'Straße und Hausnummer', 'PLZ', 'Wohnort', 'E-Mail', 'Telefon',
+    ]) {
+      expect(screen.getAllByLabelText(label)).toHaveLength(1)
+    }
+    expect(screen.getAllByRole('radio')).toHaveLength(3)
+  })
+
+  it('keeps all four group headings', () => {
+    render(<Form onNext={() => {}} />)
+    for (const legend of ['Person', 'Körperdaten', 'Adresse', 'Kontakt']) {
+      expect(screen.getByText(legend)).toBeInTheDocument()
+    }
+  })
+
+  it('puts both buttons in the pinned action band', () => {
+    render(<Form onNext={() => {}} onCancel={() => {}} />)
+
+    const actions = document.querySelector('.screen-actions')
+    expect(actions).not.toBeNull()
+
+    const bar = within(actions as HTMLElement)
+    expect(bar.getByRole('button', { name: 'Abbrechen' })).toBeInTheDocument()
+    expect(bar.getByRole('button', { name: 'Weiter' })).toBeInTheDocument()
   })
 })

@@ -406,18 +406,28 @@ p {
 /* Says up front what the error messages can only say afterwards. */
 .form-intro {
   width: 100%;
-  max-width: 560px;
-  margin: -8px 0 20px;
+  margin: 0 0 16px;
   text-align: left;
   font-size: 16px;
   opacity: 0.75;
 }
 
-/* Form screen */
-.form-screen form {
-  width: 100%;
-  max-width: 560px;
+/* Form screen. The old 560px column left half a tablet empty while the fields
+   ran off the bottom; across the full width the same eleven fields fit the
+   800px short side of the tablet in either orientation.
+
+   Portrait is the tight case, not landscape: 800 - 48 padding - 32 gap leaves
+   360px a column, which is what the PLZ/Wohnort row has to live inside. */
+.form-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 32px;
+  align-items: start;
   text-align: left;
+}
+
+.form-col {
+  min-width: 0;
 }
 
 .field {
@@ -464,21 +474,31 @@ p {
  * carries a browser default border and padding, so both are reset here.
  */
 .field-group {
-  /* min-width:0 lets the fieldset shrink to the form width instead of holding
-     its widest child's min-content (a <fieldset> defaults to
+  /* min-width:0 lets the fieldset shrink to its column instead of holding its
+     widest child's min-content (a <fieldset> defaults to
      min-inline-size:min-content). */
   min-width: 0;
   border: none;
   padding: 0;
-  margin: 0 0 28px;
+  margin: 0 0 20px;
 }
 
+.field-group:last-child {
+  margin-bottom: 0;
+}
+
+/* Named like the manifest app's panel titles: an eyebrow that says what the
+   block is about without competing with the labels under it — and 14px shorter
+   per group than the heading it replaces, four times over. */
 .field-group legend {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.7;
   padding: 0;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 /* The radio group's caption is a <span>, not a <label> (it labels three inputs,

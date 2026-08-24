@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
+import StepTicks from './StepTicks'
 
 // Mirrors src/server/validation.ts validateGuest() rules exactly, so the guest
 // gets instant German feedback before the server ever sees the payload.
@@ -158,133 +159,149 @@ export default function Form({ onNext, onCancel }: FormProps) {
 
   return (
     <section className="screen form-screen">
-      <h1>Deine Daten</h1>
-      <p className="form-intro">Alle Felder sind Pflichtfelder.</p>
-      <form onSubmit={handleSubmit} noValidate>
-        <fieldset className="field-group">
-          <legend>Person</legend>
+      <div className="screen-head">
+        <h1>Deine Daten</h1>
+        <StepTicks step={0} />
+      </div>
 
-          <div className="field">
-            <label htmlFor="first_name">Vorname</label>
-            <input id="first_name" type="text" autoComplete="given-name" {...field('firstName')} />
-            {showError('firstName') && <p className="error">{showError('firstName')}</p>}
+      {/*
+        The form is the body band, and the submit button lives outside it in the
+        pinned actions — so `form="guest-form"` on that button is what still ties
+        the two together and keeps Enter-to-submit working.
+      */}
+      <form id="guest-form" className="screen-body" onSubmit={handleSubmit} noValidate>
+        <p className="form-intro">Alle Felder sind Pflichtfelder.</p>
+
+        <div className="form-cols">
+          <div className="form-col">
+            <fieldset className="field-group">
+              <legend>Person</legend>
+
+              <div className="field">
+                <label htmlFor="first_name">Vorname</label>
+                <input id="first_name" type="text" autoComplete="given-name" {...field('firstName')} />
+                {showError('firstName') && <p className="error">{showError('firstName')}</p>}
+              </div>
+
+              <div className="field">
+                <label htmlFor="last_name">Nachname</label>
+                <input id="last_name" type="text" autoComplete="family-name" {...field('lastName')} />
+                {showError('lastName') && <p className="error">{showError('lastName')}</p>}
+              </div>
+
+              {/*
+                Radio buttons rather than a <select>: this form is filled in on a tablet
+                handed to the guest, where three visible tap targets beat a dropdown.
+              */}
+              <div className="field">
+                <span className="label" id="gender_label">Geschlecht</span>
+                <div
+                  className="radio-row"
+                  role="radiogroup"
+                  aria-labelledby="gender_label"
+                  aria-required="true"
+                  aria-invalid={showError('gender') ? true : undefined}
+                >
+                  {GENDERS.map((g) => (
+                    <label key={g.value} className="radio-option">
+                      <input
+                        type="radio"
+                        name="gender"
+                        value={g.value}
+                        checked={values.gender === g.value}
+                        onChange={() => {
+                          setValues((prev) => ({ ...prev, gender: g.value }))
+                          setTouched((prev) => ({ ...prev, gender: true }))
+                        }}
+                      />
+                      {g.label}
+                    </label>
+                  ))}
+                </div>
+                {showError('gender') && <p className="error">{showError('gender')}</p>}
+              </div>
+
+              <div className="field">
+                <label htmlFor="age">Alter</label>
+                <input id="age" type="number" inputMode="numeric" min={1} max={120} {...field('age')} />
+                {showError('age') && <p className="error">{showError('age')}</p>}
+              </div>
+            </fieldset>
+
+            <fieldset className="field-group">
+              <legend>Körperdaten</legend>
+
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="height_cm">Größe (cm)</label>
+                  <input id="height_cm" type="number" inputMode="numeric" min={100} max={220} {...field('height')} />
+                  {showError('height') && <p className="error">{showError('height')}</p>}
+                </div>
+
+                <div className="field">
+                  <label htmlFor="weight_kg">Gewicht (kg)</label>
+                  <input id="weight_kg" type="number" inputMode="numeric" min={20} max={200} {...field('weight')} />
+                  {showError('weight') && <p className="error">{showError('weight')}</p>}
+                </div>
+              </div>
+            </fieldset>
           </div>
 
-          <div className="field">
-            <label htmlFor="last_name">Nachname</label>
-            <input id="last_name" type="text" autoComplete="family-name" {...field('lastName')} />
-            {showError('lastName') && <p className="error">{showError('lastName')}</p>}
+          <div className="form-col">
+            <fieldset className="field-group">
+              <legend>Adresse</legend>
+
+              <div className="field">
+                <label htmlFor="street">Straße und Hausnummer</label>
+                <input id="street" type="text" autoComplete="street-address" {...field('street')} />
+                {showError('street') && <p className="error">{showError('street')}</p>}
+              </div>
+
+              {/* PLZ is narrow, Wohnort takes the rest — see .field-row in index.css. */}
+              <div className="field-row">
+                <div className="field field-plz">
+                  <label htmlFor="postal_code">PLZ</label>
+                  <input id="postal_code" type="text" inputMode="numeric" autoComplete="postal-code" {...field('postalCode')} />
+                  {showError('postalCode') && <p className="error">{showError('postalCode')}</p>}
+                </div>
+
+                <div className="field field-city">
+                  <label htmlFor="city">Wohnort</label>
+                  <input id="city" type="text" autoComplete="address-level2" {...field('city')} />
+                  {showError('city') && <p className="error">{showError('city')}</p>}
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset className="field-group">
+              <legend>Kontakt</legend>
+
+              <div className="field">
+                <label htmlFor="email">E-Mail</label>
+                <input id="email" type="email" autoComplete="email" {...field('email')} />
+                {showError('email') && <p className="error">{showError('email')}</p>}
+              </div>
+
+              <div className="field">
+                <label htmlFor="phone">Telefon</label>
+                <input id="phone" type="tel" autoComplete="tel" {...field('phone')} />
+                {showError('phone') && <p className="error">{showError('phone')}</p>}
+              </div>
+            </fieldset>
           </div>
-
-          {/*
-            Radio buttons rather than a <select>: this form is filled in on a tablet
-            handed to the guest, where three visible tap targets beat a dropdown.
-          */}
-          <div className="field">
-            <span className="label" id="gender_label">Geschlecht</span>
-            <div
-              className="radio-row"
-              role="radiogroup"
-              aria-labelledby="gender_label"
-              aria-required="true"
-              aria-invalid={showError('gender') ? true : undefined}
-            >
-              {GENDERS.map((g) => (
-                <label key={g.value} className="radio-option">
-                  <input
-                    type="radio"
-                    name="gender"
-                    value={g.value}
-                    checked={values.gender === g.value}
-                    onChange={() => {
-                      setValues((prev) => ({ ...prev, gender: g.value }))
-                      setTouched((prev) => ({ ...prev, gender: true }))
-                    }}
-                  />
-                  {g.label}
-                </label>
-              ))}
-            </div>
-            {showError('gender') && <p className="error">{showError('gender')}</p>}
-          </div>
-
-          <div className="field">
-            <label htmlFor="age">Alter</label>
-            <input id="age" type="number" inputMode="numeric" min={1} max={120} {...field('age')} />
-            {showError('age') && <p className="error">{showError('age')}</p>}
-          </div>
-        </fieldset>
-
-        <fieldset className="field-group">
-          <legend>Körperdaten</legend>
-
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor="height_cm">Größe (cm)</label>
-              <input id="height_cm" type="number" inputMode="numeric" min={100} max={220} {...field('height')} />
-              {showError('height') && <p className="error">{showError('height')}</p>}
-            </div>
-
-            <div className="field">
-              <label htmlFor="weight_kg">Gewicht (kg)</label>
-              <input id="weight_kg" type="number" inputMode="numeric" min={20} max={200} {...field('weight')} />
-              {showError('weight') && <p className="error">{showError('weight')}</p>}
-            </div>
-          </div>
-        </fieldset>
-
-        <fieldset className="field-group">
-          <legend>Adresse</legend>
-
-          <div className="field">
-            <label htmlFor="street">Straße und Hausnummer</label>
-            <input id="street" type="text" autoComplete="street-address" {...field('street')} />
-            {showError('street') && <p className="error">{showError('street')}</p>}
-          </div>
-
-          {/* PLZ is narrow, Wohnort takes the rest — see .field-row in index.css. */}
-          <div className="field-row">
-            <div className="field field-plz">
-              <label htmlFor="postal_code">PLZ</label>
-              <input id="postal_code" type="text" inputMode="numeric" autoComplete="postal-code" {...field('postalCode')} />
-              {showError('postalCode') && <p className="error">{showError('postalCode')}</p>}
-            </div>
-
-            <div className="field field-city">
-              <label htmlFor="city">Wohnort</label>
-              <input id="city" type="text" autoComplete="address-level2" {...field('city')} />
-              {showError('city') && <p className="error">{showError('city')}</p>}
-            </div>
-          </div>
-        </fieldset>
-
-        <fieldset className="field-group">
-          <legend>Kontakt</legend>
-
-          <div className="field">
-            <label htmlFor="email">E-Mail</label>
-            <input id="email" type="email" autoComplete="email" {...field('email')} />
-            {showError('email') && <p className="error">{showError('email')}</p>}
-          </div>
-
-          <div className="field">
-            <label htmlFor="phone">Telefon</label>
-            <input id="phone" type="tel" autoComplete="tel" {...field('phone')} />
-            {showError('phone') && <p className="error">{showError('phone')}</p>}
-          </div>
-        </fieldset>
-
-        <div className="actions">
-          {onCancel && (
-            <button type="button" className="btn secondary" onClick={onCancel}>
-              Abbrechen
-            </button>
-          )}
-          <button type="submit" className="btn primary" disabled={!isValid}>
-            Weiter
-          </button>
         </div>
       </form>
+
+      <div className="screen-actions">
+        {onCancel && (
+          <button type="button" className="btn secondary" onClick={onCancel}>
+            Abbrechen
+          </button>
+        )}
+        <button type="submit" form="guest-form" className="btn primary" disabled={!isValid}>
+          Weiter
+        </button>
+      </div>
     </section>
   )
 }

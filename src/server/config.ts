@@ -76,10 +76,10 @@ Immer von hinten zum Flugzeug gehen, nie direkt auf den Propeller zu!
 Immer den Anweisungen des TM Folge leisten! Bei Unklarheiten bitte den TM fragen!
 
 2) Einweisung in den Sprungablauf:
-Absprung: Hohlkreuz mit Becken nach vorne und somit Körper wie eine Banane halten, Kopf in den Nacken, mit den Händen an den Hosenträger-Gurte greifen und festhalten, nicht am Flugzeug festhalten
-Freier Fall: Hohlkreuz, durch die Nase atmen, Mund geschlossen halten, nichts mit den Händen angreifen
-Offener Schirm: Anweisungen des TM befolgen, nichts angreifen außer auf ausdrückliche Anweisung des TM
-Unmittelbar vor der Landung (Landehaltung): beide Oberschenkel samt Knie 90° anheben, wenn notwendig durch Griff in beide Kniekehlen unterstützen; zusätzlich Unterschenkel mind. 45° nach vorne anheben; Anweisungen des TM befolgen.
+**Absprung:** Hohlkreuz mit Becken nach vorne und somit Körper wie eine Banane halten, Kopf in den Nacken, mit den Händen an den Hosenträger-Gurte greifen und festhalten, nicht am Flugzeug festhalten
+**Freier Fall:** Hohlkreuz, durch die Nase atmen, Mund geschlossen halten, nichts mit den Händen angreifen
+**Offener Schirm:** Anweisungen des TM befolgen, nichts angreifen außer auf ausdrückliche Anweisung des TM
+**Unmittelbar vor der Landung (Landehaltung): beide Oberschenkel samt Knie 90° anheben, wenn notwendig durch Griff in beide Kniekehlen unterstützen; zusätzlich Unterschenkel mind. 45° nach vorne anheben; Anweisungen des TM befolgen.**
 Als Passagier bin ich in der Lage, die oben genannte Landehaltung für mindestens eine Minute zu halten.
 
 3) In Notsituationen den Anweisungen des Tandemmaster unbedingt und sofort Folge leisten.
@@ -117,6 +117,35 @@ An wen wir sie weitergeben: an niemanden außerhalb des Vereins, außer wenn wir
 
 Deine Rechte: Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung, Datenübertragbarkeit und Widerspruch. Wende dich dafür an mailpoint@skydive-freistadt.at. Außerdem kannst du dich bei der Österreichischen Datenschutzbehörde beschweren (Barichgasse 40-42, 1030 Wien, dsb@dsb.gv.at).`
 
+// The passages the club's paper contract prints bold. Until the texts carried
+// markup of their own, the guest app matched these strings and bolded them; the
+// list lives on here only to carry a config.json written before the markers
+// into the marked format.
+const LEGACY_BOLD = [
+  'Absprung:',
+  'Freier Fall:',
+  'Offener Schirm:',
+  'Unmittelbar vor der Landung (Landehaltung): beide Oberschenkel samt Knie 90° anheben, wenn notwendig durch Griff in beide Kniekehlen unterstützen; zusätzlich Unterschenkel mind. 45° nach vorne anheben; Anweisungen des TM befolgen.',
+]
+
+/**
+ * Puts `**` markers around the passages that used to be bolded by a hard-coded
+ * list, so a text stored before this change reads the same as one written after.
+ *
+ * A text that already carries any marker is left alone: from that point on the
+ * markers are the whole truth about what is bold, including a club that
+ * deliberately un-bolded one of these.
+ *
+ * Nothing is written back to disk here. The migrated text is what the settings
+ * screen loads and what it saves the next time someone presses "Speichern" —
+ * rewriting a config file behind the operator's back to fix formatting would be
+ * a surprise out of all proportion to the problem.
+ */
+export function withBoldMarkers(text: string): string {
+  if (text.includes('**')) return text
+  return LEGACY_BOLD.reduce((acc, phrase) => acc.split(phrase).join(`**${phrase}**`), text)
+}
+
 export function loadConfig(dir: string): Config {
   const p = path.join(dir, 'config.json')
   const def: Config = {
@@ -130,11 +159,12 @@ export function loadConfig(dir: string): Config {
     // written before either block existed has no block at all, and one written by
     // an older version could be missing a single amount. Either way every key must
     // end up with a number.
-    return {
+    const merged = {
       ...def, ...stored,
       prices: { ...DEFAULT_PRICES, ...(stored?.prices ?? {}) },
       payouts: { ...DEFAULT_PAYOUTS, ...(stored?.payouts ?? {}) },
     }
+    return { ...merged, contractText: withBoldMarkers(merged.contractText) }
   } catch {
     return def
   }

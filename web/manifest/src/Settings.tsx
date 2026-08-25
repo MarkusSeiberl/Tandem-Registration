@@ -1,6 +1,8 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { checkPaths, createBackup, getSettings, pickerAvailable, pickPath, putSettings } from './api'
 import type { PathChecks, PathState, PickKind } from './api'
+import { renderRichText, toggleBold } from './richText'
 
 // A path field: the text is still typeable, the button is the shortcut. What the
 // warning says depends on what was expected there, so the message is built from
@@ -57,6 +59,84 @@ function PathField(props: {
 
 // Where the manifest writes and what it prints on a contract. The amounts it
 // charges and pays out live on the Stammdaten screen, beside the crew.
+/**
+ * One of the two texts the guest reads, with the only formatting they carry:
+ * `**fett**`.
+ *
+ * A textarea rather than a contenteditable field. The typing here is legal
+ * prose, often pasted from a lawyer's mail, and a textarea gets that right —
+ * cursor, undo, paste and all — where a rich field would need every one of them
+ * rebuilt. What was missing was never the typing; it was seeing the result. So
+ * the markers stay visible in the editor and the preview below shows the text
+ * exactly as the tablet will draw it, with the same renderer the guest app uses.
+ */
+function TextEditor({
+  label,
+  value,
+  hint,
+  onChange,
+}: {
+  label: string
+  value: string
+  hint: string
+  onChange: (next: string) => void
+}) {
+  const areaRef = useRef<HTMLTextAreaElement | null>(null)
+
+  function applyBold() {
+    const area = areaRef.current
+    if (!area) return
+    const next = toggleBold(value, area.selectionStart, area.selectionEnd)
+    onChange(next.value)
+    // After React writes the new value the selection is gone, so it is put back
+    // on the next frame — around the same words, so the button can be pressed
+    // twice to undo itself.
+    requestAnimationFrame(() => {
+      area.focus()
+      area.setSelectionRange(next.selectionStart, next.selectionEnd)
+    })
+  }
+
+  function handleKeyDown(e: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+      e.preventDefault()
+      applyBold()
+    }
+  }
+
+  return (
+    <>
+      <div className="text-toolbar">
+        <button type="button" className="btn secondary small" onClick={applyBold}>
+          <strong>F</strong>&nbsp;Fett
+        </button>
+        <span className="field-hint">
+          Auswahl markieren und auf „Fett" tippen (oder Strg+B). Fett steht im Text
+          zwischen **zwei Sternchen**.
+        </span>
+      </div>
+
+      <textarea
+        ref={areaRef}
+        aria-label={label}
+        value={value}
+        onKeyDown={handleKeyDown}
+        onChange={(e) => onChange(e.target.value)}
+      />
+
+      {/* Labelled by the word on the box itself. An aria-label carrying the
+          text's name would collide with the textarea's own in every
+          label-text lookup, and the two are meant to be told apart. */}
+      <div className="text-preview">
+        <span className="text-preview-label">Vorschau</span>
+        <p>{renderRichText(value)}</p>
+      </div>
+
+      <span className="field-hint">{hint}</span>
+    </>
+  )
+}
+
 export default function Settings() {
   const [exportDir, setExportDir] = useState('')
   const [jumpLocation, setJumpLocation] = useState('')
@@ -303,18 +383,15 @@ export default function Settings() {
             aria-label="Datenschutz"
             hidden={textTab !== 'privacy'}
           >
-            <textarea
-              aria-label="Datenschutztext"
+            <TextEditor
+              label="Datenschutztext"
               value={privacyText}
-              onChange={(e) => {
-                setPrivacyText(e.target.value)
+              hint="Wird dem Gast vor der Unterschrift gezeigt und muss von ihm bestätigt werden. Angaben in eckigen Klammern ersetzen."
+              onChange={(next) => {
+                setPrivacyText(next)
                 setSaved(false)
               }}
             />
-            <span className="field-hint">
-              Wird dem Gast vor der Unterschrift gezeigt und muss von ihm bestätigt werden.
-              Angaben in eckigen Klammern ersetzen.
-            </span>
           </div>
 
           <div
@@ -324,17 +401,15 @@ export default function Settings() {
             aria-label="Vertrag"
             hidden={textTab !== 'contract'}
           >
-            <textarea
-              aria-label="Vertragstext"
+            <TextEditor
+              label="Vertragstext"
               value={contractText}
-              onChange={(e) => {
-                setContractText(e.target.value)
+              hint="Der Beförderungsvertrag, den der Gast liest und unterschreibt."
+              onChange={(next) => {
+                setContractText(next)
                 setSaved(false)
               }}
             />
-            <span className="field-hint">
-              Der Beförderungsvertrag, den der Gast liest und unterschreibt.
-            </span>
           </div>
         </section>
       </div>

@@ -9,6 +9,9 @@ import TrashIcon from './TrashIcon'
 
 export interface ListProps {
   onSelect: (registration: Registration) => void
+  /** The day being shown. Owned by App so it survives leaving this screen. */
+  date: string
+  onDateChange: (date: string) => void
 }
 
 // Which colored dot a payment method's pill gets — voucher (ember, matches the
@@ -143,8 +146,7 @@ function RegistrationTable({
   )
 }
 
-export default function List({ onSelect }: ListProps) {
-  const [date, setDate] = useState(today)
+export default function List({ onSelect, date, onDateChange }: ListProps) {
   const [rows, setRows] = useState<Registration[]>([])
   const [masterNames, setMasterNames] = useState<Map<number, string>>(new Map())
   const [loading, setLoading] = useState(false)
@@ -290,9 +292,19 @@ export default function List({ onSelect }: ListProps) {
           <input
             type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => onDateChange(e.target.value)}
           />
         </label>
+        {/* One press back to the running day, from wherever the operator
+            wandered off to. Off while it would change nothing. */}
+        <button
+          type="button"
+          className="btn secondary small"
+          onClick={() => onDateChange(today())}
+          disabled={date === today()}
+        >
+          Heute
+        </button>
         <button type="button" className="btn secondary" onClick={handleExport} disabled={exporting}>
           {exporting ? 'Exportiere…' : 'Exportieren'}
         </button>

@@ -1,3 +1,4 @@
+import type React from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -14,6 +15,13 @@ vi.mock('./api', () => ({
   getApiBase: vi.fn(() => ''),
   pendingRedemptions: vi.fn(),
 }))
+
+// The day is a prop now — App owns it, so it outlives a trip to another tab.
+function renderList(props: Partial<React.ComponentProps<typeof List>> = {}) {
+  return render(
+    <List onSelect={() => {}} date={today()} onDateChange={() => {}} {...props} />
+  )
+}
 
 const openTable = () => screen.getByRole('table', { name: /^Offen/ })
 const paidTable = () => screen.getByRole('table', { name: /^Kassiert/ })
@@ -68,7 +76,7 @@ describe('List', () => {
       makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel' }),
     ])
 
-    render(<List onSelect={() => {}} />)
+    renderList()
 
     expect(await screen.findByText('Anna Muster')).toBeInTheDocument()
     expect(screen.getByText('Bruno Beispiel')).toBeInTheDocument()
@@ -83,7 +91,7 @@ describe('List', () => {
       makeRow({ id: 2, first_name: 'Bezahlt', last_name: 'Gast', paid_at: '2026-07-09T12:00:00.000Z' }),
     ])
 
-    render(<List onSelect={() => {}} />)
+    renderList()
 
     await screen.findByText('Offen Gast')
     expect(within(openTable()).getByText('Offen Gast')).toBeInTheDocument()
@@ -98,7 +106,7 @@ describe('List', () => {
       makeRow({ id: 3, paid_at: '2026-07-09T12:00:00.000Z' }),
     ])
 
-    render(<List onSelect={() => {}} />)
+    renderList()
 
     expect(await screen.findByText('Offen (2)')).toBeInTheDocument()
     expect(screen.getByText('Kassiert (1)')).toBeInTheDocument()
@@ -109,7 +117,7 @@ describe('List', () => {
     vi.mocked(api.list).mockResolvedValue([row])
     vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: '2026-07-09T12:00:00.000Z' })
 
-    render(<List onSelect={() => {}} />)
+    renderList()
     await screen.findByText('Anna Muster')
 
     await userEvent.click(within(openTable()).getByRole('button', { name: /kassiert/i }))
@@ -123,7 +131,7 @@ describe('List', () => {
     vi.mocked(api.list).mockResolvedValue([row])
     vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: null })
 
-    render(<List onSelect={() => {}} />)
+    renderList()
     await screen.findByText('Anna Muster')
 
     await userEvent.click(within(paidTable()).getByRole('button', { name: 'Als offen markieren' }))
@@ -138,7 +146,7 @@ describe('List', () => {
     vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: '2026-07-09T12:00:00.000Z' })
     const onSelect = vi.fn()
 
-    render(<List onSelect={onSelect} />)
+    renderList({ onSelect })
     await screen.findByText('Anna Muster')
 
     await userEvent.click(within(openTable()).getByRole('button', { name: /kassiert/i }))
@@ -149,7 +157,7 @@ describe('List', () => {
   it('tells each table apart when one side is empty', async () => {
     vi.mocked(api.list).mockResolvedValue([makeRow({ id: 1 })])
 
-    render(<List onSelect={() => {}} />)
+    renderList()
 
     expect(await screen.findByText('Noch nichts kassiert.')).toBeInTheDocument()
     expect(screen.queryByText('Keine offenen Einträge.')).not.toBeInTheDocument()
@@ -160,7 +168,7 @@ describe('List', () => {
       makeRow({ extra_booking: 'video_photo', weight_surcharge: 'over_100' }),
     ])
 
-    render(<List onSelect={() => {}} />)
+    renderList()
 
     expect(await screen.findByText('Sprung+Video+Foto')).toBeInTheDocument()
     expect(screen.getByText('ab 100 kg')).toBeInTheDocument()
@@ -178,7 +186,7 @@ describe('List', () => {
       }),
     ])
 
-    render(<List onSelect={() => {}} />)
+    renderList()
 
     expect(await screen.findByText('Sprung+Video+Foto')).toBeInTheDocument()
     expect(screen.queryByText('Sprung+Video')).not.toBeInTheDocument()
@@ -189,7 +197,7 @@ describe('List', () => {
       makeRow({ payment_method: 'voucher', voucher_payment_method: 'cash' }),
     ])
 
-    render(<List onSelect={() => {}} />)
+    renderList()
 
     expect(await screen.findByText('Gutschein')).toBeInTheDocument()
     expect(screen.getByText('Bar')).toBeInTheDocument()
@@ -198,7 +206,7 @@ describe('List', () => {
   it('shows no surcharge pill when none is set', async () => {
     vi.mocked(api.list).mockResolvedValue([makeRow({ weight_surcharge: 'none' })])
 
-    render(<List onSelect={() => {}} />)
+    renderList()
 
     await screen.findByText('Anna Muster')
     expect(screen.queryByText('ab 90 kg')).not.toBeInTheDocument()
@@ -214,20 +222,39 @@ describe('List', () => {
       makeRow({ id: 4, price: 270, paid_at: '2026-07-09T12:00:00.000Z' }),
     ])
 
-    render(<List onSelect={() => {}} />)
+    renderList()
 
     expect(await screen.findByText('Offen: 510 €')).toBeInTheDocument()
     expect(screen.getByText('Kassiert: 270 €')).toBeInTheDocument()
   })
 
-  it('defaults the date picker to today (YYYY-MM-DD)', async () => {
+  it('shows the day it was handed, in the format the input speaks', async () => {
     vi.mocked(api.list).mockResolvedValue([])
 
-    render(<List onSelect={() => {}} />)
+    renderList({ date: '2026-07-09' })
 
     const dateInput = screen.getByLabelText('Datum') as HTMLInputElement
-    expect(dateInput.value).toBe(today())
+    expect(dateInput.value).toBe('2026-07-09')
+    expect(api.list).toHaveBeenCalledWith('2026-07-09')
     await screen.findByText('Keine Registrierungen für dieses Datum.')
+  })
+
+  it('offers "Heute" only while it would take the operator somewhere', async () => {
+    const onDateChange = vi.fn()
+    vi.mocked(api.list).mockResolvedValue([])
+
+    const { unmount } = renderList({ date: '2026-07-09', onDateChange })
+    await screen.findByText('Keine Registrierungen für dieses Datum.')
+
+    const heute = screen.getByRole('button', { name: 'Heute' })
+    expect(heute).toBeEnabled()
+    await userEvent.click(heute)
+    expect(onDateChange).toHaveBeenCalledWith(today())
+
+    unmount()
+    renderList({ date: today(), onDateChange })
+    await screen.findByText('Keine Registrierungen für dieses Datum.')
+    expect(screen.getByRole('button', { name: 'Heute' })).toBeDisabled()
   })
 
   it('counts a single written redemption the way the banner counts one', async () => {
@@ -237,7 +264,7 @@ describe('List', () => {
       path: 'C:/export/Tandem_2026-07-09.xlsx', count: 1,
       redemptionsWritten: 1, redemptionsPending: 0, redemptionsInvalid: 0,
     })
-    render(<List onSelect={() => {}} />)
+    renderList()
     await screen.findByText('Keine Registrierungen für dieses Datum.')
 
     await user.click(screen.getByRole('button', { name: 'Exportieren' }))
@@ -250,7 +277,7 @@ describe('List', () => {
 
   it('says how many redemptions the club list is still missing', async () => {
     vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 2 })
-    render(<List onSelect={vi.fn()} />)
+    renderList({ onSelect: vi.fn() })
 
     expect(await screen.findByText(/2 Einlösungen noch nicht/)).toBeInTheDocument()
   })

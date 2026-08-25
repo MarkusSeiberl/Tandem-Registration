@@ -2,7 +2,7 @@ import { test, expect, afterEach } from 'vitest'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
-import { loadConfig, saveConfig, DEFAULT_PAYOUTS, DEFAULT_PRICES } from '../src/server/config'
+import { loadConfig, saveConfig, withBoldMarkers, DEFAULT_PAYOUTS, DEFAULT_PRICES } from '../src/server/config'
 
 const tmpDirs: string[] = []
 
@@ -63,4 +63,36 @@ test('prices survive a save/load round trip', async () => {
   cfg.prices.jump = 300
   saveConfig(dir, cfg)
   expect(loadConfig(dir).prices.jump).toBe(300)
+})
+
+test('the default Vertragstext carries the bold markers the paper contract prints', async () => {
+  const dir = await makeDir()
+  expect(loadConfig(dir).contractText).toContain('**Absprung:**')
+  expect(loadConfig(dir).contractText).toContain('**Freier Fall:**')
+})
+
+test('a Vertragstext written before the markers gets them on load', async () => {
+  // What every existing installation has on disk: the old default, unmarked.
+  const dir = await makeDir({
+    contractText: 'Einweisung:\nAbsprung: Hohlkreuz\nFreier Fall: atmen',
+  })
+  expect(loadConfig(dir).contractText).toBe(
+    'Einweisung:\n**Absprung:** Hohlkreuz\n**Freier Fall:** atmen'
+  )
+})
+
+test('a text that already carries markers is left exactly as it is', () => {
+  // Including a club that deliberately un-bolded one of the old passages: once
+  // there are markers, the markers are the whole truth.
+  const text = 'Absprung: schlicht\n**Freier Fall:** fett'
+  expect(withBoldMarkers(text)).toBe(text)
+})
+
+test('a text without any of the known passages is left alone', () => {
+  expect(withBoldMarkers('Ein ganz eigener Vertrag.')).toBe('Ein ganz eigener Vertrag.')
+})
+
+test('the Datenschutztext is not marked up behind the club back', async () => {
+  const dir = await makeDir({ privacyText: 'Absprung: steht hier zufaellig' })
+  expect(loadConfig(dir).privacyText).toBe('Absprung: steht hier zufaellig')
 })

@@ -6,12 +6,22 @@ import Settings from './Settings'
 import BrandMark from './BrandMark'
 import Urkunde from './Urkunde'
 import type { Registration } from './api'
+import { rememberDate, storedDate } from './date'
 
 type View = 'list' | 'detail' | 'stammdaten' | 'settings'
 
 function App() {
   const [view, setView] = useState<View>('list')
   const [selected, setSelected] = useState<Registration | null>(null)
+
+  // Held here, not in List: List is unmounted by every other tab and by opening
+  // a registration, and a chosen day must outlive that.
+  const [date, setDate] = useState(storedDate)
+
+  function chooseDate(next: string) {
+    setDate(next)
+    rememberDate(next)
+  }
 
   function openDetail(registration: Registration) {
     setSelected(registration)
@@ -64,7 +74,7 @@ function App() {
         </nav>
 
         <main className={view === 'list' ? 'view' : 'view view-wide'}>
-          {view === 'list' && <List onSelect={openDetail} />}
+          {view === 'list' && <List onSelect={openDetail} date={date} onDateChange={chooseDate} />}
           {view === 'detail' && selected && (
             <Detail registration={selected} onBack={closeDetail} onSaved={setSelected} />
           )}

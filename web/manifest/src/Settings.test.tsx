@@ -271,4 +271,33 @@ describe('Settings', () => {
     expect(screen.queryByLabelText('Tandemsprung')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Tandemmaster pro Sprung')).not.toBeInTheDocument()
   })
+
+  it('shows the Vertragstext with its bold passages, and can set one', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.getSettings).mockResolvedValue({
+      ...CONFIG,
+      contractText: 'Vor **Absprung:** danach',
+    })
+
+    render(<Settings />)
+    await screen.findByLabelText('Vertragstext')
+    // The contract shares the panel with the privacy notice; only one is open.
+    await user.click(screen.getByRole('tab', { name: 'Vertragstext' }))
+
+    const area = screen.getByLabelText('Vertragstext') as HTMLTextAreaElement
+    const panel = screen.getByRole('tabpanel', { name: 'Vertrag' })
+
+    // The editor keeps the markers; the preview below it shows the result.
+    expect(area.value).toBe('Vor **Absprung:** danach')
+    expect(panel.querySelector('.text-preview strong')?.textContent).toBe('Absprung:')
+
+    // Selecting "danach" and pressing Fett marks it up in the text.
+    area.focus()
+    area.setSelectionRange(18, 24)
+    await user.click(within(panel).getByRole('button', { name: /Fett/ }))
+
+    expect((screen.getByLabelText('Vertragstext') as HTMLTextAreaElement).value).toBe(
+      'Vor **Absprung:** **danach**'
+    )
+  })
 })

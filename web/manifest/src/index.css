@@ -927,6 +927,58 @@ h2 {
   }
 }
 
+/* Bold button and its explanation, above the text it acts on. */
+.text-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.text-toolbar .field-hint {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* What the tablet will show, drawn with the guest app's own renderer. Scrolls
+   on its own so a long contract cannot push the editor off the panel. */
+.text-preview {
+  flex: 1;
+  min-height: 120px;
+  max-height: 40vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  padding: 0 12px 10px;
+}
+
+.text-preview p {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Sticks to the top of the box while its text scrolls under it: without the
+   label a reader cannot tell the preview from a second editor. In flow rather
+   than laid over, so the first line of the text starts below it and not under
+   it. */
+.text-preview-label {
+  position: sticky;
+  top: 0;
+  display: block;
+  margin: 0 -12px 8px;
+  padding: 3px 12px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.65;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+}
+
 /* Speichern sits between the two secondary actions and the delete, not at the
    far edge of the bar — `.save-bar .btn.primary { margin-left: auto }` would
    push it past them. Chained onto `.save-bar` rather than left as a same-

@@ -60,6 +60,14 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   // there is no later sign screen anymore.
   const canvas = page.locator('canvas.signature-pad')
   await expect(canvas).toBeVisible()
+  // page.mouse works in viewport coordinates and does not scroll on its own.
+  // The contract text opens screen-tall and gives that height back as the page
+  // scrolls (useContractCollapse), so the pad starts well below the fold.
+  // Scrolling to the bottom first also saturates the collapse at its minimum,
+  // which is what makes the pad's box stable enough to draw on.
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  await canvas.scrollIntoViewIfNeeded()
+  await expect(canvas).toBeInViewport()
   const box = await canvas.boundingBox()
   if (!box) throw new Error('signature canvas has no bounding box')
   await page.mouse.move(box.x + 20, box.y + 20)

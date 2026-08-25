@@ -147,4 +147,15 @@ describe('Contract', () => {
       screen.getByText('Es liegt derzeit kein Vertragstext vor. Bitte wende dich an das Personal.')
     )
   })
+
+  it('leaves the height to the stylesheet where nothing can be measured', async () => {
+    // jsdom lays nothing out, which is exactly the case useContractCollapse has
+    // to fall back from: no inline height, so `max-height: 40vh` still governs.
+    render(<Contract onNext={vi.fn()} />)
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    const box = screen.getByRole('region', { name: 'Teilnahmebedingungen' })
+    expect(box.style.height).toBe('')
+    expect(document.querySelector('.contract-spacer')).not.toBeInTheDocument()
+  })
 })

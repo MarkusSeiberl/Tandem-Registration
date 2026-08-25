@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactNode, UIEvent as ReactUIEvent } from 'react'
 import { getContract, getPrivacyText } from './api'
+import { useContractCollapse } from './useContractCollapse'
 
 export interface ContractProps {
   onNext: (signaturePng: string) => void
@@ -47,7 +48,22 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
   // before "Weiter" unlocks (in addition to signing). A contract short enough
   // to fit without scrolling counts as read immediately (see the effect below).
   const textRef = useRef<HTMLDivElement | null>(null)
+  const hintRef = useRef<HTMLParagraphElement | null>(null)
   const [scrolledToEnd, setScrolledToEnd] = useState(false)
+
+  // The form screen is left mid-scroll, and swapping screens does not move the
+  // page: without this the guest arrives at the contract already scrolled past
+  // its top — with a screen-tall text box, above the box entirely.
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [])
+
+  // The text box opens as tall as the screen and gives that height back to the
+  // page once the guest has read to the end — see useContractCollapse.
+  const { height: textHeight, spacerHeight } = useContractCollapse(textRef, hintRef, {
+    ready: !loading,
+    scrolledToEnd,
+  })
 
   // The data-protection notice is its own act, not a line buried in the contract:
   // an acknowledgement bundled into a wall of other text is the packaging Art. 7
@@ -188,6 +204,7 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
           role="region"
           aria-label="Teilnahmebedingungen"
           onScroll={handleScroll}
+          style={textHeight === null ? undefined : { height: textHeight, maxHeight: 'none' }}
         >
           {loading && <p>Lade Vertragstext…</p>}
           {!loading && loadError && <p className="error">{loadError}</p>}
@@ -202,7 +219,7 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
         <div className="perforation" />
 
         {!scrolledToEnd && (
-          <p className="scroll-hint">
+          <p className="scroll-hint" ref={hintRef}>
             Bitte den gesamten Vertrag lesen — nach unten scrollen, um fortzufahren.
           </p>
         )}
@@ -297,6 +314,15 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
           {submitting ? 'Wird gesendet…' : 'Weiter'}
         </button>
       </div>
+
+      {/*
+        Takes on exactly what the text box gave up. Without it the document
+        shortens as fast as the guest scrolls, the browser clamps the scroll
+        position, and the collapse stalls halfway.
+      */}
+      {spacerHeight > 0 && (
+        <div className="contract-spacer" style={{ height: spacerHeight }} aria-hidden="true" />
+      )}
     </section>
   )
 }

@@ -43,7 +43,10 @@ test('the contract fills the screen and nothing inside it scrolls on its own', a
   expect(geometry.height).toBeGreaterThan(geometry.viewport)
 
   await expect(page.locator('.scroll-hint')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Anmeldung abschicken' })).toBeDisabled()
+
+  // Sending from here says what is missing instead of sitting there greyed out.
+  await page.getByRole('button', { name: 'Anmeldung abschicken' }).click()
+  await expect(page.getByText('Bitte lies zuerst den gesamten Vertrag.')).toBeVisible()
 })
 
 test('the reading hint stays on screen while there is contract left to read', async ({ page }) => {

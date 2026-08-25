@@ -70,6 +70,7 @@ function App() {
               setScreen('contract')
             }}
             onCancel={resetToWelcome}
+            initialValues={formValues}
           />
         </>
       )}
@@ -79,6 +80,13 @@ function App() {
           <Contract
             onNext={handleSign}
             onCancel={resetToWelcome}
+            // Back to the form with everything still in it. The signature is
+            // not kept: it belongs to the data it was drawn under, and that is
+            // exactly what the guest went back to change.
+            onBack={() => {
+              setSubmitErrors(null)
+              setScreen('form')
+            }}
             submitting={submitting}
             errors={submitErrors}
           />

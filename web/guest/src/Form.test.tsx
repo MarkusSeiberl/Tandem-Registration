@@ -301,4 +301,37 @@ describe('Form field navigation', () => {
     expect(screen.getByLabelText('Alter')).toHaveFocus()
     expect(screen.getByText('Alter ungültig (1–120)')).toBeInTheDocument()
   })
+
+  it('comes back filled in when the guest returns from the contract', async () => {
+    const onNext = vi.fn()
+    render(
+      <Form
+        onNext={onNext}
+        initialValues={{
+          first_name: 'Max',
+          last_name: 'Mustermann',
+          gender: 'male',
+          age: 30,
+          height_cm: 182,
+          weight_kg: 85,
+          street: 'Musterstraße 1',
+          postal_code: '4240',
+          city: 'Freistadt',
+          email: 'max@example.at',
+          phone: '0660123456',
+        }}
+      />
+    )
+
+    expect(screen.getByLabelText('Vorname')).toHaveValue('Max')
+    expect(screen.getByLabelText('Alter')).toHaveValue(30)
+    expect(screen.getByLabelText('PLZ')).toHaveValue('4240')
+    expect(screen.getByRole('radio', { name: 'männlich' })).toBeChecked()
+
+    // Filled means valid: the guest can go straight back on without retyping.
+    expect(screen.getByRole('button', { name: 'Weiter' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Weiter' }))
+    expect(onNext).toHaveBeenCalledTimes(1)
+    expect(onNext.mock.calls[0][0].first_name).toBe('Max')
+  })
 })

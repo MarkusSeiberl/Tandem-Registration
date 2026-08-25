@@ -53,64 +53,92 @@ describe('Contract', () => {
     vi.restoreAllMocks()
   })
 
-  it('shows the contract text and enables sending only after a signature is drawn', async () => {
+  it('sends the signature once the contract is signed and the notice accepted', async () => {
     const onNext = vi.fn()
     render(<Contract onNext={onNext} />)
 
     await waitFor(() => screen.getByText('Vertragstext hier.'))
 
-    const submit = screen.getByRole('button', { name: 'Anmeldung abschicken' })
-    expect(submit).toBeDisabled()
-
     sign()
     acknowledgePrivacy()
-
-    expect(submit).toBeEnabled()
-
-    fireEvent.click(submit)
+    fireEvent.click(screen.getByRole('button', { name: 'Anmeldung abschicken' }))
 
     expect(onNext).toHaveBeenCalledTimes(1)
     expect(onNext.mock.calls[0][0]).toBe('data:image/png;base64,AAAA')
   })
 
-  it('"Löschen" repaints the background and disables sending again', async () => {
+  it('marks the data-protection box when the guest sends without ticking it', async () => {
     const onNext = vi.fn()
     render(<Contract onNext={onNext} />)
     await waitFor(() => screen.getByText('Vertragstext hier.'))
 
-    const submit = screen.getByRole('button', { name: 'Anmeldung abschicken' })
-    const clear = screen.getByRole('button', { name: 'Löschen' })
+    sign()
+    fireEvent.click(screen.getByRole('button', { name: 'Anmeldung abschicken' }))
+
+    expect(onNext).not.toHaveBeenCalled()
+    const box = screen.getByRole('checkbox')
+    expect(box).toHaveAttribute('aria-invalid', 'true')
+    expect(box).toHaveFocus()
+    expect(
+      screen.getByText('Bitte bestätige die Datenschutzinformation, um fortzufahren.')
+    ).toBeInTheDocument()
+
+    // Ticking it takes the mark away again — the guest fixed what was asked.
+    acknowledgePrivacy()
+    expect(screen.getByRole('checkbox')).toHaveAttribute('aria-invalid', 'false')
+    expect(
+      screen.queryByText('Bitte bestätige die Datenschutzinformation, um fortzufahren.')
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Anmeldung abschicken' }))
+    expect(onNext).toHaveBeenCalledTimes(1)
+  })
+
+  it('marks the signature pad when the guest sends without signing', async () => {
+    const onNext = vi.fn()
+    render(<Contract onNext={onNext} />)
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    acknowledgePrivacy()
+    fireEvent.click(screen.getByRole('button', { name: 'Anmeldung abschicken' }))
+
+    expect(onNext).not.toHaveBeenCalled()
+    expect(screen.getByText('Bitte unterschreibe im Feld oben.')).toBeInTheDocument()
+    expect(document.querySelector('canvas.signature-pad')).toHaveClass('missing')
+  })
+
+  it('"Unterschrift löschen" repaints the background and holds the send back again', async () => {
+    const onNext = vi.fn()
+    render(<Contract onNext={onNext} />)
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    const clear = screen.getByRole('button', { name: 'Unterschrift löschen' })
+    // Nothing drawn yet, nothing to clear.
+    expect(clear).toBeDisabled()
 
     sign()
     acknowledgePrivacy()
-    expect(submit).toBeEnabled()
+    expect(clear).toBeEnabled()
 
     fireEvent.click(clear)
+    fireEvent.click(screen.getByRole('button', { name: 'Anmeldung abschicken' }))
 
-    expect(submit).toBeDisabled()
     expect(onNext).not.toHaveBeenCalled()
+    expect(screen.getByText('Bitte unterschreibe im Feld oben.')).toBeInTheDocument()
   })
 
-  it('keeps sending shut on a signature alone, without the data-protection box', async () => {
-    const onNext = vi.fn()
-    render(<Contract onNext={onNext} />)
+  it('offers a way back to the form, and only when there is one', async () => {
+    const onBack = vi.fn()
+    const { unmount } = render(<Contract onNext={vi.fn()} onBack={onBack} />)
     await waitFor(() => screen.getByText('Vertragstext hier.'))
 
-    sign()
+    fireEvent.click(screen.getByRole('button', { name: 'Zurück' }))
+    expect(onBack).toHaveBeenCalledTimes(1)
 
-    const submit = screen.getByRole('button', { name: 'Anmeldung abschicken' })
-    expect(submit).toBeDisabled()
-    fireEvent.click(submit)
-    expect(onNext).not.toHaveBeenCalled()
-  })
-
-  it('keeps sending shut on the box alone, without a signature', async () => {
+    unmount()
     render(<Contract onNext={vi.fn()} />)
     await waitFor(() => screen.getByText('Vertragstext hier.'))
-
-    acknowledgePrivacy()
-
-    expect(screen.getByRole('button', { name: 'Anmeldung abschicken' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Zurück' })).not.toBeInTheDocument()
   })
 
   it('shows the full data-protection notice on request', async () => {
@@ -128,7 +156,8 @@ describe('Contract', () => {
   it('offers no box to tick when the notice could not be loaded', async () => {
     // Ticking a box that stands for nothing would be worse than not offering it.
     vi.spyOn(api, 'getPrivacyText').mockRejectedValue(new Error('offline'))
-    render(<Contract onNext={vi.fn()} />)
+    const onNext = vi.fn()
+    render(<Contract onNext={onNext} />)
 
     await waitFor(() =>
       screen.getByText(
@@ -136,7 +165,11 @@ describe('Contract', () => {
       )
     )
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Anmeldung abschicken' })).toBeDisabled()
+
+    // Without a box to tick there is nothing to accept, so sending stays shut.
+    sign()
+    fireEvent.click(screen.getByRole('button', { name: 'Anmeldung abschicken' }))
+    expect(onNext).not.toHaveBeenCalled()
   })
 
   it('marks the end of the contract for the read gate to watch', async () => {

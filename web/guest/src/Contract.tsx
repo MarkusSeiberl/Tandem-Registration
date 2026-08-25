@@ -6,6 +6,8 @@ import { useReachedEnd } from './useReachedEnd'
 export interface ContractProps {
   onNext: (signaturePng: string) => void
   onCancel?: () => void
+  /** Back to the form, with what the guest already typed still in it. */
+  onBack?: () => void
   submitting?: boolean
   errors?: string[] | null
 }
@@ -35,7 +37,13 @@ function renderWithBoldPhrases(text: string): ReactNode[] {
     .map((part, i) => (BOLD_PHRASES.includes(part) ? <strong key={i}>{part}</strong> : part))
 }
 
-export default function Contract({ onNext, onCancel, submitting, errors }: ContractProps) {
+export default function Contract({
+  onNext,
+  onCancel,
+  onBack,
+  submitting,
+  errors,
+}: ContractProps) {
   const [text, setText] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -43,6 +51,14 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const drawingRef = useRef(false)
   const [hasDrawn, setHasDrawn] = useState(false)
+
+  const privacyCheckRef = useRef<HTMLInputElement | null>(null)
+  const signSectionRef = useRef<HTMLDivElement | null>(null)
+
+  // Set by an attempt to send that could not go through. It is what turns the
+  // three conditions from silent facts into marks on the screen: a disabled
+  // button says that something is missing, but never which.
+  const [attempted, setAttempted] = useState(false)
 
   // Proof-of-reading gate: the contract text is not a scroll box of its own —
   // it lies at full length on the page, and the page is the only thing that
@@ -163,9 +179,28 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
     setHasDrawn(false)
   }
 
+  const missingRead = !scrolledToEnd
+  const missingPrivacy = !privacyAccepted
+  const missingSignature = !hasDrawn
+
   function handleNext() {
     const canvas = canvasRef.current
-    if (!canvas || !hasDrawn || !privacyAccepted) return
+    if (!canvas) return
+
+    if (missingRead || missingPrivacy || missingSignature) {
+      setAttempted(true)
+      // Take the guest to the first thing they can act on. Not to the end of
+      // the contract when that is what is missing — scrolling there for them
+      // would open the read gate on their behalf, which is the one thing it
+      // exists to prevent. The pinned hint already says what to do.
+      if (!missingRead) {
+        const target = missingPrivacy ? privacyCheckRef.current : signSectionRef.current
+        target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        if (missingPrivacy) privacyCheckRef.current?.focus()
+      }
+      return
+    }
+
     onNext(canvas.toDataURL('image/png'))
   }
 
@@ -225,33 +260,62 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
                 </div>
               )}
 
-              <label className="privacy-check">
+              <label className={`privacy-check${attempted && missingPrivacy ? ' missing' : ''}`}>
                 <input
+                  ref={privacyCheckRef}
                   type="checkbox"
                   checked={privacyAccepted}
+                  aria-invalid={attempted && missingPrivacy}
+                  aria-describedby={attempted && missingPrivacy ? 'privacy-missing' : undefined}
                   onChange={(e) => setPrivacyAccepted(e.target.checked)}
                 />
                 Ich habe die Datenschutzinformation gelesen und stimme der Verarbeitung meiner
                 Daten zur Abwicklung des Tandemsprungs zu.
               </label>
+
+              {attempted && missingPrivacy && (
+                <p className="missing-note" id="privacy-missing" role="alert">
+                  Bitte bestätige die Datenschutzinformation, um fortzufahren.
+                </p>
+              )}
             </>
           )}
         </div>
 
-        <div className="sign-section">
+        <div className="sign-section" ref={signSectionRef}>
           <h2>Unterschrift</h2>
           <p>Mit deiner Unterschrift bestätigst du, den Vertrag gelesen und akzeptiert zu haben.</p>
           <canvas
             ref={canvasRef}
             width={CANVAS_WIDTH}
             height={CANVAS_HEIGHT}
-            className="signature-pad"
+            className={`signature-pad${attempted && missingSignature ? ' missing' : ''}`}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={stopDrawing}
             onPointerLeave={stopDrawing}
             onPointerCancel={stopDrawing}
           />
+
+          {/* Directly under the pad it clears, not down in the row of buttons
+              that leave the screen: there, "Löschen" reads like it might throw
+              away the whole registration. */}
+          <div className="sign-actions">
+            <button
+              type="button"
+              className="btn secondary btn-small"
+              onClick={handleClear}
+              disabled={!hasDrawn || submitting}
+            >
+              Unterschrift löschen
+            </button>
+          </div>
+
+          {attempted && missingSignature && (
+            <p className="missing-note" role="alert">
+              Bitte unterschreibe im Feld oben.
+            </p>
+          )}
         </div>
       </div>
 
@@ -272,21 +336,27 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
         </ul>
       )}
 
+      {attempted && missingRead && (
+        <p className="missing-note" role="alert">
+          Bitte lies zuerst den gesamten Vertrag.
+        </p>
+      )}
+
       <div className="actions">
+        {onBack && (
+          <button type="button" className="btn secondary" onClick={onBack} disabled={submitting}>
+            Zurück
+          </button>
+        )}
         {onCancel && (
           <button type="button" className="btn secondary" onClick={onCancel} disabled={submitting}>
             Abbrechen
           </button>
         )}
-        <button type="button" className="btn secondary" onClick={handleClear} disabled={submitting}>
-          Löschen
-        </button>
-        <button
-          type="button"
-          className="btn primary"
-          disabled={!hasDrawn || !scrolledToEnd || !privacyAccepted || submitting}
-          onClick={handleNext}
-        >
+        {/* Not disabled while something is missing: a grey button tells the
+            guest that they may not send, never what to fix. Pressing it says
+            both. */}
+        <button type="button" className="btn primary" disabled={submitting} onClick={handleNext}>
           {submitting ? 'Wird gesendet…' : 'Anmeldung abschicken'}
         </button>
       </div>

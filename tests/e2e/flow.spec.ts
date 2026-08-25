@@ -74,10 +74,11 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
 
   const send = page.getByRole('button', { name: 'Anmeldung abschicken' })
   // Signing is not enough on its own: the data-protection notice has to be
-  // acknowledged as a separate act before the registration can be sent.
-  await expect(send).toBeDisabled()
+  // acknowledged as a separate act before the registration can be sent. Sending
+  // without it marks the box rather than going through.
+  await send.click()
+  await expect(page.locator('.privacy-check input')).toHaveAttribute('aria-invalid', 'true')
   await page.locator('.privacy-check input').check()
-  await expect(send).toBeEnabled()
 
   const [submitResponse] = await Promise.all([
     page.waitForResponse(

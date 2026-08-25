@@ -36,6 +36,9 @@ export interface FormValues {
 export interface FormProps {
   onNext: (values: FormValues) => void
   onCancel?: () => void
+  /** What the guest typed last time round, when they came back from the
+   *  contract screen to correct something. */
+  initialValues?: FormValues | null
 }
 
 interface RawValues {
@@ -66,6 +69,40 @@ interface Errors {
   phone?: string
 }
 
+const EMPTY: RawValues = {
+  firstName: '',
+  lastName: '',
+  gender: '',
+  age: '',
+  height: '',
+  weight: '',
+  street: '',
+  postalCode: '',
+  city: '',
+  email: '',
+  phone: '',
+}
+
+// The form works in strings — that is what an input holds, and what lets a
+// half-typed number stay half-typed. Coming back from the contract, the
+// validated values have to be turned back into exactly those strings.
+function toRaw(values: FormValues | null | undefined): RawValues {
+  if (!values) return EMPTY
+  return {
+    firstName: values.first_name,
+    lastName: values.last_name,
+    gender: values.gender,
+    age: String(values.age),
+    height: String(values.height_cm),
+    weight: String(values.weight_kg),
+    street: values.street,
+    postalCode: values.postal_code,
+    city: values.city,
+    email: values.email,
+    phone: values.phone,
+  }
+}
+
 const LAST_FIELD: FieldName = FIELD_CHAIN[FIELD_CHAIN.length - 1]
 
 function isInt(v: string, lo: number, hi: number): boolean {
@@ -91,20 +128,8 @@ function validate(v: RawValues): Errors {
   return e
 }
 
-export default function Form({ onNext, onCancel }: FormProps) {
-  const [values, setValues] = useState<RawValues>({
-    firstName: '',
-    lastName: '',
-    gender: '',
-    age: '',
-    height: '',
-    weight: '',
-    street: '',
-    postalCode: '',
-    city: '',
-    email: '',
-    phone: '',
-  })
+export default function Form({ onNext, onCancel, initialValues }: FormProps) {
+  const [values, setValues] = useState<RawValues>(() => toRaw(initialValues))
   const [touched, setTouched] = useState<Record<string, boolean>>({})
 
   // Which field the cursor sits in. Fed by every field's onFocus rather than by

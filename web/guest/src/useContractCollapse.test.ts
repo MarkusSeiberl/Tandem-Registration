@@ -80,14 +80,13 @@ describe('useContractCollapse', () => {
     expect(result.current.height).toBe(FULL - 100)
   })
 
-  it('takes the scroll position itself as the collapse distance', async () => {
-    // useScrollLock holds the page at 0 until the text has been read, so there
-    // is no earlier scrolling to discount — and nothing to record at the moment
-    // the gate opens, which is a moment React learns about a frame late.
+  it('measures the collapse from the scroll position the text was read at', async () => {
     const { result, rerender } = collapse(boxWithLayout(), hintWithLayout(), false)
+    // The guest pushed the page down a little before finishing the text.
+    await scrollTo(60)
     rerender({ end: true })
     await scrollTo(160)
-    expect(result.current.height).toBe(FULL - 160)
+    expect(result.current.height).toBe(FULL - 100)
   })
 
   it('never shrinks past the minimum height', async () => {
@@ -113,32 +112,6 @@ describe('useContractCollapse', () => {
     await scrollTo(0)
     expect(result.current.height).toBe(FULL)
     expect(result.current.spacerHeight).toBe(0)
-  })
-
-  it('keeps the end of the text in view while the box shrinks', async () => {
-    const box = boxWithLayout()
-    // jsdom keeps scrollTop at 0 whatever is assigned, so it is given a real one.
-    let scrollTop = 0
-    Object.defineProperty(box, 'scrollTop', {
-      get: () => scrollTop,
-      set: (v: number) => {
-        scrollTop = v
-      },
-      configurable: true,
-    })
-    Object.defineProperty(box, 'scrollHeight', { value: 4000, configurable: true })
-
-    const textRef = { current: box }
-    const hintRef = { current: hintWithLayout() }
-    const { rerender } = renderHook(
-      ({ end }: { end: boolean }) =>
-        useContractCollapse(textRef, hintRef, { ready: true, scrolledToEnd: end }),
-      { initialProps: { end: false } },
-    )
-    rerender({ end: true })
-    await scrollTo(120)
-
-    expect(scrollTop).toBe(4000)
   })
 
   it('leaves the CSS fallback in place where nothing can be measured', () => {

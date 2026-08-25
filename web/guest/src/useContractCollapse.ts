@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
 export interface ContractCollapse {
@@ -45,11 +45,6 @@ export function useContractCollapse(
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [collapsed, setCollapsed] = useState(0)
 
-  // The scroll position at which the text was read to the end. The collapse is
-  // measured from there, not from the top of the document: a guest who nudged
-  // the page down while reading must not find the box already half shut.
-  const baselineRef = useRef<number | null>(null)
-
   // The hint is unmounted the moment the gate opens, so its height is kept here
   // for later re-measurements (a rotated tablet) — otherwise the box would grow
   // by the height of an element that is no longer there.
@@ -91,22 +86,15 @@ export function useContractCollapse(
   }, [ready, textRef, hintRef])
 
   useEffect(() => {
-    if (!scrolledToEnd) {
-      baselineRef.current = null
-      setCollapsed(0)
-      return
-    }
-    baselineRef.current = window.scrollY
-  }, [scrolledToEnd])
-
-  useEffect(() => {
     if (!metrics || !scrolledToEnd) return
 
     let frame = 0
     const apply = () => {
       frame = 0
-      const travelled = window.scrollY - (baselineRef.current ?? window.scrollY)
-      setCollapsed(Math.min(Math.max(travelled, 0), metrics.full - metrics.min))
+      // The page is held still until the text has been read (useScrollLock), so
+      // the scroll position *is* the collapse distance — no separate starting
+      // point to record, and none to record a frame too late either.
+      setCollapsed(Math.min(Math.max(window.scrollY, 0), metrics.full - metrics.min))
     }
     // `scroll` fires in dense bursts on a touch screen; one frame is one render.
     const onScroll = () => {
@@ -120,6 +108,17 @@ export function useContractCollapse(
       if (frame) cancelAnimationFrame(frame)
     }
   }, [metrics, scrolledToEnd])
+
+  // Shrinking a scroll box leaves its scrollTop where it was, so the end of the
+  // text would slide back out of view and the box would stop being "at the end"
+  // — the guest would watch the contract rewind while it collapses, and
+  // useTouchScrollChain would hand nothing over any more. Pinning it to the
+  // bottom on every step keeps the last line the last line.
+  useLayoutEffect(() => {
+    if (!scrolledToEnd || !metrics) return
+    const el = textRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [collapsed, scrolledToEnd, metrics, textRef])
 
   if (!metrics) return { height: null, spacerHeight: 0 }
   return { height: metrics.full - collapsed, spacerHeight: collapsed }

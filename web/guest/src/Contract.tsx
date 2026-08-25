@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactNode, UIEvent as ReactUIEvent } from 'react'
 import { getContract, getPrivacyText } from './api'
 import { useContractCollapse } from './useContractCollapse'
+import { useScrollLock } from './useScrollLock'
+import { useTouchScrollChain } from './useTouchScrollChain'
 
 export interface ContractProps {
   onNext: (signaturePng: string) => void
@@ -65,6 +67,15 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
     scrolledToEnd,
   })
 
+  // Until the contract has been read, the text box is the only thing on this
+  // screen that scrolls: the page itself is held still, so no drag beside the
+  // box can carry the guest past the contract to the signature.
+  const releaseScrollLock = useScrollLock(!scrolledToEnd)
+
+  // And when the text does run out mid-swipe, the rest of that swipe scrolls the
+  // page instead of dying against the end of the box.
+  useTouchScrollChain(textRef)
+
   // The data-protection notice is its own act, not a line buried in the contract:
   // an acknowledgement bundled into a wall of other text is the packaging Art. 7
   // Abs. 2 DSGVO does not accept. Loaded separately so the club can reword it
@@ -121,7 +132,12 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
 
   function handleScroll(e: ReactUIEvent<HTMLDivElement>) {
     const el = e.currentTarget
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 2) setScrolledToEnd(true)
+    if (el.scrollTop + el.clientHeight < el.scrollHeight - 2) return
+    setScrolledToEnd(true)
+    // Right now, not after the re-render: the finger that just reached the end
+    // of the text is still down and already pushing the page, and every frame
+    // the lock outlives this moment is a frame of that push thrown away.
+    releaseScrollLock()
   }
 
   function getContext(): CanvasRenderingContext2D | null {

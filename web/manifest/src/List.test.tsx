@@ -14,6 +14,8 @@ vi.mock('./api', () => ({
   patch: vi.fn(),
   getApiBase: vi.fn(() => ''),
   pendingRedemptions: vi.fn(),
+  dayTables: vi.fn(),
+  repriceDay: vi.fn(),
 }))
 
 // The day is a prop now — App owns it, so it outlives a trip to another tab.
@@ -65,9 +67,19 @@ function makeRow(overrides: Partial<Registration>): Registration {
 }
 
 describe('List', () => {
+  const PRICES = {
+    jump: 270, video: 100, video_photo: 120, weight_over_90: 40, weight_over_100: 60,
+  }
+  const PAYOUTS = { tandem_master: 45, video: 60, video_photo: 80 }
+
   beforeEach(() => {
     vi.mocked(api.masters).mockResolvedValue([])
     vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 0 })
+    // A day running on exactly what the settings say: nothing to warn about.
+    vi.mocked(api.dayTables).mockResolvedValue({
+      prices: PRICES, payouts: PAYOUTS, frozen: true,
+      current: { prices: PRICES, payouts: PAYOUTS },
+    })
   })
 
   it('renders one table row per registration', async () => {
@@ -280,5 +292,61 @@ describe('List', () => {
     renderList({ onSelect: vi.fn() })
 
     expect(await screen.findByText(/2 Einlösungen noch nicht/)).toBeInTheDocument()
+  })
+
+  // A jump day runs on the price list it was started with. Editing the settings
+  // afterwards is a decision about the next day — but the operator has to be
+  // able to see that the two have parted ways, and to fix it deliberately.
+  describe('a day older than the price list', () => {
+    const olderDay = {
+      prices: { ...PRICES, jump: 250 },
+      payouts: PAYOUTS,
+      frozen: true,
+      current: { prices: PRICES, payouts: PAYOUTS },
+    }
+
+    it('says so, and offers to move the whole day', async () => {
+      vi.mocked(api.list).mockResolvedValue([makeRow({})])
+      vi.mocked(api.dayTables).mockResolvedValue(olderDay)
+      // The server moves the day; from then on it answers that the two agree.
+      vi.mocked(api.repriceDay).mockImplementation(async () => {
+        vi.mocked(api.dayTables).mockResolvedValue({
+          prices: PRICES, payouts: PAYOUTS, frozen: true,
+          current: { prices: PRICES, payouts: PAYOUTS },
+        })
+        return { updated: 1 }
+      })
+      renderList({ date: '2026-07-09' })
+
+      await screen.findByText(/läuft auf der Preisliste von seinem Beginn/)
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Preise für diesen Tag aktualisieren' })
+      )
+
+      expect(api.repriceDay).toHaveBeenCalledWith('2026-07-09')
+      // And the banner goes away by asking again, not by assuming it worked.
+      await waitFor(() =>
+        expect(screen.queryByText(/läuft auf der Preisliste/)).not.toBeInTheDocument()
+      )
+    })
+
+    it('stays quiet while the day and the settings agree', async () => {
+      vi.mocked(api.list).mockResolvedValue([])
+      renderList()
+
+      await screen.findByText('Keine Registrierungen für dieses Datum.')
+      expect(screen.queryByText(/läuft auf der Preisliste/)).not.toBeInTheDocument()
+    })
+
+    it('stays quiet for a day nobody has registered on yet', async () => {
+      // Not settled, only quoted: there is nothing here that a price change
+      // would fail to reach.
+      vi.mocked(api.list).mockResolvedValue([])
+      vi.mocked(api.dayTables).mockResolvedValue({ ...olderDay, frozen: false })
+      renderList({ date: '2026-12-24' })
+
+      await screen.findByText('Keine Registrierungen für dieses Datum.')
+      expect(screen.queryByText(/läuft auf der Preisliste/)).not.toBeInTheDocument()
+    })
   })
 })

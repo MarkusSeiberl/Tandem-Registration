@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import {
-  checkVoucher, patch, remove, flyers as fetchFlyers, masters as fetchMasters, contractPdfUrl,
-  getSettings,
+  checkVoucher, dayTables, patch, remove, flyers as fetchFlyers, masters as fetchMasters,
+  contractPdfUrl,
 } from './api'
 import type {
-  CollectedVia, ExtraBooking, PaymentMethod, Prices, Registration, StammdatenItem,
+  CollectedVia, DayTables, ExtraBooking, PaymentMethod, Prices, Registration, StammdatenItem,
   VoucherCheck, VoucherService, WeightSurcharge,
 } from './api'
 import {
@@ -27,7 +27,12 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   const [masterList, setMasterList] = useState<StammdatenItem[]>([])
   const [flyerList, setFlyerList] = useState<StammdatenItem[]>([])
 
-  const [prices, setPrices] = useState<Prices | null>(null)
+  // The price list of the day this jump belongs to, frozen by that day's first
+  // registration. Every amount on this screen comes from it — which is what
+  // keeps the total here equal to the one in the list behind it and in the
+  // export. The settings table only decides what the NEXT day starts from.
+  const [day, setDay] = useState<DayTables | null>(null)
+  const prices: Prices | null = day?.prices ?? null
 
   const [tandemMasterId, setTandemMasterId] = useState<number | ''>(registration.tandem_master_id ?? '')
   const [loadNumber, setLoadNumber] = useState<number | ''>(registration.load_number ?? '')
@@ -53,11 +58,8 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   useEffect(() => {
     fetchMasters().then(setMasterList).catch(() => {})
     fetchFlyers().then(setFlyerList).catch(() => {})
-    // The amounts live in the settings so the club can change them between
-    // seasons; the breakdown below is only a preview of what the server will
-    // compute on save.
-    getSettings().then((cfg) => setPrices(cfg.prices)).catch(() => {})
-  }, [])
+    dayTables(registration.jump_date).then(setDay).catch(() => {})
+  }, [registration.jump_date])
 
   // A voucher number and the covered service only exist when the guest actually
   // paid with one.
@@ -128,6 +130,12 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
       }, prices)
     : []
   const computed = lines.reduce((sum, l) => sum + l.amount, 0)
+  // Worth saying out loud, once: the club edited a price after this jump day had
+  // started, so these amounts are no longer the list amounts. Changing that is a
+  // decision about the whole day, so the button for it lives in the manifest.
+  const dayOutdated =
+    day !== null && day.frozen &&
+    JSON.stringify(day.prices) !== JSON.stringify(day.current.prices)
   const due = priceOverride && price !== '' ? price : computed
   // A voucher moves no money by itself, so the till it lands in is only a
   // question once the guest actually owes something on top of it. The field stays
@@ -529,6 +537,14 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
                 <span className="numeral">{formatEuro(due)}</span>
               </div>
             </>
+          )}
+
+          {dayOutdated && (
+            <p className="price-outdated">
+              Dieser Sprungtag läuft auf der Preisliste vom Tagesbeginn
+              ({formatEuro(day!.prices.jump)} pro Sprung, aktuell {formatEuro(day!.current.prices.jump)}).
+              Im Manifest lässt sich der ganze Tag auf die aktuellen Preise umstellen.
+            </p>
           )}
 
           <label className="price-override-toggle">

@@ -14,6 +14,7 @@ vi.mock('./api', () => ({
   contractPdfUrl: vi.fn(() => '/api/registrations/1/contract.pdf'),
   getApiBase: vi.fn(() => ''),
   checkVoucher: vi.fn(),
+  dayTables: vi.fn(),
 }))
 
 const PRICES = {
@@ -85,10 +86,10 @@ describe('Detail', () => {
     vi.clearAllMocks()
     vi.mocked(api.masters).mockResolvedValue([])
     vi.mocked(api.flyers).mockResolvedValue([{ id: 7, name: 'Peter' }])
-    vi.mocked(api.getSettings).mockResolvedValue({
-      exportDir: '', contractText: '', privacyText: '', jumpLocation: '', backupDir: '',
-      voucherListPath: '',
-      prices: PRICES, payouts: PAYOUTS,
+    // The screen prices from the day the jump belongs to, not from the settings.
+    vi.mocked(api.dayTables).mockResolvedValue({
+      prices: PRICES, payouts: PAYOUTS, frozen: true,
+      current: { prices: PRICES, payouts: PAYOUTS },
     })
     vi.mocked(api.patch).mockImplementation(async (_id, fields) =>
       makeRegistration(fields as Partial<Registration>))
@@ -710,5 +711,44 @@ describe('Detail', () => {
     // never see it.
     await user.click(actions.getByRole('button', { name: 'Speichern' }))
     expect(await actions.findByText('Gespeichert.')).toBeInTheDocument()
+  })
+
+  describe('a jump day older than the price list', () => {
+    beforeEach(() => {
+      vi.mocked(api.dayTables).mockResolvedValue({
+        prices: { ...PRICES, jump: 250, video: 80 },
+        payouts: PAYOUTS,
+        frozen: true,
+        current: { prices: PRICES, payouts: PAYOUTS },
+      })
+    })
+
+    it('prices the row from the day, not from the settings', async () => {
+      renderDetail()
+      await screen.findByText('Zu kassieren')
+
+      expect(total()).toBe('250 €')
+    })
+
+    it('prices an added video from that same day list', async () => {
+      renderDetail()
+      await screen.findByText('Zu kassieren')
+
+      await userEvent.selectOptions(screen.getByLabelText(/Gebuchte Leistung/), 'video')
+
+      // 250 + 80 from the day, not 270 + 100 from the settings.
+      expect(total()).toBe('330 €')
+    })
+
+    it('says which list the day runs on, and where to change it', async () => {
+      renderDetail()
+      await screen.findByText('Zu kassieren')
+
+      expect(screen.getByText(/Preisliste vom Tagesbeginn/)).toBeInTheDocument()
+      // The action itself belongs to the day, so it lives in the manifest list.
+      expect(
+        screen.queryByRole('button', { name: /Preise für diesen Tag/ })
+      ).not.toBeInTheDocument()
+    })
   })
 })

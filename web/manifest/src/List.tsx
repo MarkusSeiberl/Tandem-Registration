@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { exportDay, list, masters as fetchMasters, patch, pendingRedemptions, remove } from './api'
-import type { Registration } from './api'
+import {
+  dayTables, exportDay, list, masters as fetchMasters, patch, pendingRedemptions,
+  remove, repriceDay,
+} from './api'
+import type { DayTables, Registration } from './api'
 import { useEvents } from './useEvents'
 import { extraBookingLabel, paymentLabel, weightSurchargeLabel } from './labels'
 import { formatEuro } from './pricing'
@@ -157,6 +160,10 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   const [deleting, setDeleting] = useState(false)
   const [pendingId, setPendingId] = useState<number | null>(null)
   const [pending, setPending] = useState(0)
+  // What this day runs on. The list is the screen that shows a day, so the day's
+  // prices — and the one action that changes them — belong here.
+  const [day, setDay] = useState<DayTables | null>(null)
+  const [repricing, setRepricing] = useState(false)
 
   const refresh = useCallback(() => {
     setLoading(true)
@@ -176,6 +183,16 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  // Cleared when the day changes so the banner cannot describe the day before;
+  // refetched after every refresh so it reflects a reprice straight away.
+  useEffect(() => {
+    setDay(null)
+  }, [date])
+
+  useEffect(() => {
+    dayTables(date).then(setDay).catch(() => {})
+  }, [date, rows])
 
   useEffect(() => {
     fetchMasters()
@@ -198,6 +215,27 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
 
   // Highest load number first — that's who boards next; unassigned (null)
   // registrations sort last.
+  // The club edited a price after this day had started. Nothing is wrong — the
+  // day is simply older than the price list — but it is worth offering the one
+  // action that fixes it, for the case where the table was wrong all along.
+  const dayOutdated =
+    day !== null && day.frozen &&
+    JSON.stringify(day.prices) !== JSON.stringify(day.current.prices)
+
+  async function handleReprice() {
+    setRepricing(true)
+    setError(null)
+    try {
+      await repriceDay(date)
+      refresh()
+      setDay(await dayTables(date))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Preise übernehmen fehlgeschlagen')
+    } finally {
+      setRepricing(false)
+    }
+  }
+
   const sortedRows = [...rows].sort((a, b) => (b.load_number ?? -1) - (a.load_number ?? -1))
   // Payment happens after the jump, so the open table is the working list and
   // the collected one is the archive of the day.
@@ -286,6 +324,25 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
             : `${pending} Einlösungen noch nicht in die Gutscheinliste geschrieben.`}
         </p>
       )}
+      {dayOutdated && (
+        <div className="day-outdated">
+          <p>
+            Dieser Tag läuft auf der Preisliste von seinem Beginn
+            ({formatEuro(day!.prices.jump)} pro Sprung, aktuell{' '}
+            {formatEuro(day!.current.prices.jump)}). Die Beträge bleiben so, bis jemand es
+            ausdrücklich ändert.
+          </p>
+          <button
+            type="button"
+            className="btn secondary small"
+            onClick={handleReprice}
+            disabled={repricing}
+          >
+            {repricing ? 'Wird übernommen…' : 'Preise für diesen Tag aktualisieren'}
+          </button>
+        </div>
+      )}
+
       <div className="list-toolbar">
         <label className="date-field">
           Datum

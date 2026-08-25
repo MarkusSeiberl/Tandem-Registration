@@ -139,7 +139,7 @@ export default function Betraege() {
     <section className="betraege-section">
       <AmountFields
         title="Preise (EUR)"
-        hint="Gilt für neu berechnete Preise. Bereits gespeicherte Registrierungen behalten ihren Preis."
+        hint="Gilt ab dem nächsten Sprungtag. Ein Tag, an dem schon jemand angemeldet ist, behält seine Preise — im Manifest lässt er sich auf Wunsch umstellen."
         fields={PRICE_FIELDS}
         inputs={priceInputs}
         onChange={(key, value) => {
@@ -150,7 +150,7 @@ export default function Betraege() {
 
       <AmountFields
         title="Vergütung (EUR)"
-        hint="Wird pro Sprung abgerechnet und erscheint im Excel-Export als eigener Block."
+        hint="Wird pro Sprung abgerechnet und erscheint im Excel-Export als eigener Block. Wie die Preise gilt sie ab dem nächsten Sprungtag."
         fields={PAYOUT_FIELDS}
         inputs={payoutInputs}
         onChange={(key, value) => {

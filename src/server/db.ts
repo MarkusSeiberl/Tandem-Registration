@@ -31,6 +31,14 @@ export function openDb(path: string, nativeBinding?: string): Database.Database 
     CREATE TABLE IF NOT EXISTS camera_flyers (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, active INTEGER DEFAULT 1);
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+    -- The price list and payout rates one jump day runs on, frozen by that day's
+    -- first registration. What a jump costs is a fact of the day it was flown,
+    -- not of whatever the settings screen says when someone later opens the row.
+    CREATE TABLE IF NOT EXISTS day_tables (
+      jump_date TEXT PRIMARY KEY,
+      prices TEXT NOT NULL,
+      payouts TEXT NOT NULL
+    );
   `)
   migrate(db)
   return db

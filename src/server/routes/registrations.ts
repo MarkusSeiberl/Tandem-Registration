@@ -11,6 +11,7 @@ import {
 } from '../pricing'
 import type { Config } from '../config'
 import { redeemVoucher } from '../voucherRedeem'
+import { dayIsFrozen, repriceDay, startDay, tablesForDay } from '../dayTables'
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -78,6 +79,10 @@ export function registerRegistrationRoutes(
     // voucher. The weight surcharge is the one exception: it follows from the
     // weight the guest just entered, so it is decided here rather than left for
     // someone to notice — and the starting price has to include it.
+    // The first registration of a jump day settles what that day costs; every
+    // later one is priced from the same list, however often the settings change
+    // in between.
+    const dayPrices = startDay(db, jumpDate, cfgRef.current).prices
     const weightSurcharge = surchargeForWeight(v.weight_kg)
     const info = db.prepare(`INSERT INTO registrations
       (first_name,last_name,gender,age,height_cm,weight_kg,
@@ -94,7 +99,7 @@ export function registerRegistrationRoutes(
         // data-protection notice is a record the club may have to stand behind.
         privacy_ack_at: new Date().toISOString(),
         jump_date: jumpDate, weight_surcharge: weightSurcharge,
-        price: computePrice({ weight_surcharge: weightSurcharge }, cfgRef.current.prices),
+        price: computePrice({ weight_surcharge: weightSurcharge }, dayPrices),
       })
     sse.broadcast('changed', { id: info.lastInsertRowid })
     // Best-effort desktop notification on the server machine; never blocks the
@@ -126,6 +131,36 @@ export function registerRegistrationRoutes(
   })
 
   app.get('/api/events', (req, reply) => sse.handler(req, reply))
+
+  const DATE = /^\d{4}-\d{2}-\d{2}$/
+
+  // What a given jump day runs on, and whether that still matches the settings.
+  // The manifest prices its breakdown from this, so the detail screen and the
+  // list can no longer show two different numbers for the same registration.
+  app.get('/api/day-tables/:date', async (req, reply) => {
+    const date = (req.params as any).date
+    if (!DATE.test(date)) return reply.code(400).send({ error: 'Datum ungültig' })
+    const tables = tablesForDay(db, date, cfgRef.current)
+    return {
+      ...tables,
+      // A day nobody has registered on yet is only quoted at today's tables —
+      // it is not settled, and saying so keeps the manifest from warning about
+      // a difference that does not exist yet.
+      frozen: dayIsFrozen(db, date),
+      current: { prices: cfgRef.current.prices, payouts: cfgRef.current.payouts },
+    }
+  })
+
+  // Moves one day onto today's tables: the deliberate exception, for the day
+  // that was already running when someone noticed the price list was wrong.
+  app.post('/api/day-tables/:date/reprice', async (req, reply) => {
+    const date = (req.params as any).date
+    if (!DATE.test(date)) return reply.code(400).send({ error: 'Datum ungültig' })
+    const updated = repriceDay(db, date, cfgRef.current, (row, prices) =>
+      computePrice(row as Parameters<typeof computePrice>[0], prices))
+    sse.broadcast('changed', { date })
+    return { updated }
+  })
 
   const ALLOWED = ['tandem_master_id', 'load_number', 'price', 'price_override',
     'payment_method', 'voucher_payment_method', 'voucher_number', 'voucher_service',
@@ -188,7 +223,11 @@ export function registerRegistrationRoutes(
     if ('price_override' in body) body.price_override = body.price_override ? 1 : 0
     const overridden = 'price_override' in body ? !!body.price_override : !!current.price_override
     if (!overridden && PRICING_FIELDS.some(k => k in body)) {
-      body.price = computePrice({ ...current, ...body }, cfgRef.current.prices)
+      // The price list of the day this jump belongs to, never the settings
+      // screen's. Saving a row for an unrelated reason therefore produces the
+      // amount it already had, however often the table was edited since.
+      const prices = tablesForDay(db, current.jump_date, cfgRef.current).prices
+      body.price = computePrice({ ...current, ...body }, prices)
     }
 
     const keys = ALLOWED.filter(k => k in body)

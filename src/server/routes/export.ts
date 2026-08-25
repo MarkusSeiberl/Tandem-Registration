@@ -9,6 +9,7 @@ import {
 } from '../labels'
 import { collectedVia } from '../pricing'
 import { payoutSections } from '../payouts'
+import { tablesForDay } from '../dayTables'
 import { redeemVoucher } from '../voucherRedeem'
 import type { Config } from '../config'
 
@@ -53,7 +54,10 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
 
     // Computed before the loop below, which overwrites the id columns with names —
     // the payout rule groups by id and reads the stored `extra_booking` enum.
-    const payouts = payoutSections(rows, masters, flyers, cfgRef.current.payouts)
+    // The rates this day was flown under, not the ones the settings carry today:
+    // an export of last Saturday has to say what was handed over that Saturday.
+    const dayPayouts = tablesForDay(db, date, cfgRef.current).payouts
+    const payouts = payoutSections(rows, masters, flyers, dayPayouts)
 
     // Every redemption that did not reach the club's file when the row was
     // collected gets one more attempt here. This is the "at latest at export"

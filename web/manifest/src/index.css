@@ -658,6 +658,38 @@ h2 {
   color: var(--text-h);
 }
 
+/* Both say the same thing in two places: this day's amounts and the settings
+   have parted ways. Ember, not red — nothing is broken, the day is simply older
+   than the price list. */
+.price-outdated {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--ember);
+  background: rgba(255, 106, 61, 0.08);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.day-outdated {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--ember);
+  border-radius: 8px;
+  background: rgba(255, 106, 61, 0.08);
+}
+
+.day-outdated p {
+  flex: 1;
+  min-width: 260px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .price-override-toggle {
   display: flex;
   align-items: center;

@@ -299,3 +299,30 @@ export async function pendingRedemptions(): Promise<{ count: number }> {
   if (!res.ok) throw new Error('Offene Einlösungen konnten nicht geladen werden')
   return asJson<{ count: number }>(res)
 }
+
+// What one jump day runs on: the price list and payout rates frozen by that
+// day's first registration, plus what the settings say right now, so a screen
+// can tell the operator that the two have parted ways.
+export interface DayTables {
+  prices: Prices
+  payouts: Payouts
+  /** False for a day nobody has registered on yet — it is quoted, not settled. */
+  frozen: boolean
+  current: { prices: Prices; payouts: Payouts }
+}
+
+export async function dayTables(date: string): Promise<DayTables> {
+  const res = await fetch(apiUrl(`/api/day-tables/${encodeURIComponent(date)}`))
+  if (!res.ok) throw new Error(await errorMessage(res, 'Tagespreise konnten nicht geladen werden'))
+  return asJson<DayTables>(res)
+}
+
+// Copies today's settings onto one day and re-prices its registrations, apart
+// from those carrying a manual correction.
+export async function repriceDay(date: string): Promise<{ updated: number }> {
+  const res = await fetch(apiUrl(`/api/day-tables/${encodeURIComponent(date)}/reprice`), {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(await errorMessage(res, 'Preise übernehmen fehlgeschlagen'))
+  return asJson<{ updated: number }>(res)
+}

@@ -47,12 +47,11 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
 
   await expect(page.getByRole('heading', { name: 'Teilnahmebedingungen' })).toBeVisible()
 
-  // Proof-of-reading gate: before scrolling, the hint is shown and "Weiter"
-  // stays locked. Scrolling the contract text to the end clears the hint.
+  // Proof-of-reading gate: before scrolling, the hint is shown and sending
+  // stays locked. The contract has no scroll box of its own — the page scrolls
+  // it — so the gate opens when the end of the text comes into view.
   await expect(page.locator('.scroll-hint')).toBeVisible()
-  await page.locator('.contract-text').evaluate((el) => {
-    el.scrollTo(0, el.scrollHeight)
-  })
+  await page.locator('.contract-end').scrollIntoViewIfNeeded()
   await expect(page.locator('.scroll-hint')).toBeHidden()
 
   // Draw a real multi-segment signature stroke on the canvas so `hasDrawn`
@@ -60,12 +59,8 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   // there is no later sign screen anymore.
   const canvas = page.locator('canvas.signature-pad')
   await expect(canvas).toBeVisible()
-  // page.mouse works in viewport coordinates and does not scroll on its own.
-  // The contract text opens screen-tall and gives that height back as the page
-  // scrolls (useContractCollapse), so the pad starts well below the fold.
-  // Scrolling to the bottom first also saturates the collapse at its minimum,
-  // which is what makes the pad's box stable enough to draw on.
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+  // page.mouse works in viewport coordinates and does not scroll on its own,
+  // and the pad sits a full contract's length down the page.
   await canvas.scrollIntoViewIfNeeded()
   await expect(canvas).toBeInViewport()
   const box = await canvas.boundingBox()
@@ -77,18 +72,18 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   await page.mouse.move(box.x + 220, box.y + 90)
   await page.mouse.up()
 
-  const signWeiter = page.getByRole('button', { name: 'Weiter' })
+  const send = page.getByRole('button', { name: 'Anmeldung abschicken' })
   // Signing is not enough on its own: the data-protection notice has to be
   // acknowledged as a separate act before the registration can be sent.
-  await expect(signWeiter).toBeDisabled()
+  await expect(send).toBeDisabled()
   await page.locator('.privacy-check input').check()
-  await expect(signWeiter).toBeEnabled()
+  await expect(send).toBeEnabled()
 
   const [submitResponse] = await Promise.all([
     page.waitForResponse(
       (r) => r.url().includes('/api/registrations') && r.request().method() === 'POST'
     ),
-    signWeiter.click(),
+    send.click(),
   ])
   expect(submitResponse.status()).toBe(201)
 

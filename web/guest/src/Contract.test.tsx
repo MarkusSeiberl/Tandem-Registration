@@ -53,13 +53,13 @@ describe('Contract', () => {
     vi.restoreAllMocks()
   })
 
-  it('shows the contract text and enables "Weiter" only after a signature is drawn', async () => {
+  it('shows the contract text and enables sending only after a signature is drawn', async () => {
     const onNext = vi.fn()
     render(<Contract onNext={onNext} />)
 
     await waitFor(() => screen.getByText('Vertragstext hier.'))
 
-    const submit = screen.getByRole('button', { name: 'Weiter' })
+    const submit = screen.getByRole('button', { name: 'Anmeldung abschicken' })
     expect(submit).toBeDisabled()
 
     sign()
@@ -73,12 +73,12 @@ describe('Contract', () => {
     expect(onNext.mock.calls[0][0]).toBe('data:image/png;base64,AAAA')
   })
 
-  it('"Löschen" repaints the background and disables "Weiter" again', async () => {
+  it('"Löschen" repaints the background and disables sending again', async () => {
     const onNext = vi.fn()
     render(<Contract onNext={onNext} />)
     await waitFor(() => screen.getByText('Vertragstext hier.'))
 
-    const submit = screen.getByRole('button', { name: 'Weiter' })
+    const submit = screen.getByRole('button', { name: 'Anmeldung abschicken' })
     const clear = screen.getByRole('button', { name: 'Löschen' })
 
     sign()
@@ -91,26 +91,26 @@ describe('Contract', () => {
     expect(onNext).not.toHaveBeenCalled()
   })
 
-  it('keeps "Weiter" shut on a signature alone, without the data-protection box', async () => {
+  it('keeps sending shut on a signature alone, without the data-protection box', async () => {
     const onNext = vi.fn()
     render(<Contract onNext={onNext} />)
     await waitFor(() => screen.getByText('Vertragstext hier.'))
 
     sign()
 
-    const submit = screen.getByRole('button', { name: 'Weiter' })
+    const submit = screen.getByRole('button', { name: 'Anmeldung abschicken' })
     expect(submit).toBeDisabled()
     fireEvent.click(submit)
     expect(onNext).not.toHaveBeenCalled()
   })
 
-  it('keeps "Weiter" shut on the box alone, without a signature', async () => {
+  it('keeps sending shut on the box alone, without a signature', async () => {
     render(<Contract onNext={vi.fn()} />)
     await waitFor(() => screen.getByText('Vertragstext hier.'))
 
     acknowledgePrivacy()
 
-    expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Anmeldung abschicken' })).toBeDisabled()
   })
 
   it('shows the full data-protection notice on request', async () => {
@@ -136,7 +136,19 @@ describe('Contract', () => {
       )
     )
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Anmeldung abschicken' })).toBeDisabled()
+  })
+
+  it('marks the end of the contract for the read gate to watch', async () => {
+    render(<Contract onNext={vi.fn()} />)
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    const marker = document.querySelector('.contract-end')
+    expect(marker).toBeInTheDocument()
+    // Inside the text, after it — a marker anywhere else would be reachable
+    // without the contract having been scrolled through.
+    expect(marker?.parentElement).toHaveClass('contract-text')
+    expect(marker?.previousElementSibling?.textContent).toBe('Vertragstext hier.')
   })
 
   it('shows a message when there is no contract text configured', async () => {
@@ -146,16 +158,5 @@ describe('Contract', () => {
     await waitFor(() =>
       screen.getByText('Es liegt derzeit kein Vertragstext vor. Bitte wende dich an das Personal.')
     )
-  })
-
-  it('leaves the height to the stylesheet where nothing can be measured', async () => {
-    // jsdom lays nothing out, which is exactly the case useContractCollapse has
-    // to fall back from: no inline height, so `max-height: 40vh` still governs.
-    render(<Contract onNext={vi.fn()} />)
-    await waitFor(() => screen.getByText('Vertragstext hier.'))
-
-    const box = screen.getByRole('region', { name: 'Teilnahmebedingungen' })
-    expect(box.style.height).toBe('')
-    expect(document.querySelector('.contract-spacer')).not.toBeInTheDocument()
   })
 })

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent, ReactNode, UIEvent as ReactUIEvent } from 'react'
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { getContract, getPrivacyText } from './api'
-import { useContractCollapse } from './useContractCollapse'
+import { useReachedEnd } from './useReachedEnd'
 
 export interface ContractProps {
   onNext: (signaturePng: string) => void
@@ -44,26 +44,21 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
   const drawingRef = useRef(false)
   const [hasDrawn, setHasDrawn] = useState(false)
 
-  // Proof-of-reading gate: the guest must scroll the contract text to the end
-  // before "Weiter" unlocks (in addition to signing). A contract short enough
-  // to fit without scrolling counts as read immediately (see the effect below).
-  const textRef = useRef<HTMLDivElement | null>(null)
-  const hintRef = useRef<HTMLParagraphElement | null>(null)
-  const [scrolledToEnd, setScrolledToEnd] = useState(false)
+  // Proof-of-reading gate: the contract text is not a scroll box of its own —
+  // it lies at full length on the page, and the page is the only thing that
+  // scrolls. Reaching the marker at the end of the text is what unlocks
+  // "Anmeldung abschicken" (in addition to signing). A contract short enough to
+  // fit on the screen has its marker in view from the start and counts as read
+  // immediately, which is the same rule as before by a simpler road.
+  const endRef = useRef<HTMLDivElement | null>(null)
+  const scrolledToEnd = useReachedEnd(endRef, !loading)
 
   // The form screen is left mid-scroll, and swapping screens does not move the
   // page: without this the guest arrives at the contract already scrolled past
-  // its top — with a screen-tall text box, above the box entirely.
+  // the top of the text.
   useEffect(() => {
     window.scrollTo(0, 0)
   }, [])
-
-  // The text box opens as tall as the screen and gives that height back to the
-  // page once the guest has read to the end — see useContractCollapse.
-  const { height: textHeight, spacerHeight } = useContractCollapse(textRef, hintRef, {
-    ready: !loading,
-    scrolledToEnd,
-  })
 
   // The data-protection notice is its own act, not a line buried in the contract:
   // an acknowledgement bundled into a wall of other text is the packaging Art. 7
@@ -103,26 +98,6 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
       cancelled = true
     }
   }, [])
-
-  // Once the FINAL text is rendered (not the "Lade…" placeholder), open the
-  // gate immediately if it already fits without scrolling (short contract, load
-  // error, or empty text — nothing to scroll through); otherwise keep it closed
-  // until the guest scrolls to the end (handleScroll). Skipping the loading
-  // render matters: the short placeholder box "fits" and would wrongly open the
-  // gate before the real, scrollable contract has been measured. These deps
-  // don't change after load, so a later scroll (handleScroll → true) is never
-  // undone by this effect re-running.
-  useEffect(() => {
-    if (loading) return
-    const el = textRef.current
-    if (!el) return
-    setScrolledToEnd(el.scrollHeight - el.clientHeight <= 2)
-  }, [text, loading, loadError])
-
-  function handleScroll(e: ReactUIEvent<HTMLDivElement>) {
-    const el = e.currentTarget
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 2) setScrolledToEnd(true)
-  }
 
   function getContext(): CanvasRenderingContext2D | null {
     return canvasRef.current?.getContext('2d') ?? null
@@ -198,14 +173,7 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
     <section className="screen contract-screen">
       <h1>Teilnahmebedingungen</h1>
       <div className="boarding-card">
-        <div
-          ref={textRef}
-          className="contract-text"
-          role="region"
-          aria-label="Teilnahmebedingungen"
-          onScroll={handleScroll}
-          style={textHeight === null ? undefined : { height: textHeight, maxHeight: 'none' }}
-        >
+        <div className="contract-text" role="region" aria-label="Teilnahmebedingungen">
           {loading && <p>Lade Vertragstext…</p>}
           {!loading && loadError && <p className="error">{loadError}</p>}
           {!loading && !loadError && text.trim().length === 0 && (
@@ -214,15 +182,14 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
           {!loading && !loadError && text.trim().length > 0 && (
             <p style={{ whiteSpace: 'pre-wrap' }}>{renderWithBoldPhrases(text)}</p>
           )}
+
+          {/* The end of the contract, as an element rather than a scroll
+              offset: whatever the text does when it reflows, this stays the
+              place the guest has to have reached. */}
+          <div ref={endRef} className="contract-end" aria-hidden="true" />
         </div>
 
         <div className="perforation" />
-
-        {!scrolledToEnd && (
-          <p className="scroll-hint" ref={hintRef}>
-            Bitte den gesamten Vertrag lesen — nach unten scrollen, um fortzufahren.
-          </p>
-        )}
 
         {/*
           Above the signature, because it has to be read before signing — and
@@ -288,6 +255,15 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
         </div>
       </div>
 
+      {!scrolledToEnd && (
+        // Pinned to the bottom edge rather than sitting under the text: below a
+        // full-length contract it would be a screenful of reading away from the
+        // guest who needs to read it.
+        <p className="scroll-hint" role="status">
+          Bitte den gesamten Vertrag lesen — nach unten scrollen, um fortzufahren.
+        </p>
+      )}
+
       {errors && errors.length > 0 && (
         <ul className="error">
           {errors.map((err) => (
@@ -311,18 +287,9 @@ export default function Contract({ onNext, onCancel, submitting, errors }: Contr
           disabled={!hasDrawn || !scrolledToEnd || !privacyAccepted || submitting}
           onClick={handleNext}
         >
-          {submitting ? 'Wird gesendet…' : 'Weiter'}
+          {submitting ? 'Wird gesendet…' : 'Anmeldung abschicken'}
         </button>
       </div>
-
-      {/*
-        Takes on exactly what the text box gave up. Without it the document
-        shortens as fast as the guest scrolls, the browser clamps the scroll
-        position, and the collapse stalls halfway.
-      */}
-      {spacerHeight > 0 && (
-        <div className="contract-spacer" style={{ height: spacerHeight }} aria-hidden="true" />
-      )}
     </section>
   )
 }

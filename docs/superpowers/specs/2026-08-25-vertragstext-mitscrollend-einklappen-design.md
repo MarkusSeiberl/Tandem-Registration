@@ -2,6 +2,14 @@
 
 Datum: 2026-08-25
 
+> **Überholt am 2026-08-25** von
+> [Eine Scrollfläche](2026-08-25-vertragstext-eine-scrollflaeche-design.md).
+> Der hier beschriebene Aufbau — Textkasten mit eigenem Scrollbereich, der beim
+> Seitenscrollen einklappt — hat sich am Gerät falsch angefühlt: zwei
+> Scrollbereiche mit unterschiedlicher Physik auf einem Schirm, dazu von Hand
+> nachgebaute Übergabe zwischen ihnen. Das Dokument bleibt als Begründung
+> dessen stehen, was daraus gelernt wurde.
+
 Der Vertragsschirm zeigt den Vertragstext heute in einem Kasten mit
 `max-height: 40vh` (`web/guest/src/index.css`). Auf dem Tablet sind das rund
 neun Zeilen. Der Gast liest einen mehrseitigen Beförderungsvertrag durch ein

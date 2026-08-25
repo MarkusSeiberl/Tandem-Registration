@@ -329,30 +329,37 @@ p {
   margin-top: 2px;
 }
 
-/* Holds the page's total height steady while the contract text collapses
-   (useContractCollapse). Empty on purpose — its height is set inline. */
-.contract-spacer {
-  flex: none;
-  width: 100%;
+/* The marker the read gate watches for (useReachedEnd). It has no look of its
+   own — it only has to be somewhere, at the end of the text. */
+.contract-end {
+  height: 1px;
 }
 
-/* Shown until the guest scrolls the contract text to the end (read gate). */
+/* Shown until the guest has scrolled to the end of the contract (read gate).
+   Pinned to the bottom edge of the screen, because the page below a full-length
+   contract is exactly where the guest who still has to read it is not. */
 .scroll-hint {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 15;
   margin: 0;
   padding: 12px 24px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
   font-size: 16px;
-  color: var(--ember);
-  background: rgba(255, 106, 61, 0.08);
-  text-align: left;
+  background: var(--ember);
+  color: #fff;
+  text-align: center;
+  box-shadow: 0 -2px 12px rgb(0 0 0 / 0.12);
 }
 
-/* `max-height` is the fallback for anything that cannot be measured; where
-   useContractCollapse can measure, it sets an inline height that starts out as
-   tall as the screen and shrinks with the scroll. */
+/* No scroll box of its own: the contract lies at full length on the page, and
+   the page is the only thing on this screen that scrolls. One scroller means
+   one set of physics — no gesture that ends against an inner edge, and no way
+   to scroll past the contract without scrolling through it. */
 .contract-text {
   width: 100%;
-  max-height: 40vh;
-  overflow-y: auto;
   text-align: left;
   border: 1px solid var(--border);
   background: var(--panel-bg);

@@ -216,11 +216,17 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // Highest load number first — that's who boards next; unassigned (null)
   // registrations sort last.
   // The club edited a price after this day had started. Nothing is wrong — the
-  // day is simply older than the price list — but it is worth offering the one
-  // action that fixes it, for the case where the table was wrong all along.
+  // day is simply older than the price list — but it is worth saying so, because
+  // otherwise the numbers here and the numbers in the settings disagree without
+  // explanation.
   const dayOutdated =
     day !== null && day.frozen &&
     JSON.stringify(day.prices) !== JSON.stringify(day.current.prices)
+  // Only the running day can still be moved. A day that is over has been flown,
+  // collected and usually exported; those amounts are what guests paid, and a
+  // price list edited afterwards does not get to rewrite them. So a past day
+  // gets the explanation without the button.
+  const isToday = date === today()
 
   async function handleReprice() {
     setRepricing(true)
@@ -324,7 +330,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
             : `${pending} Einlösungen noch nicht in die Gutscheinliste geschrieben.`}
         </p>
       )}
-      {dayOutdated && (
+      {dayOutdated && (isToday ? (
         <div className="day-outdated">
           <p>
             Dieser Tag läuft auf der Preisliste von seinem Beginn
@@ -341,7 +347,16 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
             {repricing ? 'Wird übernommen…' : 'Preise für diesen Tag aktualisieren'}
           </button>
         </div>
-      )}
+      ) : (
+        <div className="day-outdated day-settled">
+          <p>
+            Dieser Tag wurde mit der Preisliste von seinem Beginn abgerechnet
+            ({formatEuro(day!.prices.jump)} pro Sprung, aktuell{' '}
+            {formatEuro(day!.current.prices.jump)}). Abgeschlossene Tage bleiben, wie sie
+            geflogen wurden.
+          </p>
+        </div>
+      ))}
 
       <div className="list-toolbar">
         <label className="date-field">

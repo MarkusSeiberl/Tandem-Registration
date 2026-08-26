@@ -156,6 +156,25 @@ test('repricing a day moves every row of it, and nothing of another day', async 
   ).toBe(250)
 })
 
+test('a day that is over cannot be repriced at all', async () => {
+  // The amounts of a past day were collected from real guests and usually
+  // exported already. Editing the price list afterwards is about coming days,
+  // never about that one — and the server says so rather than trusting the
+  // manifest to hide its button.
+  const { app, cfgRef, db } = server({ jump: 270 })
+  db.prepare(
+    `INSERT INTO registrations (first_name,last_name,weight_kg,jump_date,price,price_override)
+     VALUES ('Alt','Gast',80,'2026-07-09',270,0)`
+  ).run()
+  cfgRef.current.prices = { ...cfgRef.current.prices, jump: 280 }
+
+  const res = await app.inject({ method: 'POST', url: '/api/day-tables/2026-07-09/reprice' })
+  expect(res.statusCode).toBe(409)
+  expect(
+    (db.prepare('SELECT price FROM registrations WHERE jump_date=?').get('2026-07-09') as any).price
+  ).toBe(270)
+})
+
 test('repricing a day leaves a manually corrected row alone', async () => {
   const { app, cfgRef } = server({ jump: 270 })
   const id = await register(app)

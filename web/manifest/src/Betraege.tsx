@@ -139,7 +139,7 @@ export default function Betraege() {
     <section className="betraege-section">
       <AmountFields
         title="Preise (EUR)"
-        hint="Gilt ab dem nächsten Sprungtag. Ein Tag, an dem schon jemand angemeldet ist, behält seine Preise — im Manifest lässt er sich auf Wunsch umstellen."
+        hint="Gilt ab dem nächsten Sprungtag. Ein Tag, an dem schon jemand angemeldet ist, behält seine Preise — nur der heutige lässt sich im Manifest umstellen, abgeschlossene Tage bleiben."
         fields={PRICE_FIELDS}
         inputs={priceInputs}
         onChange={(key, value) => {

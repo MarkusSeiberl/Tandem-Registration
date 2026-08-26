@@ -295,8 +295,8 @@ describe('List', () => {
   })
 
   // A jump day runs on the price list it was started with. Editing the settings
-  // afterwards is a decision about the next day — but the operator has to be
-  // able to see that the two have parted ways, and to fix it deliberately.
+  // afterwards is a decision about the next day — the running day can still be
+  // moved deliberately, a day that is over cannot.
   describe('a day older than the price list', () => {
     const olderDay = {
       prices: { ...PRICES, jump: 250 },
@@ -316,18 +316,31 @@ describe('List', () => {
         })
         return { updated: 1 }
       })
-      renderList({ date: '2026-07-09' })
+      renderList({ date: today() })
 
       await screen.findByText(/läuft auf der Preisliste von seinem Beginn/)
       await userEvent.click(
         screen.getByRole('button', { name: 'Preise für diesen Tag aktualisieren' })
       )
 
-      expect(api.repriceDay).toHaveBeenCalledWith('2026-07-09')
+      expect(api.repriceDay).toHaveBeenCalledWith(today())
       // And the banner goes away by asking again, not by assuming it worked.
       await waitFor(() =>
         expect(screen.queryByText(/läuft auf der Preisliste/)).not.toBeInTheDocument()
       )
+    })
+
+    it('explains a day that is over without offering to change it', async () => {
+      // Those amounts were collected from real guests and are usually already
+      // exported. A price list edited afterwards does not get a say.
+      vi.mocked(api.list).mockResolvedValue([makeRow({})])
+      vi.mocked(api.dayTables).mockResolvedValue(olderDay)
+      renderList({ date: '2026-07-09' })
+
+      await screen.findByText(/Abgeschlossene Tage bleiben/)
+      expect(
+        screen.queryByRole('button', { name: 'Preise für diesen Tag aktualisieren' })
+      ).not.toBeInTheDocument()
     })
 
     it('stays quiet while the day and the settings agree', async () => {

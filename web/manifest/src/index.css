@@ -682,6 +682,13 @@ h2 {
   background: rgba(255, 106, 61, 0.08);
 }
 
+/* A day that is over states a fact; it offers nothing to press, so it does not
+   get the ember frame that means "there is something for you here". */
+.day-settled {
+  border-color: var(--border);
+  background: transparent;
+}
+
 .day-outdated p {
   flex: 1;
   min-width: 260px;

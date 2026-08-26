@@ -15,6 +15,7 @@ import {
   atLeast, formatEuro, priceLines, serviceOfVoucher, surchargeForWeight, voucherValue,
 } from './pricing'
 import { formatDate, voucherAmountText, voucherServiceText, voucherStatusText } from './voucher'
+import { today } from './date'
 import TrashIcon from './TrashIcon'
 
 export interface DetailProps {
@@ -136,6 +137,9 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   const dayOutdated =
     day !== null && day.frozen &&
     JSON.stringify(day.prices) !== JSON.stringify(day.current.prices)
+  // Only the running day can still be moved onto the current list, so only for
+  // that one does it make sense to point at the button in the manifest.
+  const dayIsToday = registration.jump_date === today()
   const due = priceOverride && price !== '' ? price : computed
   // A voucher moves no money by itself, so the till it lands in is only a
   // question once the guest actually owes something on top of it. The field stays
@@ -543,7 +547,9 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             <p className="price-outdated">
               Dieser Sprungtag läuft auf der Preisliste vom Tagesbeginn
               ({formatEuro(day!.prices.jump)} pro Sprung, aktuell {formatEuro(day!.current.prices.jump)}).
-              Im Manifest lässt sich der ganze Tag auf die aktuellen Preise umstellen.
+              {dayIsToday
+                ? ' Im Manifest lässt sich der ganze Tag auf die aktuellen Preise umstellen.'
+                : ' Abgeschlossene Tage bleiben, wie sie geflogen wurden.'}
             </p>
           )}
 

@@ -151,11 +151,19 @@ export function registerRegistrationRoutes(
     }
   })
 
-  // Moves one day onto today's tables: the deliberate exception, for the day
-  // that was already running when someone noticed the price list was wrong.
+  // Moves today onto today's tables: the deliberate exception, for the day that
+  // was already running when someone noticed the price list was wrong.
+  //
+  // Today and nothing else. A day that is over has been flown, collected and
+  // usually exported; its amounts are what guests actually paid, and a price
+  // list edited afterwards is not an opinion about them. The route enforces it
+  // rather than trusting the manifest to hide the button, because the manifest
+  // is one client of several and the damage would be silent.
   app.post('/api/day-tables/:date/reprice', async (req, reply) => {
     const date = (req.params as any).date
     if (!DATE.test(date)) return reply.code(400).send({ error: 'Datum ungültig' })
+    if (date !== today())
+      return reply.code(409).send({ error: 'Nur der heutige Tag kann umgestellt werden.' })
     const updated = repriceDay(db, date, cfgRef.current, (row, prices) =>
       computePrice(row as Parameters<typeof computePrice>[0], prices))
     sse.broadcast('changed', { date })

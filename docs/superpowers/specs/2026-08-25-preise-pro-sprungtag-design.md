@@ -55,10 +55,30 @@ lesen dieselbe.
 | Zeile speichern (Load-Nr., Tandemmaster, …) | Neu gerechnet wird mit der Preisliste **des Tages**, es kommt also derselbe Betrag heraus. |
 | Zusatzbuchung oder Zuschlag ändern | Ebenfalls aus der Tagesliste. |
 | Manuell korrigierter Preis | Bleibt, was jemand eingetragen hat. |
-| „Preise für diesen Tag aktualisieren" | Der Tag übernimmt die aktuellen Tabellen, und alle Zeilen ohne manuelle Korrektur werden neu gerechnet. |
+| „Preise für diesen Tag aktualisieren" (**nur heute**) | Der laufende Tag übernimmt die aktuellen Tabellen, und alle Zeilen ohne manuelle Korrektur werden neu gerechnet. |
+| Preis ändern, wenn der Tag **vorbei** ist | Nichts. Ein abgeschlossener Tag lässt sich nicht mehr umstellen. |
 
 Ein neuer Tag startet immer mit den neuesten Werten: Die Einstellungen sind die
 Vorlage, ein Tageseintrag ist nur eine Kopie davon.
+
+### Nur der heutige Tag lässt sich umstellen
+
+Nachtrag vom 2026-08-26.
+
+Umstellen gilt für **heute** und für keinen anderen Tag. Ein Tag, der vorbei
+ist, wurde geflogen, kassiert und meistens schon exportiert; seine Beträge sind
+das, was Gäste tatsächlich bezahlt haben. Eine später geänderte Preisliste ist
+darüber keine Meinung.
+
+Der Server weist `POST /api/day-tables/:date/reprice` für jedes andere Datum mit
+409 ab — nicht erst die Oberfläche. Das Manifest ist einer von mehreren Clients,
+und der Schaden wäre still: ein umgestellter Tag sieht aus wie ein richtig
+abgerechneter.
+
+Gesehen wird der Unterschied trotzdem, nur ohne Knopf: Liste und Detailschirm
+sagen bei einem abgeschlossenen Tag, auf welcher Preisliste er lief und dass er
+so bleibt. Der Rahmen des Hinweises ist dann grau statt orange — orange heißt in
+diesem Manifest, dass es etwas zu tun gibt.
 
 ### Warum nicht pro Zeile
 
@@ -111,13 +131,16 @@ Entscheidung betrifft den ganzen Tag, nicht eine Zeile.
   schon läuft; ungültiges Datum wird abgewiesen.
 - Umstellen bewegt genau diesen Tag, lässt manuelle Korrekturen stehen und
   nimmt die Vergütungssätze mit.
+- Ein vergangener Tag lässt sich gar nicht umstellen: 409, und seine Preise
+  stehen danach unverändert in der Datenbank.
 - Der Export zahlt die Crew zu den Sätzen des exportierten Tages.
 
 `web/manifest/src/List.test.tsx`, `Detail.test.tsx`
 
-- Banner und Hinweis erscheinen nur, wenn der Tag läuft *und* abweicht; der
-  Knopf ruft `repriceDay` und der Banner verschwindet erst, wenn der Server
-  bestätigt.
+- Banner und Hinweis erscheinen nur, wenn der Tag eingefroren ist *und*
+  abweicht; der Knopf ruft `repriceDay` und der Banner verschwindet erst, wenn
+  der Server bestätigt.
+- Für ein vergangenes Datum steht dort derselbe Hinweis ohne Knopf.
 - Der Detailschirm rechnet mit der Tagesliste, auch für eine neu gewählte
   Zusatzbuchung.
 

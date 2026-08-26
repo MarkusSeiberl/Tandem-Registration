@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import Detail from './Detail'
 import * as api from './api'
 import type { Registration } from './api'
+import { today } from './date'
 
 vi.mock('./api', () => ({
   patch: vi.fn(),
@@ -740,12 +741,23 @@ describe('Detail', () => {
       expect(total()).toBe('330 €')
     })
 
-    it('says which list the day runs on, and where to change it', async () => {
+    it('says which list a day that is over ran on, and that it stays', async () => {
       renderDetail()
       await screen.findByText('Zu kassieren')
 
       expect(screen.getByText(/Preisliste vom Tagesbeginn/)).toBeInTheDocument()
-      // The action itself belongs to the day, so it lives in the manifest list.
+      expect(screen.getByText(/Abgeschlossene Tage bleiben/)).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: /Preise für diesen Tag/ })
+      ).not.toBeInTheDocument()
+    })
+
+    it('points at the manifest button while the day is still running', async () => {
+      renderDetail(makeRegistration({ jump_date: today() }))
+      await screen.findByText('Zu kassieren')
+
+      // The action belongs to the whole day, so it lives in the list, not here.
+      expect(screen.getByText(/lässt sich der ganze Tag/)).toBeInTheDocument()
       expect(
         screen.queryByRole('button', { name: /Preise für diesen Tag/ })
       ).not.toBeInTheDocument()

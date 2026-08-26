@@ -636,6 +636,37 @@ h2 {
   opacity: 1;
 }
 
+/* The gap between what a voucher cost and what it buys today. Framed like the
+   outdated-price note, because it is the same kind of statement: nothing is
+   broken, but somebody has to decide about it. */
+.voucher-difference {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--ember);
+  background: rgba(255, 106, 61, 0.08);
+}
+
+.voucher-difference-line {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.voucher-topup-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.voucher-topup-toggle input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+}
+
 .price-line {
   display: flex;
   justify-content: space-between;

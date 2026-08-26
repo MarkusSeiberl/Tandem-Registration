@@ -49,6 +49,8 @@ function makeRegistration(overrides: Partial<Registration> = {}): Registration {
     voucher_payment_method: null,
     voucher_number: null,
     voucher_service: null,
+    voucher_topup: 0,
+    voucher_amount: null,
     extra_booking: 'none',
     weight_surcharge: 'none',
     price_override: 0,
@@ -573,6 +575,99 @@ describe('Detail', () => {
     const line = await screen.findByText(/355 € damals/)
     expect(line.textContent).toContain('370 € heute')
     expect(line.className).not.toContain('warn')
+  })
+
+  it('sets the difference apart from the plain damals-heute line', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+    await screen.findByText(/Bezahlt am/)
+    // 355 € paid then; the voucher covers Sprung + Video, which is 370 today.
+    await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump_video')
+
+    const block = document.querySelector('.voucher-difference')
+    expect(block).not.toBeNull()
+    expect(block!.textContent).toContain('355 €')
+    expect(block!.textContent).toContain('370 €')
+    expect(block!.textContent).toContain('15 €')
+  })
+
+  it('leaves the total alone until the difference is actually charged', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+    await screen.findByText(/Bezahlt am/)
+    await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump_video')
+
+    // Honouring an old voucher at today's price is the club's default.
+    expect(total()).toBe('0 €')
+
+    await user.click(screen.getByLabelText(/Differenz dazurechnen/))
+
+    expect(total()).toBe('15 €')
+    expect(document.querySelector('.price-breakdown')!.textContent)
+      .toContain('Gutschein-Differenz')
+  })
+
+  it('sends the difference decision and the amount it was read from', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+    await screen.findByText(/Bezahlt am/)
+    await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump_video')
+    await user.click(screen.getByLabelText(/Differenz dazurechnen/))
+    await user.click(screen.getByRole('button', { name: 'Speichern' }))
+
+    expect(vi.mocked(api.patch).mock.calls[0][1]).toMatchObject({
+      voucher_topup: 1,
+      voucher_amount: 355,
+    })
+  })
+
+  it('says nothing about a difference when the voucher covers today’s price', async () => {
+    const user = userEvent.setup()
+    // Bought at 370, which is exactly what Sprung + Video costs today.
+    vi.mocked(api.checkVoucher).mockResolvedValue({ ...OK_CHECK, amount: 370 })
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+    await screen.findByText(/Bezahlt am/)
+    await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump_video')
+
+    expect(document.querySelector('.voucher-difference')).toBeNull()
+    expect(screen.queryByLabelText(/Differenz dazurechnen/)).not.toBeInTheDocument()
+  })
+
+  it('drops the difference from the bill when the voucher is dropped', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+    await screen.findByText(/Bezahlt am/)
+    await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump_video')
+    await user.click(screen.getByLabelText(/Differenz dazurechnen/))
+    await user.selectOptions(screen.getByLabelText('Zahlungsart'), 'cash')
+
+    // The guest pays the full price like anyone else; a difference to a voucher
+    // that is no longer in play would be money charged twice.
+    expect(total()).toBe('370 €')
+    await user.click(screen.getByRole('button', { name: 'Speichern' }))
+    expect(vi.mocked(api.patch).mock.calls[0][1]).toMatchObject({
+      voucher_topup: 0,
+      voucher_amount: null,
+    })
   })
 
   it('says nothing at all when no list is configured', async () => {

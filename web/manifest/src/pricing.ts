@@ -12,6 +12,10 @@ export interface PricedFields {
   voucher_service?: VoucherService | '' | null
   extra_booking?: ExtraBooking | null
   weight_surcharge?: WeightSurcharge | null
+  // Whether the club charges this guest the rise since the voucher was bought,
+  // and what the club's list says was paid for it.
+  voucher_topup?: number | boolean | null
+  voucher_amount?: number | null
 }
 
 export interface PriceLine {
@@ -26,6 +30,27 @@ export function voucherValue(service: VoucherService | '' | null | undefined, pr
   return 0
 }
 
+// What the voucher actually takes off this bill, capped at the service flown.
+// The detail screen shows the difference to what the guest once paid for the
+// voucher, and that difference is about this number.
+export function voucherCovered(fields: PricedFields, prices: Prices): number {
+  if (fields.payment_method !== 'voucher') return 0
+  const service = prices.jump +
+    (fields.extra_booking === 'video'
+      ? prices.video
+      : fields.extra_booking === 'video_photo'
+        ? prices.video_photo
+        : 0)
+  return Math.min(voucherValue(fields.voucher_service, prices), service)
+}
+
+// What the guest is charged for the price rise since the voucher was bought.
+// Zero unless the manifest ticked the box, and never negative.
+export function voucherTopup(fields: PricedFields, prices: Prices): number {
+  if (!fields.voucher_topup || fields.voucher_amount == null) return 0
+  return Math.max(0, voucherCovered(fields, prices) - fields.voucher_amount)
+}
+
 export function priceLines(fields: PricedFields, prices: Prices): PriceLine[] {
   const lines: PriceLine[] = []
 
@@ -35,9 +60,9 @@ export function priceLines(fields: PricedFields, prices: Prices): PriceLine[] {
     lines.push({ label: 'Video+Foto', amount: prices.video_photo })
 
   if (fields.payment_method === 'voucher') {
-    const service = lines.reduce((sum, l) => sum + l.amount, 0)
-    const covered = Math.min(voucherValue(fields.voucher_service, prices), service)
-    lines.push({ label: 'Gutschein', amount: -covered })
+    lines.push({ label: 'Gutschein', amount: -voucherCovered(fields, prices) })
+    const topup = voucherTopup(fields, prices)
+    if (topup > 0) lines.push({ label: 'Gutschein-Differenz', amount: topup })
   }
 
   if (fields.weight_surcharge === 'over_90')

@@ -32,6 +32,12 @@ export interface PricedFields {
   voucher_service?: VoucherService | null
   extra_booking?: ExtraBooking | null
   weight_surcharge?: WeightSurcharge | null
+  // Whether the club charges this guest the rise since the voucher was bought,
+  // and what the club's list says was paid for it. The amount is stored on the
+  // row rather than looked up here: the price has to be reproducible from the
+  // row alone, on a day the club's Excel file is unreachable or has been edited.
+  voucher_topup?: number | boolean | null
+  voucher_amount?: number | null
 }
 
 export interface PriceLine {
@@ -54,6 +60,34 @@ export function voucherValue(service: VoucherService | null | undefined, prices:
 // is subtracted from it at list price, so an upgrade costs the difference and a
 // voucher used as-is costs nothing. The weight surcharge is never covered by a
 // voucher and is always added on top.
+// What the voucher actually takes off this bill. Capped at the service flown: a
+// voucher worth more than what the guest takes is not paid out in cash, and the
+// lines always add up to the total.
+//
+// Exported because the manifest shows the difference to what the guest once paid
+// for the voucher, and that difference is about this number — not about the
+// voucher's value in the abstract.
+export function voucherCovered(fields: PricedFields, prices: Prices): number {
+  if (fields.payment_method !== 'voucher') return 0
+  const service = prices.jump +
+    (fields.extra_booking === 'video'
+      ? prices.video
+      : fields.extra_booking === 'video_photo'
+        ? prices.video_photo
+        : 0)
+  return Math.min(voucherValue(fields.voucher_service, prices), service)
+}
+
+// What the guest is charged for the price rise since the voucher was bought.
+// Zero unless the manifest ticked the box: honouring an old voucher at today's
+// price is the club's default, and turning that into money is a decision someone
+// has to make in front of the guest. Never negative — a voucher bought above
+// today's price is not refunded.
+export function voucherTopup(fields: PricedFields, prices: Prices): number {
+  if (!fields.voucher_topup || fields.voucher_amount == null) return 0
+  return Math.max(0, voucherCovered(fields, prices) - fields.voucher_amount)
+}
+
 export function priceLines(fields: PricedFields, prices: Prices): PriceLine[] {
   const lines: PriceLine[] = []
 
@@ -63,11 +97,9 @@ export function priceLines(fields: PricedFields, prices: Prices): PriceLine[] {
     lines.push({ label: 'Video+Foto', amount: prices.video_photo })
 
   if (fields.payment_method === 'voucher') {
-    const service = lines.reduce((sum, l) => sum + l.amount, 0)
-    // Capped at the service flown: a voucher worth more than what the guest
-    // takes is not paid out in cash, and the lines always add up to the total.
-    const covered = Math.min(voucherValue(fields.voucher_service, prices), service)
-    lines.push({ label: 'Gutschein', amount: -covered })
+    lines.push({ label: 'Gutschein', amount: -voucherCovered(fields, prices) })
+    const topup = voucherTopup(fields, prices)
+    if (topup > 0) lines.push({ label: 'Gutschein-Differenz', amount: topup })
   }
 
   if (fields.weight_surcharge === 'over_90')

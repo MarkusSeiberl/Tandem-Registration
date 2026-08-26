@@ -172,11 +172,13 @@ export function registerRegistrationRoutes(
 
   const ALLOWED = ['tandem_master_id', 'load_number', 'price', 'price_override',
     'payment_method', 'voucher_payment_method', 'voucher_number', 'voucher_service',
+    'voucher_topup', 'voucher_amount',
     'extra_booking', 'weight_surcharge', 'camera_flyer_id', 'paid_at', 'notes'] as const
   // Changing any of these changes what the guest owes, so a non-overridden price
   // has to be recomputed in the same statement.
   const PRICING_FIELDS = [
-    'payment_method', 'voucher_service', 'extra_booking', 'weight_surcharge',
+    'payment_method', 'voucher_service', 'voucher_topup', 'voucher_amount',
+    'extra_booking', 'weight_surcharge',
   ] as const
 
   app.patch('/api/registrations/:id', async (req, reply) => {
@@ -204,6 +206,15 @@ export function registerRegistrationRoutes(
     if ('voucher_payment_method' in body && body.voucher_payment_method !== null &&
         !COLLECTED_VIA.includes(body.voucher_payment_method))
       return reply.code(400).send({ error: 'Zahlungsart der Zuzahlung ungültig' })
+
+    // What the club's list says the voucher was paid for, as the manifest read
+    // it. Cleared to NULL along with the number whenever the guest stops paying
+    // by voucher, so null is a legal value.
+    if ('voucher_amount' in body && body.voucher_amount !== null &&
+        (typeof body.voucher_amount !== 'number' || !Number.isFinite(body.voucher_amount)))
+      return reply.code(400).send({ error: 'Gutscheinbetrag ungültig' })
+    // SQLite has no boolean type; normalised the same way price_override is.
+    if ('voucher_topup' in body) body.voucher_topup = body.voucher_topup ? 1 : 0
 
     // Free text, so nothing to validate beyond the type — but an empty note is
     // stored as NULL rather than '' so the export shows a blank cell either way.

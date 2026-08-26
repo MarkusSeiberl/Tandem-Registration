@@ -39,6 +39,7 @@ test('creates registrations table with correct columns', () => {
     'accepted_terms', 'tandem_master_id', 'load_number',
     'price', 'payment_method', 'voucher_payment_method',
     'voucher_number', 'voucher_service',
+    'voucher_topup', 'voucher_amount',
     'extra_booking', 'weight_surcharge', 'price_override',
     'camera_flyer_id', 'created_at', 'jump_date', 'paid_at',
     'notes', 'privacy_ack_at', 'voucher_redeemed_at', 'voucher_redeem_synced_at'

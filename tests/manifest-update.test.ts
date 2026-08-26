@@ -119,6 +119,62 @@ test('upgrading a voucher costs only the difference', async () => {
   await app.close()
 })
 
+test('the voucher difference is charged only when the manifest ticks the box', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  // Bought as a plain Tandem for 240, honoured today at 270.
+  const withoutBox = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: {
+      payment_method: 'voucher', voucher_number: 'GS-1', voucher_service: 'jump',
+      voucher_amount: 240,
+    }
+  })
+  expect(withoutBox.json().price).toBe(0)
+
+  const withBox = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { voucher_topup: true }
+  })
+  expect(withBox.json().price).toBe(30)
+  // The flag and the amount are both on the allowlist, or the row could not be
+  // priced again without reading the club's file a second time.
+  expect(withBox.json().voucher_topup).toBe(1)
+  expect(withBox.json().voucher_amount).toBe(240)
+  await app.close()
+})
+
+test('the stored difference follows a later change to the booking', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: {
+      payment_method: 'voucher', voucher_service: 'jump', voucher_amount: 240,
+      voucher_topup: true,
+    }
+  })
+  // The guest adds a video: the voucher still covers 270, so the difference to
+  // the 240 they paid is unchanged and the video is simply on top.
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { extra_booking: 'video' }
+  })
+  expect(res.json().price).toBe(130)
+  await app.close()
+})
+
+test('a nonsense voucher amount is refused instead of stored', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { voucher_amount: 'zweihundert' }
+  })
+  expect(res.statusCode).toBe(400)
+  await app.close()
+})
+
 test('changing only the voucher service reprices the row', async () => {
   const { app } = testServer()
   const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()

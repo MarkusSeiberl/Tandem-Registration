@@ -12,7 +12,8 @@ import {
   genderLabel,
 } from './labels'
 import {
-  atLeast, formatEuro, priceLines, serviceOfVoucher, surchargeForWeight, voucherValue,
+  atLeast, formatEuro, priceLines, serviceOfVoucher, surchargeForWeight, voucherCovered,
+  voucherValue,
 } from './pricing'
 import { formatDate, voucherAmountText, voucherServiceText, voucherStatusText } from './voucher'
 import { today } from './date'
@@ -45,6 +46,13 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   const [voucherNumber, setVoucherNumber] = useState<string>(registration.voucher_number ?? '')
   const [voucherService, setVoucherService] = useState<VoucherService | ''>(registration.voucher_service ?? '')
   const [voucherCheck, setVoucherCheck] = useState<VoucherCheck | null>(null)
+  // What the club's list says this voucher was paid for, and whether the guest
+  // pays the rise since then. The amount is kept in state rather than read off
+  // the check on every render: the check is dropped while the operator is still
+  // typing, and the amount a saved row was priced with must not go with it.
+  const [voucherAmount, setVoucherAmount] =
+    useState<number | null>(registration.voucher_amount ?? null)
+  const [voucherTopup, setVoucherTopup] = useState<boolean>(!!registration.voucher_topup)
   const [extraBooking, setExtraBooking] = useState<ExtraBooking>(registration.extra_booking ?? 'none')
   const [weightSurcharge, setWeightSurcharge] =
     useState<WeightSurcharge>(registration.weight_surcharge ?? 'none')
@@ -73,6 +81,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
     const number = voucherNumber.trim()
     if (!showVoucherNumber || number.length === 0) {
       setVoucherCheck(null)
+      setVoucherAmount(null)
       return
     }
     // The previous number's answer is about the previous number. Left on screen
@@ -83,7 +92,11 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
     let cancelled = false
     const timer = setTimeout(() => {
       checkVoucher(number)
-        .then((result) => { if (!cancelled) setVoucherCheck(result) })
+        .then((result) => {
+          if (cancelled) return
+          setVoucherCheck(result)
+          setVoucherAmount(result.amount)
+        })
         .catch(() => { if (!cancelled) setVoucherCheck(null) })
     }, 350)
     return () => {
@@ -122,14 +135,18 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   const showCameraFlyer =
     extraBooking === 'video' || extraBooking === 'video_photo' || voucherCoversVideo
 
-  const lines = prices
-    ? priceLines({
-        payment_method: paymentMethod,
-        voucher_service: showVoucherNumber ? voucherService : null,
-        extra_booking: extraBooking,
-        weight_surcharge: weightSurcharge,
-      }, prices)
-    : []
+  // One description of this row's money, used for the breakdown and for the
+  // voucher difference alike, so the two can never disagree about what the
+  // voucher covers.
+  const pricedFields = {
+    payment_method: paymentMethod,
+    voucher_service: showVoucherNumber ? voucherService : null,
+    extra_booking: extraBooking,
+    weight_surcharge: weightSurcharge,
+    voucher_topup: showVoucherNumber && voucherTopup,
+    voucher_amount: voucherAmount,
+  }
+  const lines = prices ? priceLines(pricedFields, prices) : []
   const computed = lines.reduce((sum, l) => sum + l.amount, 0)
   // Worth saying out loud, once: the club edited a price after this jump day had
   // started, so these amounts are no longer the list amounts. Changing that is a
@@ -145,6 +162,18 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   // question once the guest actually owes something on top of it. The field stays
   // in place either way and says which of the two it is — a field that vanishes
   // while you are looking somewhere else is the thing this screen got wrong.
+  // The voucher was bought at an older price and is honoured at today's. That
+  // gap is the club's to give away or to charge, so it is stated plainly and
+  // the decision sits right underneath it as a box to tick. Only a gap in the
+  // club's favour exists: a voucher bought above today's price is not refunded,
+  // and `voucherTopup` never returns a negative amount.
+  //
+  // Shown only once the check has come back, so the sentence is never about a
+  // number nobody has looked up.
+  const covered = prices ? voucherCovered(pricedFields, prices) : 0
+  const voucherDifference =
+    voucherCheck?.amount != null && prices ? covered - voucherCheck.amount : 0
+  const showVoucherDifference = showVoucherNumber && voucherDifference > 0
   const showVoucherPayment = showVoucherNumber && due > 0
   const voucherStatus = showVoucherPayment
     ? `Noch ${formatEuro(due)} offen — bitte Kassa wählen.`
@@ -177,6 +206,11 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         // Clear a stale voucher number if the guest no longer pays by voucher.
         voucher_number: showVoucherNumber ? (voucherNumber.trim() === '' ? null : voucherNumber.trim()) : null,
         voucher_service: showVoucherNumber ? (voucherService === '' ? null : voucherService) : null,
+        // The amount travels with the flag so the server can price this row
+        // again — on a save, on a reprice — without reaching for the club's
+        // Excel file, which may be locked, edited or gone by then.
+        voucher_topup: showVoucherNumber && voucherTopup ? (1 as const) : (0 as const),
+        voucher_amount: showVoucherNumber ? voucherAmount : null,
         // Likewise drop the till once there is nothing left to collect.
         voucher_payment_method: showVoucherPayment
           ? (voucherPaymentMethod === '' ? null : voucherPaymentMethod)
@@ -191,6 +225,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
       // drift from the sheet.
       setPrice(updated.price ?? '')
       setPriceOverride(!!updated.price_override)
+      setVoucherTopup(!!updated.voucher_topup)
       // Adopt the stored form of the note too, so the field shows what the sheet
       // will show — the server trims it and turns an empty one into nothing.
       setNotes(updated.notes ?? '')
@@ -382,6 +417,32 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
                   Was der Gutschein abdeckt. Wird vom Preis abgezogen.
                 </span>
               </label>
+
+              {/*
+                After the Leistung, because the difference is a difference to
+                what that Leistung costs today — and given its own framed block
+                rather than a fourth grey hint line under the number, because
+                this one is not a remark: it is money the operator has to decide
+                about while the guest is standing there.
+              */}
+              {showVoucherDifference && (
+                <div className="voucher-difference">
+                  <p className="voucher-difference-line">
+                    Gutschein damals {formatEuro(voucherCheck!.amount!)}, die gedeckte Leistung
+                    kostet heute {formatEuro(covered)} — Differenz{' '}
+                    <strong className="numeral">{formatEuro(voucherDifference)}</strong>.
+                  </p>
+                  <label className="voucher-topup-toggle">
+                    <input
+                      type="checkbox"
+                      name="voucher_topup"
+                      checked={voucherTopup}
+                      onChange={(e) => setVoucherTopup(e.target.checked)}
+                    />
+                    Differenz dazurechnen
+                  </label>
+                </div>
+              )}
 
               <p className={tillMissing ? 'voucher-status warn' : 'voucher-status'}>
                 {voucherStatus}

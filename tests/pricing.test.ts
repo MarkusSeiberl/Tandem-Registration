@@ -1,6 +1,7 @@
 import { test, expect } from 'vitest'
 import {
-  collectedVia, computePrice, priceLines, surchargeForWeight, voucherValue,
+  collectedVia, computePrice, priceLines, surchargeForWeight, voucherCovered, voucherTopup,
+  voucherValue,
 } from '../src/server/pricing'
 import { DEFAULT_PRICES } from '../src/server/config'
 
@@ -121,6 +122,47 @@ test('an over-valued voucher is capped so the lines still add up to the total', 
       weight_surcharge: 'over_90' }, p)
   expect(lines.map(l => l.amount)).toEqual([270, -270, 40])
   expect(lines.reduce((s, l) => s + l.amount, 0)).toBe(40)
+})
+
+test('the price rise since the voucher was bought is only charged when asked for', () => {
+  // Bought as a plain jump for 240, honoured today at 270.
+  const bought = { payment_method: 'voucher' as const, voucher_service: 'jump' as const,
+    extra_booking: 'none' as const, voucher_amount: 240 }
+  // The club eating the rise is the default, and stays the default.
+  expect(computePrice(bought, p)).toBe(0)
+  expect(computePrice({ ...bought, voucher_topup: 1 }, p)).toBe(30)
+})
+
+test('the difference is a line of its own, so the breakdown still adds up', () => {
+  const lines = priceLines(
+    { payment_method: 'voucher', voucher_service: 'jump', extra_booking: 'video',
+      voucher_topup: 1, voucher_amount: 240 }, p)
+  expect(lines.map(l => l.label))
+    .toEqual(['Sprung', 'Video', 'Gutschein', 'Gutschein-Differenz'])
+  expect(lines.map(l => l.amount)).toEqual([270, 100, -270, 30])
+  expect(lines.reduce((s, l) => s + l.amount, 0)).toBe(130)
+})
+
+test('the difference is measured against what the voucher actually covers', () => {
+  // A jump_video_photo voucher on a guest who only takes the jump: 270 comes
+  // off the bill, not the 390 the voucher would be worth in the abstract. So a
+  // 350 voucher is worth MORE than what it covers here, and nothing is charged.
+  const capped = { payment_method: 'voucher' as const,
+    voucher_service: 'jump_video_photo' as const, extra_booking: 'none' as const }
+  expect(voucherCovered(capped, p)).toBe(270)
+  expect(voucherTopup({ ...capped, voucher_topup: 1, voucher_amount: 350 }, p)).toBe(0)
+})
+
+test('a voucher bought above today’s price is never refunded', () => {
+  expect(voucherTopup({ payment_method: 'voucher', voucher_service: 'jump',
+    extra_booking: 'none', voucher_topup: 1, voucher_amount: 300 }, p)).toBe(0)
+})
+
+test('a ticked box without an amount from the list charges nothing', () => {
+  // The club's file was unreachable when the row was saved. Guessing a
+  // difference from an amount nobody read would be inventing money.
+  expect(computePrice({ payment_method: 'voucher', voucher_service: 'jump',
+    extra_booking: 'none', voucher_topup: 1, voucher_amount: null }, p)).toBe(0)
 })
 
 // The thresholds the club prints on its price list: "ab 90 kg" includes 90.

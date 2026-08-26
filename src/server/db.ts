@@ -19,6 +19,7 @@ export function openDb(path: string, nativeBinding?: string): Database.Database 
       tandem_master_id INTEGER, load_number INTEGER, price REAL,
       payment_method TEXT, voucher_payment_method TEXT,
       voucher_number TEXT, voucher_service TEXT,
+      voucher_topup INTEGER DEFAULT 0, voucher_amount REAL,
       extra_booking TEXT, weight_surcharge TEXT DEFAULT 'none',
       price_override INTEGER DEFAULT 0,
       camera_flyer_id INTEGER,
@@ -77,6 +78,11 @@ function migrate(db: Database.Database): void {
     // Excel file. Both NULL on an old row: it predates the voucher check.
     ['voucher_redeemed_at', 'TEXT'],
     ['voucher_redeem_synced_at', 'TEXT'],
+    // Whether the guest pays the rise since the voucher was bought, and what the
+    // club's list said the voucher was paid for. 0/NULL on a migrated row means
+    // the club ate that rise, which is exactly how it worked until now.
+    ['voucher_topup', 'INTEGER DEFAULT 0'],
+    ['voucher_amount', 'REAL'],
   ]
   for (const [name, type] of added) {
     if (!existing.has(name)) db.exec(`ALTER TABLE registrations ADD COLUMN ${name} ${type}`)

@@ -26,6 +26,8 @@ function makeRegistration(overrides: Partial<Registration> = {}): Registration {
     voucher_payment_method: null,
     voucher_number: null,
     voucher_service: null,
+    voucher_topup: 0,
+    voucher_amount: null,
     extra_booking: null,
     weight_surcharge: 'none',
     price_override: 0,

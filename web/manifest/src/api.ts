@@ -77,6 +77,10 @@ export interface Registration {
   voucher_payment_method: CollectedVia | null
   voucher_number: string | null
   voucher_service: VoucherService | null
+  // Ob der Gast die Preissteigerung seit dem Kauf des Gutscheins zahlt, und was
+  // die Gutscheinliste als bezahlten Betrag ausweist.
+  voucher_topup: number | null
+  voucher_amount: number | null
   extra_booking: ExtraBooking | null
   weight_surcharge: WeightSurcharge | null
   price_override: number | null
@@ -123,6 +127,8 @@ export interface ManifestPatch {
   voucher_payment_method?: CollectedVia | null
   voucher_number?: string | null
   voucher_service?: VoucherService | null
+  voucher_topup?: 0 | 1
+  voucher_amount?: number | null
   extra_booking?: ExtraBooking
   weight_surcharge?: WeightSurcharge
   camera_flyer_id?: number | null

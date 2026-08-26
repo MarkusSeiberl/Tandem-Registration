@@ -380,7 +380,7 @@ test('POST /api/export labels the till a voucher top-up was paid into', async ()
   await app.close()
 })
 
-test('POST /api/export appends what each tandemmaster and video flyer earned', async () => {
+test('POST /api/export appends what each tandemmaster and camera flyer earned', async () => {
   const db = openDb(':memory:')
   const date = '2026-07-09'
   const hans = db.prepare('INSERT INTO tandem_masters (name,active) VALUES (?,1)').run('Hans').lastInsertRowid

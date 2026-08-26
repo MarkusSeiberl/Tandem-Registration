@@ -29,7 +29,7 @@ test('each tandemmaster gets their own line, sorted by name', () => {
   expect(section?.total).toBe(135)
 })
 
-test('a video flyer is paid per filmed service, both rates in one calculation', () => {
+test('a camera flyer is paid per filmed service, both rates in one calculation', () => {
   const section = flyerSection([
     jump({ camera_flyer_id: 7, extra_booking: 'video' }),
     jump({ camera_flyer_id: 7, extra_booking: 'video_photo' }),

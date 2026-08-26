@@ -4,7 +4,7 @@ import { promises as fs } from 'fs'
 import path from 'path'
 import { validateGuest } from '../validation'
 import { SseHub } from '../sse'
-import { fillContractPdf, stampVoucherNumber } from '../contractPdf'
+import { fillContractPdf, stampContract } from '../contractPdf'
 import {
   computePrice, surchargeForWeight, COLLECTED_VIA, EXTRA_BOOKINGS, PAYMENT_METHODS,
   VOUCHER_SERVICES, WEIGHT_SURCHARGES,
@@ -256,11 +256,23 @@ export function registerRegistrationRoutes(
       for (const k of keys) params[k] = body[k]
       const result = db.prepare(`UPDATE registrations SET ${set} WHERE id=@id`).run(params)
       if (result.changes === 0) return reply.code(404).send()
-      // Only when the number actually changed: every save from the detail screen
-      // carries a voucher_number, and rewriting the signed PDF on each of them
-      // would churn the file for nothing.
-      if ('voucher_number' in body && body.voucher_number !== current.voucher_number) {
-        await restampContract(current.contract_pdf_filename, body.voucher_number)
+      // Only when one of the two stamped fields actually changed: every save from
+      // the detail screen carries a voucher_number and a tandem_master_id, and
+      // rewriting the signed PDF on each of them would churn the file for
+      // nothing. Both values are read from the row as it stands after the
+      // update, never from the patch alone — a correction to one must not wipe
+      // the other off the page, and the stamp is drawn as a whole.
+      const stampedChanged =
+        ('voucher_number' in body && body.voucher_number !== current.voucher_number) ||
+        ('tandem_master_id' in body && body.tandem_master_id !== current.tandem_master_id)
+      if (stampedChanged) {
+        const masterId = 'tandem_master_id' in body
+          ? body.tandem_master_id
+          : current.tandem_master_id
+        await restampContract(current.contract_pdf_filename, {
+          voucherNumber: 'voucher_number' in body ? body.voucher_number : current.voucher_number,
+          tandemMaster: masterName(masterId),
+        })
       }
 
       // Everything about the voucher list is best-effort, so all of it sits
@@ -342,18 +354,33 @@ export function registerRegistrationRoutes(
     return current
   })
 
-  // Writes the voucher number onto the contract that was signed at registration
-  // time. Best-effort on purpose: the row is the record that matters, and losing
-  // an operator's till entry because a PDF was locked by a viewer would be the
-  // worse failure. The manifest can always check the result via "Vertrag öffnen".
-  async function restampContract(filename: string | null, voucherNumber: string | null) {
+  // The name that goes on the contract, resolved at stamping time. The row
+  // stores an id; a contract stores what was true when it was printed, which is
+  // why a later rename in the Stammdaten does not travel back into PDFs already
+  // on disk.
+  function masterName(id: number | null | undefined): string | null {
+    if (id === null || id === undefined) return null
+    const row = db.prepare('SELECT name FROM tandem_masters WHERE id=?').get(id) as
+      { name: string | null } | undefined
+    return row?.name ?? null
+  }
+
+  // Writes the voucher number and the Tandemmaster onto the contract that was
+  // signed at registration time. Best-effort on purpose: the row is the record
+  // that matters, and losing an operator's till entry because a PDF was locked by
+  // a viewer would be the worse failure. The manifest can always check the result
+  // via "Vertrag öffnen".
+  async function restampContract(
+    filename: string | null,
+    stamps: { voucherNumber: string | null; tandemMaster: string | null }
+  ) {
     if (!filename) return
     const filePath = path.join(cfgRef.current.exportDir, 'vertaege', filename)
     try {
-      const stamped = await stampVoucherNumber(await fs.readFile(filePath), voucherNumber)
+      const stamped = await stampContract(await fs.readFile(filePath), stamps)
       await fs.writeFile(filePath, stamped)
     } catch (err) {
-      app.log.error({ err, filename }, 'Gutschein-Nr. konnte nicht auf den Vertrag gedruckt werden')
+      app.log.error({ err, filename }, 'Vertrag konnte nicht nachgestempelt werden')
     }
   }
 

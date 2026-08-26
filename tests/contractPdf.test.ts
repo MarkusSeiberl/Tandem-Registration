@@ -2,7 +2,7 @@ import { test, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import { PDFDocument } from 'pdf-lib'
-import { fillContractPdf, stampVoucherNumber } from '../src/server/contractPdf'
+import { fillContractPdf, stampContract } from '../src/server/contractPdf'
 
 const templateBytes = fs.readFileSync(path.join(__dirname, '..', 'assets', 'Befoerderungsvertrag.pdf'))
 
@@ -61,12 +61,12 @@ test('the text extractor actually sees drawn text (guards the assertions below)'
   // Without this, every `not.toContain` case below would pass on a helper that
   // silently returns nothing useful.
   const contract = await fillContractPdf(templateBytes, sampleData())
-  expect(await pdfText(await stampVoucherNumber(contract, 'PROBE-1'))).toContain('PROBE-1')
+  expect(await pdfText(await stampContract(contract, { voucherNumber: 'PROBE-1', tandemMaster: null }))).toContain('PROBE-1')
 })
 
-test('stampVoucherNumber prints the bare number on the finished contract', async () => {
+test('stampContract prints the bare number on the finished contract', async () => {
   const contract = await fillContractPdf(templateBytes, sampleData())
-  const stamped = await stampVoucherNumber(contract, 'GS-2026-0815')
+  const stamped = await stampContract(contract, { voucherNumber: 'GS-2026-0815', tandemMaster: null })
 
   const text = await pdfText(stamped)
   expect(text).toContain('GS-2026-0815')
@@ -77,8 +77,8 @@ test('stampVoucherNumber prints the bare number on the finished contract', async
 
 test('a corrected number replaces the old one instead of printing over it', async () => {
   const contract = await fillContractPdf(templateBytes, sampleData())
-  const once = await stampVoucherNumber(contract, 'GS-2026-0815')
-  const twice = await stampVoucherNumber(once, 'GS-2026-4711')
+  const once = await stampContract(contract, { voucherNumber: 'GS-2026-0815', tandemMaster: null })
+  const twice = await stampContract(once, { voucherNumber: 'GS-2026-4711', tandemMaster: null })
 
   const text = await pdfText(twice)
   expect(text).toContain('GS-2026-4711')
@@ -89,15 +89,15 @@ test('a corrected number replaces the old one instead of printing over it', asyn
 
 test('clearing the number leaves no stamp behind', async () => {
   const contract = await fillContractPdf(templateBytes, sampleData())
-  const stamped = await stampVoucherNumber(contract, 'GS-2026-0815')
-  const cleared = await stampVoucherNumber(stamped, null)
+  const stamped = await stampContract(contract, { voucherNumber: 'GS-2026-0815', tandemMaster: null })
+  const cleared = await stampContract(stamped, { voucherNumber: null, tandemMaster: null })
 
   expect(await pdfText(cleared)).not.toContain('GS-2026-0815')
 })
 
 test('a blank number is treated as no number at all', async () => {
   const contract = await fillContractPdf(templateBytes, sampleData())
-  const stamped = await stampVoucherNumber(contract, '   ')
+  const stamped = await stampContract(contract, { voucherNumber: '   ', tandemMaster: null })
   const plain = await fillContractPdf(templateBytes, sampleData())
 
   // Nothing drawn, so nothing added: the page keeps the content it arrived with.
@@ -111,9 +111,9 @@ test('clearing a number twice does not eat into the contract itself', async () =
   // claimed the last existing stream as its own, the next call would delete a
   // piece of the template — and the signed original cannot be rebuilt.
   const contract = await fillContractPdf(templateBytes, sampleData())
-  const once = await stampVoucherNumber(contract, null)
-  const twice = await stampVoucherNumber(once, null)
-  const thrice = await stampVoucherNumber(twice, 'GS-7')
+  const once = await stampContract(contract, { voucherNumber: null, tandemMaster: null })
+  const twice = await stampContract(once, { voucherNumber: null, tandemMaster: null })
+  const thrice = await stampContract(twice, { voucherNumber: 'GS-7', tandemMaster: null })
 
   const text = await pdfText(thrice)
   expect(text).toContain('GS-7')
@@ -121,19 +121,74 @@ test('clearing a number twice does not eat into the contract itself', async () =
   expect(text).toContain('Mustermann')
 })
 
+test('the Tandemmaster is stamped onto the finished contract too', async () => {
+  const contract = await fillContractPdf(templateBytes, sampleData())
+  const stamped = await stampContract(contract, {
+    voucherNumber: null, tandemMaster: 'Hans Gruber',
+  })
+
+  const text = await pdfText(stamped)
+  expect(text).toContain('Hans Gruber')
+  // Bare name, like the number: the club's own blank says what it is.
+  expect(text).not.toContain('Tandemmaster')
+  expect((await PDFDocument.load(stamped)).getPageCount()).toBe(2)
+})
+
+test('both stamped fields survive each other', async () => {
+  const contract = await fillContractPdf(templateBytes, sampleData())
+  const stamped = await stampContract(contract, {
+    voucherNumber: 'GS-2026-0815', tandemMaster: 'Hans Gruber',
+  })
+
+  const text = await pdfText(stamped)
+  expect(text).toContain('GS-2026-0815')
+  expect(text).toContain('Hans Gruber')
+})
+
+test('a reassigned master replaces the old name instead of printing over it', async () => {
+  const contract = await fillContractPdf(templateBytes, sampleData())
+  const once = await stampContract(contract, {
+    voucherNumber: 'GS-1', tandemMaster: 'Hans Gruber',
+  })
+  const twice = await stampContract(once, {
+    voucherNumber: 'GS-1', tandemMaster: 'Karl Berger',
+  })
+
+  const text = await pdfText(twice)
+  expect(text).toContain('Karl Berger')
+  expect(text).not.toContain('Hans Gruber')
+  // One stream carries both, so re-stamping the master must redraw the number.
+  expect(text).toContain('GS-1')
+})
+
+test('clearing the master leaves the voucher number alone', async () => {
+  const contract = await fillContractPdf(templateBytes, sampleData())
+  const once = await stampContract(contract, {
+    voucherNumber: 'GS-1', tandemMaster: 'Hans Gruber',
+  })
+  const cleared = await stampContract(once, { voucherNumber: 'GS-1', tandemMaster: null })
+
+  const text = await pdfText(cleared)
+  expect(text).not.toContain('Hans Gruber')
+  expect(text).toContain('GS-1')
+})
+
 test('the stamp lands on page 1 and leaves the rest of the contract alone', async () => {
-  // The exact x/y in VOUCHER_STAMP is a visual decision, checked against the
+  // The exact x/y in VOUCHER_STAMP and MASTER_STAMP is a visual decision, checked against the
   // printed template — the template's text is vector outlines, so no assertion
   // here can tell the blank line from a letter stroke. This test therefore
   // covers what code can know: the number is drawn, on the first page, and
   // nothing that was already on the contract went missing.
   const contract = await fillContractPdf(templateBytes, sampleData())
-  const stamped = await stampVoucherNumber(contract, 'GS-1')
+  const stamped = await stampContract(contract, {
+    voucherNumber: 'GS-1', tandemMaster: 'Hans Gruber',
+  })
   const doc = await PDFDocument.load(stamped)
 
   expect(doc.getPageCount()).toBe(2)
   const text = await pdfText(stamped)
   expect(text).toContain('GS-1')
+  expect(text).toContain('Hans Gruber')
   expect(text).toContain('Mustermann')
   expect(text).toContain('Freistadt')
 })

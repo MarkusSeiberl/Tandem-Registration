@@ -34,18 +34,27 @@ const PAGE1 = {
   weight: { x: 315, y: 580 },
 }
 
-// The voucher number is added later than everything else — the manifest only
-// learns it when the guest hands the voucher over, long after the contract was
-// signed and written to disk. It goes on the blank line at the top-left, where
-// the operator sees it without unfolding the page.
+// The two header fields the kiosk cannot fill: the manifest only learns them
+// when the guest hands the voucher over and a master takes the jump, long after
+// the contract was signed and written to disk. Both are therefore stamped onto
+// the finished PDF rather than drawn at signing time.
 //
-// Bare number, no label: the line it sits on already says what it is.
+// The voucher number goes in the box at the top-left, where the operator sees it
+// without unfolding the page. Bare number, no label: the line it sits on already
+// says what it is.
 //
-// No white box either, which makes removing the previous content stream (see
-// STAMP_KEY below) the *only* thing standing between a corrected number and a
-// contract showing two of them. That mechanism is not an optimisation here — it
-// is the erase.
+// The Tandemmaster has a blank of its own in the header, one row above
+// Herr/Frau, on the club's own dotted line — the same place a pen would go. It
+// is drawn like the guest's data beside it rather than like the voucher stamp:
+// it is a header field, not a note added to the page, and bold in the middle of
+// that block would read as a correction.
+//
+// Neither gets a white box behind it, which makes removing the previous content
+// stream (see STAMP_KEY below) the *only* thing standing between a corrected
+// value and a contract showing two of them. That mechanism is not an
+// optimisation here — it is the erase.
 const VOUCHER_STAMP = { x: 105, y: 796, size: 11 }
+const MASTER_STAMP = { x: 156, y: 713, size: FONT_SIZE }
 
 const PAGE2 = {
   ort: { x: 85, y: 82 },
@@ -103,8 +112,13 @@ export async function fillContractPdf(
 // Marks the content stream this module last stamped onto page 1, so a re-stamp
 // drops it instead of layering a second one on top. With no white box to hide
 // behind, this is what makes a correction a correction: without it the contract
-// would show both numbers, overprinted. A private key in the page dictionary is
+// would show both values, overprinted. A private key in the page dictionary is
 // ignored by every reader.
+//
+// The name still says Voucher because contracts stamped before the Tandemmaster
+// was added carry exactly this key. Renaming it would leave their stamp
+// unfindable, and the next correction would print the new number over the old
+// one instead of replacing it.
 const STAMP_KEY = PDFName.of('TandemVoucherStamp')
 
 function contentStreamRefs(page: ReturnType<PDFDocument['getPages']>[number]): PDFArray | undefined {
@@ -113,16 +127,28 @@ function contentStreamRefs(page: ReturnType<PDFDocument['getPages']>[number]): P
   return resolved instanceof PDFArray ? resolved : undefined
 }
 
-// Stamps (or clears) the voucher number on an already-generated contract PDF.
-// Re-stampable by design: the previous stamp is removed first, so calling this
-// repeatedly with different numbers leaves exactly one number in the document,
-// and an empty `voucherNumber` leaves none.
-export async function stampVoucherNumber(
-  pdfBytes: Uint8Array,
+export interface ContractStamps {
   voucherNumber: string | null
+  tandemMaster: string | null
+}
+
+// Stamps (or clears) the two late-arriving header fields on an already-generated
+// contract PDF. Re-stampable by design: the previous stamp is removed first, so
+// calling this repeatedly leaves exactly one voucher number and one Tandemmaster
+// in the document, and empty values leave none.
+//
+// Both travel together, in one content stream, because the erase works on
+// streams: two stamps would need two keys, two removals and two chances for a
+// half-erased contract. The caller passes what the row says now, not what
+// changed — which is also what makes a correction to either field redraw both
+// correctly.
+export async function stampContract(
+  pdfBytes: Uint8Array,
+  stamps: ContractStamps
 ): Promise<Buffer> {
   const doc = await PDFDocument.load(pdfBytes)
-  const font = await doc.embedFont(StandardFonts.HelveticaBold)
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const regular = await doc.embedFont(StandardFonts.Helvetica)
   const [page1] = doc.getPages()
 
   const previous = page1.node.get(STAMP_KEY)
@@ -143,13 +169,26 @@ export async function stampVoucherNumber(
   // own, and the next call would delete a piece of the contract.
   const before = contentStreamRefs(page1)?.size() ?? 0
 
-  const trimmed = voucherNumber?.trim() ?? ''
-  if (trimmed.length > 0) {
-    page1.drawText(trimmed, {
+  const number = stamps.voucherNumber?.trim() ?? ''
+  if (number.length > 0) {
+    page1.drawText(number, {
       x: VOUCHER_STAMP.x,
       y: VOUCHER_STAMP.y,
       size: VOUCHER_STAMP.size,
-      font,
+      font: bold,
+      color: rgb(0, 0, 0),
+    })
+  }
+
+  const master = stamps.tandemMaster?.trim() ?? ''
+  if (master.length > 0) {
+    // The same content stream as the number above: pdf-lib reuses the stream it
+    // created for the first draw call, which is what lets one key erase both.
+    page1.drawText(master, {
+      x: MASTER_STAMP.x,
+      y: MASTER_STAMP.y,
+      size: MASTER_STAMP.size,
+      font: regular,
       color: rgb(0, 0, 0),
     })
   }

@@ -345,6 +345,91 @@ test('correcting the number leaves only the corrected one on the contract', asyn
   await app.close()
 })
 
+// Same reason as the voucher number: the master is assigned in the manifest,
+// long after the guest signed, and the contract on disk names who flew them.
+test('assigning a tandem master prints the name on the stored contract', async () => {
+  const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-master-stamp-'))
+  const { app } = testServer({ exportDir })
+  const { id } = (await app.inject({
+    method: 'POST', url: '/api/registrations', payload: validBody(),
+  })).json()
+  const filename = (await app.inject({ method: 'GET', url: '/api/registrations' }))
+    .json()[0].contract_pdf_filename
+  const pdfPath = path.join(exportDir, 'vertaege', filename)
+
+  const master = (await app.inject({
+    method: 'POST', url: '/api/masters', payload: { name: 'Hans Gruber' },
+  })).json()
+
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { tandem_master_id: master.id },
+  })
+
+  expect(await pdfContains(pdfPath, 'Hans Gruber')).toBe(true)
+  await app.close()
+})
+
+test('reassigning the jump leaves only the new master on the contract', async () => {
+  const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-master-restamp-'))
+  const { app } = testServer({ exportDir })
+  const { id } = (await app.inject({
+    method: 'POST', url: '/api/registrations', payload: validBody(),
+  })).json()
+  const filename = (await app.inject({ method: 'GET', url: '/api/registrations' }))
+    .json()[0].contract_pdf_filename
+  const pdfPath = path.join(exportDir, 'vertaege', filename)
+
+  const add = async (name: string) => (await app.inject({
+    method: 'POST', url: '/api/masters', payload: { name },
+  })).json().id
+  const hans = await add('Hans Gruber')
+  const karl = await add('Karl Berger')
+
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { tandem_master_id: hans, payment_method: 'voucher', voucher_number: 'GS-3' },
+  })
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { tandem_master_id: karl },
+  })
+
+  expect(await pdfContains(pdfPath, 'Karl Berger')).toBe(true)
+  expect(await pdfContains(pdfPath, 'Hans Gruber')).toBe(false)
+  // Both live in one content stream, so redrawing the master must not lose the
+  // number that was already on the page.
+  expect(await pdfContains(pdfPath, 'GS-3')).toBe(true)
+  await app.close()
+})
+
+test('taking the master off the jump takes the name off the contract', async () => {
+  const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-master-clear-'))
+  const { app } = testServer({ exportDir })
+  const { id } = (await app.inject({
+    method: 'POST', url: '/api/registrations', payload: validBody(),
+  })).json()
+  const filename = (await app.inject({ method: 'GET', url: '/api/registrations' }))
+    .json()[0].contract_pdf_filename
+  const pdfPath = path.join(exportDir, 'vertaege', filename)
+
+  const master = (await app.inject({
+    method: 'POST', url: '/api/masters', payload: { name: 'Hans Gruber' },
+  })).json()
+
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { tandem_master_id: master.id },
+  })
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { tandem_master_id: null },
+  })
+
+  expect(await pdfContains(pdfPath, 'Hans Gruber')).toBe(false)
+  await app.close()
+})
+
 test('a save that does not touch the voucher number leaves the contract alone', async () => {
   const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-nostamp-'))
   const { app } = testServer({ exportDir })
@@ -360,8 +445,9 @@ test('a save that does not touch the voucher number leaves the contract alone', 
     method: 'PATCH', url: `/api/registrations/${id}`, payload: { load_number: 3 },
   })
 
-  // Byte-identical: every save from the detail screen carries a voucher_number,
-  // and rewriting the signed document on each of them would churn it for nothing.
+  // Byte-identical: every save from the detail screen carries a voucher_number
+  // and a tandem_master_id, and rewriting the signed document on each of them
+  // would churn it for nothing.
   expect(fs.readFileSync(pdfPath).equals(before)).toBe(true)
   await app.close()
 })

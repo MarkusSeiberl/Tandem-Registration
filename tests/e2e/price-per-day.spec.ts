@@ -1,5 +1,9 @@
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
+// The local calendar day, like the server and the manifest — see
+// src/server/day.ts. In UTC this would ask about yesterday between
+// local midnight and 02:00.
+import { today } from '../../src/server/day'
 
 // The bug this pins, end to end: the price table said 270, a guest registered at
 // 270, the table was changed to 280 — and the detail screen then said 280 while
@@ -10,8 +14,6 @@ import type { Page } from '@playwright/test'
 // separate tests would each be starting mid-story.
 
 test.use({ viewport: { width: 1440, height: 900 } })
-
-const today = () => new Date().toISOString().slice(0, 10)
 
 async function registerGuest(page: Page, firstName: string) {
   await page.goto('/guest/')

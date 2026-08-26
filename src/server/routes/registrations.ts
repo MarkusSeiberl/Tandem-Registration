@@ -12,8 +12,7 @@ import {
 import type { Config } from '../config'
 import { redeemVoucher } from '../voucherRedeem'
 import { dayIsFrozen, repriceDay, startDay, tablesForDay } from '../dayTables'
-
-const today = () => new Date().toISOString().slice(0, 10)
+import { today } from '../day'
 
 function safeNamePart(s: string): string {
   return s.trim().replace(/[\\/:*?"<>|]/g, '')

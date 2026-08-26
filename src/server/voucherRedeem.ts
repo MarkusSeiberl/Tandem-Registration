@@ -6,6 +6,7 @@ import {
   normaliseVoucherNumber,
 } from './voucherList'
 import type { Config } from './config'
+import { isoDay } from './day'
 
 export type RedeemOutcome =
   /** The date reached the Eingelöst cell. */
@@ -19,12 +20,9 @@ export type RedeemOutcome =
   /** No voucher list configured. */
   | 'disabled'
 
-// Local calendar day, not UTC. The club is in Austria (UTC+1/+2), so a
-// redemption taken just after local midnight has a UTC date of *yesterday*:
-// toISOString would write the previous day into the club's list and reuse the
-// previous day's backup name, quietly skipping today's backup.
-const isoDay = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+// The backup is named for the local calendar day (see ./day): a redemption
+// taken just after local midnight has a UTC date of *yesterday*, which would
+// reuse the previous day's backup name and quietly skip today's backup.
 
 // ExcelJS stores a Date as `25569 + getTime()/86400000`, i.e. it reads the
 // instant in UTC. Handing it the raw `on` would therefore land the same

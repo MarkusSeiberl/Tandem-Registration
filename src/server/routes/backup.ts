@@ -5,9 +5,16 @@ import path from 'path'
 import type { Config } from '../config'
 
 // A timestamp safe for filenames on every OS: no colons. 2026-07-19_14-30-05.
+//
+// Local time, like the voucher list's backup beside it (see voucherRedeem.ts):
+// a backup taken just after local midnight would otherwise carry yesterday's
+// date and sort in among the previous day's files, and the two backup kinds in
+// the same folder would name the same moment differently.
 function stamp(): string {
-  const iso = new Date().toISOString().slice(0, 19) // 2026-07-19T14:30:05
-  return iso.replace('T', '_').replace(/:/g, '-')
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+  return `${date}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`
 }
 
 export function registerBackupRoutes(app: FastifyInstance, db: Database, cfgRef: { current: Config }) {

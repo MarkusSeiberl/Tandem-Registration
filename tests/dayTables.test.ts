@@ -4,6 +4,9 @@ import os from 'os'
 import path from 'path'
 import { testServer } from './helpers/testServer'
 import { DEFAULT_PAYOUTS, DEFAULT_PRICES } from '../src/server/config'
+// The server files a jump under its local day, so the tests have to ask the
+// same question the same way — see src/server/day.ts.
+import { today } from '../src/server/day'
 
 // What a jump costs is a fact of the day it was flown. The price table in the
 // settings is where the NEXT day starts from — it is not a retroactive opinion
@@ -36,8 +39,6 @@ async function register(app: any, overrides: Record<string, unknown> = {}): Prom
   expect(res.statusCode).toBe(201)
   return res.json().id
 }
-
-const today = () => new Date().toISOString().slice(0, 10)
 
 test('the first registration of a day freezes that day price list', async () => {
   const { app, db } = server({ jump: 270 })

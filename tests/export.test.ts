@@ -9,6 +9,7 @@ import { registerExportRoutes } from '../src/server/routes/export'
 import { DEFAULT_PAYOUTS, DEFAULT_PRICES } from '../src/server/config'
 import { writeVoucherFile } from './helpers/voucherFile'
 import { clearVoucherListCache } from '../src/server/voucherList'
+import { today as localToday } from '../src/server/day'
 
 const tmpDirs: string[] = []
 
@@ -128,7 +129,7 @@ test('POST /api/export writes Datum/Ort/Betriebsleiter meta rows, BL left blank'
 
 test('POST /api/export defaults to today and creates the export dir if missing', async () => {
   const db = openDb(':memory:')
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   seed(db, today)
 
   const base = await makeTmpDir()

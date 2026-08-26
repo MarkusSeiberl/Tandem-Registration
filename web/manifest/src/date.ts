@@ -1,5 +1,13 @@
+// Mirror of today() in src/server/day.ts, and it has to stay one: the server
+// files a registration under its own local day, and a manifest computing the
+// day in UTC would open on yesterday between local midnight and 02:00 — showing
+// an empty list while guests are registering, and hiding the reprice button
+// because the day on screen is not the day the server calls today.
 export function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
 }
 
 const KEY = 'manifest.date'

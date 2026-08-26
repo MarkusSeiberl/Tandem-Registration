@@ -12,8 +12,8 @@ import { payoutSections } from '../payouts'
 import { tablesForDay } from '../dayTables'
 import { redeemVoucher } from '../voucherRedeem'
 import type { Config } from '../config'
+import { today } from '../day'
 
-const today = () => new Date().toISOString().slice(0, 10)
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef: { current: Config }) {

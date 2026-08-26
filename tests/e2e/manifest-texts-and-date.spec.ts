@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { today as localToday } from '../../src/server/day'
 
 test.use({ viewport: { width: 1440, height: 900 } })
 
@@ -58,7 +59,7 @@ test('the guest reads the contract with the bold passages, not the markers', asy
 test('the manifest keeps the chosen day, and "Heute" brings it back', async ({ page }) => {
   await page.goto('/manifest/')
   const dateField = () => page.getByLabel('Datum')
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
 
   await expect(dateField()).toHaveValue(today)
 

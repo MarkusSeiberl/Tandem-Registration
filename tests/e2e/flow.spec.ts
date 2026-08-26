@@ -240,7 +240,7 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   ws.eachRow((r) => payoutLines.push([r.getCell(1).value, r.getCell(2).value, r.getCell(3).value]))
   expect(payoutLines).toContainEqual(['Vergütung Tandemmaster', null, null])
   expect(payoutLines).toContainEqual(['ohne Tandemmaster', '1 × 45,00 €', 45])
-  expect(payoutLines).toContainEqual(['Vergütung Videoflieger', null, null])
+  expect(payoutLines).toContainEqual(['Vergütung Kameraflieger', null, null])
   expect(payoutLines).toContainEqual(['ohne Kameraflieger', '1 × 80,00 €', 80])
 })
 

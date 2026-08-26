@@ -16,8 +16,8 @@ const PRICE_FIELDS: { key: keyof Prices; label: string }[] = [
 // leave the till, they never reach the guest.
 const PAYOUT_FIELDS: { key: keyof Payouts; label: string }[] = [
   { key: 'tandem_master', label: 'Tandemmaster pro Sprung' },
-  { key: 'video', label: 'Videoflieger Video' },
-  { key: 'video_photo', label: 'Videoflieger Video + Foto' },
+  { key: 'video', label: 'Kameraflieger Video' },
+  { key: 'video_photo', label: 'Kameraflieger Video + Foto' },
 ]
 
 const EMPTY_PRICES: Prices = {

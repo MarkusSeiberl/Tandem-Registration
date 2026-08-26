@@ -73,7 +73,7 @@ test('the payout block follows the totals, one line per person', async () => {
       total: 180,
     },
     {
-      title: 'Vergütung Videoflieger',
+      title: 'Vergütung Kameraflieger',
       entries: [{ name: 'Hofer Lisa', calculation: '1 × 60,00 € + 1 × 80,00 €', amount: 140 }],
       total: 140,
     },
@@ -96,14 +96,14 @@ test('the payout block follows the totals, one line per person', async () => {
   expect(ws.getRow(10).getCell(3).value).toBe(180)
   expect(ws.getRow(10).getCell(3).font?.bold).toBe(true)
 
-  expect(ws.getRow(12).getCell(1).value).toBe('Vergütung Videoflieger')
+  expect(ws.getRow(12).getCell(1).value).toBe('Vergütung Kameraflieger')
   expect(ws.getRow(13).getCell(2).value).toBe('1 × 60,00 € + 1 × 80,00 €')
   expect(ws.getRow(14).getCell(3).value).toBe(140)
 })
 
 test('the calculation column is wide enough not to be cut off', async () => {
   const payouts = [{
-    title: 'Vergütung Videoflieger',
+    title: 'Vergütung Kameraflieger',
     entries: [{ name: 'Hofer Lisa', calculation: '1 × 60,00 € + 1 × 80,00 €', amount: 140 }],
     total: 140,
   }]

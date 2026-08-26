@@ -48,7 +48,7 @@ export interface Prices {
   weight_over_100: number
 }
 
-// Was der Verein pro Sprung an Tandemmaster und Videoflieger auszahlt.
+// Was der Verein pro Sprung an Tandemmaster und Kameraflieger auszahlt.
 export interface Payouts {
   tandem_master: number
   video: number

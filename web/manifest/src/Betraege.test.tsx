@@ -40,7 +40,7 @@ describe('Beträge', () => {
     expect(screen.getByText('Vergütung (EUR)')).toBeInTheDocument()
     expect(field('Tandemsprung').value).toBe('270')
     expect(field('Tandemmaster pro Sprung').value).toBe('45')
-    expect(field('Videoflieger Video + Foto').value).toBe('80')
+    expect(field('Kameraflieger Video + Foto').value).toBe('80')
   })
 
   it('saves both blocks together', async () => {
@@ -76,10 +76,10 @@ describe('Beträge', () => {
     render(<Betraege />)
     await screen.findByText('Vergütung (EUR)')
 
-    await userEvent.clear(field('Videoflieger Video'))
+    await userEvent.clear(field('Kameraflieger Video'))
     await userEvent.click(save())
 
-    expect(await screen.findByText('Vergütung „Videoflieger Video" ungültig')).toBeInTheDocument()
+    expect(await screen.findByText('Vergütung „Kameraflieger Video" ungültig')).toBeInTheDocument()
     expect(api.putSettings).not.toHaveBeenCalled()
   })
 })

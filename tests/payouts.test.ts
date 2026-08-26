@@ -12,7 +12,7 @@ function jump(fields: Record<string, unknown> = {}) {
 
 const sections = (rows: any[]) => payoutSections(rows, MASTERS, FLYERS, DEFAULT_PAYOUTS)
 const masterSection = (rows: any[]) => sections(rows).find(s => s.title.includes('Tandemmaster'))
-const flyerSection = (rows: any[]) => sections(rows).find(s => s.title.includes('Videoflieger'))
+const flyerSection = (rows: any[]) => sections(rows).find(s => s.title.includes('Kameraflieger'))
 
 test('a tandemmaster earns the flat rate once per jump', () => {
   const section = masterSection([jump(), jump(), jump()])

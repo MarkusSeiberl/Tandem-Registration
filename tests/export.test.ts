@@ -411,7 +411,7 @@ test('POST /api/export appends what each tandemmaster and video flyer earned', a
   expect(lines).toContainEqual(['Vergütung Tandemmaster', null, null])
   expect(lines).toContainEqual(['Hans', '2 × 45,00 €', 90])
   expect(lines).toContainEqual(['Anna', '1 × 45,00 €', 45])
-  expect(lines).toContainEqual(['Vergütung Videoflieger', null, null])
+  expect(lines).toContainEqual(['Vergütung Kameraflieger', null, null])
   expect(lines).toContainEqual(['Peter', '1 × 60,00 € + 1 × 80,00 €', 140])
   // Both sections close with their own Summe.
   expect(lines.filter(l => l[0] === 'Summe').map(l => l[2])).toEqual([135, 140])

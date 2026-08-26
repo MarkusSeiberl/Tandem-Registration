@@ -105,6 +105,6 @@ export function payoutSections(
 
   return [
     toSection('Vergütung Tandemmaster', masters, UNASSIGNED_MASTER),
-    toSection('Vergütung Videoflieger', flyers, UNASSIGNED_FLYER),
+    toSection('Vergütung Kameraflieger', flyers, UNASSIGNED_FLYER),
   ].filter((s): s is PayoutSection => s !== null)
 }

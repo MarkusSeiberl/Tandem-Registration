@@ -1,4 +1,54 @@
-import { PDFArray, PDFDocument, PDFName, PDFRef, StandardFonts, rgb } from 'pdf-lib'
+import fs from 'fs'
+import fontkit from '@pdf-lib/fontkit'
+import { PDFArray, PDFDocument, PDFFont, PDFName, PDFRef, rgb } from 'pdf-lib'
+import { assetPath } from './assets'
+
+// The club jumps 30 km from the Czech border and its guests come from there,
+// from Poland, from Turkey. None of those alphabets fit in WinAnsi, which is
+// all the PDF standard fonts (Helvetica and friends) can encode: drawing a
+// guest called Ondřej threw `WinAnsi cannot encode "ř"` — inside the
+// registration route, before the row was ever written. The guest could not
+// register at all, and the tablet only said "Server-Fehler. Bitte erneut
+// versuchen." Retrying never helped, because nothing about the retry differed.
+//
+// So the contract is drawn with a font that carries those letters. DejaVu Sans
+// Condensed rather than DejaVu Sans proper: the header blanks are filled at
+// fixed coordinates measured against Helvetica, and Condensed is within ~3% of
+// Helvetica's width where the regular face is ~13% wider — enough for a long
+// e-mail address to run out of its blank and into the next field.
+//
+// Both faces ship in assets/ (licence beside them) and are embedded subset, so
+// a contract carries only the glyphs it actually uses — a few kB, not the 660 kB
+// of the file.
+const FONT_FILES = {
+  regular: 'DejaVuSansCondensed.ttf',
+  bold: 'DejaVuSansCondensed-Bold.ttf',
+} as const
+
+export const FONT_ASSETS = Object.values(FONT_FILES)
+
+type FontWeight = keyof typeof FONT_FILES
+
+// Read once and kept: every registration draws a contract, and the two files
+// are 1.3 MB of unchanging bytes.
+const fontCache = new Map<FontWeight, Buffer>()
+
+function fontBytes(weight: FontWeight): Buffer {
+  const cached = fontCache.get(weight)
+  if (cached) return cached
+  const bytes = fs.readFileSync(assetPath(FONT_FILES[weight]))
+  fontCache.set(weight, bytes)
+  return bytes
+}
+
+// Embedding is per document, and pdf-lib has no way to look up a font a
+// previously saved document already carries. A contract re-stamped several
+// times therefore accumulates one small subset per stamp; at a few kB each that
+// is not worth the risk of pruning font resources out of a signed PDF.
+async function embedFont(doc: PDFDocument, weight: FontWeight): Promise<PDFFont> {
+  doc.registerFontkit(fontkit)
+  return doc.embedFont(fontBytes(weight), { subset: true })
+}
 
 export interface ContractPdfData {
   firstName: string
@@ -75,7 +125,7 @@ export async function fillContractPdf(
   data: ContractPdfData
 ): Promise<Buffer> {
   const doc = await PDFDocument.load(templateBytes)
-  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const font = await embedFont(doc, 'regular')
   const [page1, page2] = doc.getPages()
   const black = rgb(0, 0, 0)
 
@@ -147,8 +197,6 @@ export async function stampContract(
   stamps: ContractStamps
 ): Promise<Buffer> {
   const doc = await PDFDocument.load(pdfBytes)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
-  const regular = await doc.embedFont(StandardFonts.Helvetica)
   const [page1] = doc.getPages()
 
   const previous = page1.node.get(STAMP_KEY)
@@ -175,7 +223,7 @@ export async function stampContract(
       x: VOUCHER_STAMP.x,
       y: VOUCHER_STAMP.y,
       size: VOUCHER_STAMP.size,
-      font: bold,
+      font: await embedFont(doc, 'bold'),
       color: rgb(0, 0, 0),
     })
   }
@@ -188,7 +236,7 @@ export async function stampContract(
       x: MASTER_STAMP.x,
       y: MASTER_STAMP.y,
       size: MASTER_STAMP.size,
-      font: regular,
+      font: await embedFont(doc, 'regular'),
       color: rgb(0, 0, 0),
     })
   }

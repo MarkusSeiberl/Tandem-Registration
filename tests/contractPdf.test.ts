@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { PDFDocument } from 'pdf-lib'
 import { fillContractPdf, stampContract } from '../src/server/contractPdf'
+import { pdfText } from './helpers/pdfText'
 
 const templateBytes = fs.readFileSync(path.join(__dirname, '..', 'assets', 'Befoerderungsvertrag.pdf'))
 
@@ -34,28 +35,60 @@ test('fillContractPdf output is larger than the bare template (text + image were
   expect(buf.length).toBeGreaterThan(templateBytes.length)
 })
 
+// The club jumps 30 km from the Czech border, and the guests arrive from there,
+// from Poland and from Turkey. Every one of those alphabets lives outside
+// WinAnsi, which is all the PDF standard fonts can encode — a contract drawn
+// with one of them throws on the first `ř`, and the throw happens inside the
+// registration route before the row is written. The guest cannot register at
+// all, and the tablet only says "Server-Fehler. Bitte erneut versuchen."
+test('a guest whose name needs more than WinAnsi can register', async () => {
+  const buf = await fillContractPdf(templateBytes, {
+    ...sampleData(),
+    firstName: 'Ondřej',
+    lastName: 'Nováček',
+    street: 'Hlavní třída 12',
+    city: 'Český Krumlov',
+  })
+
+  const text = await pdfText(buf)
+  // Not transliterated: the name on a Beförderungsvertrag is the guest's own.
+  expect(text).toContain('Ondřej')
+  expect(text).toContain('Nováček')
+  expect(text).toContain('Český Krumlov')
+})
+
+test('Polish and Turkish letters reach the contract as themselves', async () => {
+  const buf = await fillContractPdf(templateBytes, {
+    ...sampleData(),
+    firstName: 'Łukasz',
+    lastName: 'Doğan',
+    city: 'Gdańsk',
+  })
+
+  const text = await pdfText(buf)
+  expect(text).toContain('Łukasz')
+  expect(text).toContain('Doğan')
+  expect(text).toContain('Gdańsk')
+})
+
+test('a Tandemmaster with a non-WinAnsi name is stamped, not swallowed', async () => {
+  // The restamp is best-effort and logs its failures, so a throw here does not
+  // fail an operator's save — it silently leaves the master off the contract.
+  const contract = await fillContractPdf(templateBytes, sampleData())
+  const stamped = await stampContract(contract, {
+    voucherNumber: 'GS-2026-0815',
+    tandemMaster: 'Jiří Šťastný',
+  })
+
+  const text = await pdfText(stamped)
+  expect(text).toContain('Jiří Šťastný')
+  expect(text).toContain('GS-2026-0815')
+})
+
 // ---------------------------------------------------------------------------
 // The voucher number is stamped onto an already-signed contract, because the
 // signature is not kept and the PDF therefore cannot be rebuilt from scratch.
 // ---------------------------------------------------------------------------
-
-// pdf-lib writes text as a Tj operator inside a Flate-compressed content stream,
-// and encodes the string itself as hex (`<47757473…> Tj`). So the number is
-// findable neither in the raw bytes nor in the decompressed stream — both layers
-// have to come off before an assertion means anything.
-async function pdfText(buf: Buffer): Promise<string> {
-  const zlib = await import('zlib')
-  const doc = await PDFDocument.load(buf)
-  let out = ''
-  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
-    const contents = (obj as any).contents
-    if (!contents) continue
-    const raw = Buffer.from(contents)
-    try { out += zlib.inflateSync(raw).toString('latin1') } catch { out += raw.toString('latin1') }
-  }
-  return out.replace(/<([0-9A-Fa-f]+)>/g, (all, hex: string) =>
-    hex.length % 2 === 0 ? Buffer.from(hex, 'hex').toString('latin1') : all)
-}
 
 test('the text extractor actually sees drawn text (guards the assertions below)', async () => {
   // Without this, every `not.toContain` case below would pass on a helper that

@@ -132,11 +132,20 @@ bundled `dist/server.cjs`):
   "assets": [
     "web/guest/dist/**/*",     // guest kiosk app, embedded into the exe
     "web/manifest/dist/**/*",  // manifest/staff app, embedded into the exe
-    "assets/**/*"              // Befoerderungsvertrag.pdf contract template
+    "assets/**/*"              // contract template + the fonts it is drawn with
   ],
   "outputPath": "dist"
 }
 ```
+
+`assets/` holds the `Befoerderungsvertrag.pdf` template and the two DejaVu Sans
+Condensed faces the contract's text is drawn with (licence beside them). The
+fonts are not a nicety: the PDF standard fonts can only encode WinAnsi, and a
+guest from across the Czech border 30 km away could not register at all while
+the contract was drawn with one (see `src/server/contractPdf.ts`). Both are
+embedded subset, so a contract grows by a few kB rather than by the 660 kB of
+the file. `src/server/main.ts` refuses to start if either is missing, so the
+failure shows up on the operator's console instead of at the tablet.
 
 Unlike the web frontends, the contract template is read with a single `fs.readFileSync` in `main.ts` (see `contractPdf.ts` usage there), so it does not need the extraction-to-tempdir step `@fastify/static` requires.
 

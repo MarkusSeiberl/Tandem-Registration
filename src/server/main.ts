@@ -9,10 +9,8 @@ import { buildServer } from './index'
 import { registerStatic } from './static'
 import { notifyRegistration } from './notify'
 import { pickPathWindows } from './pickPathWin'
-
-const isPackaged = typeof (process as unknown as { pkg?: unknown }).pkg !== 'undefined'
-
-const installDir = isPackaged ? path.dirname(process.execPath) : process.cwd()
+import { assetPath, installDir, isPackaged } from './assets'
+import { FONT_ASSETS } from './contractPdf'
 
 const dir = process.env.DIR || installDir
 
@@ -38,10 +36,24 @@ if (nativeBinding && !fs.existsSync(nativeBinding)) {
   process.exit(1)
 }
 
-const templatePath = isPackaged
-  ? path.join(__dirname, '..', 'assets', 'Befoerderungsvertrag.pdf')
-  : path.join(installDir, 'assets', 'Befoerderungsvertrag.pdf')
-const contractTemplate = fs.readFileSync(templatePath)
+const contractTemplate = fs.readFileSync(assetPath('Befoerderungsvertrag.pdf'))
+
+// The fonts the contract is drawn with are only opened when the first guest
+// signs. A missing one would surface there as a failed registration in front of
+// a waiting guest — the very failure the embedded font was added to end — so it
+// is checked while nobody is standing at the tablet.
+const missingFonts = FONT_ASSETS.filter((name) => !fs.existsSync(assetPath(name)))
+if (missingFonts.length > 0) {
+  const many = missingFonts.length > 1
+  console.error(
+    `\n[tandem] Start fehlgeschlagen: Schriftdatei${many ? 'en' : ''} nicht gefunden.\n` +
+      `Ohne sie kann kein Beförderungsvertrag gedruckt werden.\n` +
+      `${many ? 'Diese Dateien fehlen' : 'Diese Datei fehlt'}:\n` +
+      missingFonts.map((name) => `  - ${assetPath(name)}`).join('\n') +
+      `\n`,
+  )
+  process.exit(1)
+}
 
 const db = openDb(path.join(dir, 'tandem.db'), nativeBinding)
 const cfgRef = { current: loadConfig(dir) }

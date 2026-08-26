@@ -2,24 +2,12 @@ import { test, expect, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import zlib from 'zlib'
-import { PDFDocument } from 'pdf-lib'
 import { testServer } from './helpers/testServer'
+import { pdfText } from './helpers/pdfText'
+import { today } from '../src/server/day'
 
-// pdf-lib compresses its content streams and hex-encodes the drawn string, so a
-// plain byte search would find nothing whether the stamp is there or not.
-// Mirrors the helper in contractPdf.test.ts.
 async function pdfContains(filePath: string, needle: string): Promise<boolean> {
-  const doc = await PDFDocument.load(fs.readFileSync(filePath))
-  let text = ''
-  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
-    const contents = (obj as any).contents
-    if (!contents) continue
-    const raw = Buffer.from(contents)
-    try { text += zlib.inflateSync(raw).toString('latin1') } catch { text += raw.toString('latin1') }
-  }
-  return text.replace(/<([0-9A-Fa-f]+)>/g, (all, hex: string) =>
-    hex.length % 2 === 0 ? Buffer.from(hex, 'hex').toString('latin1') : all).includes(needle)
+  return (await pdfText(fs.readFileSync(filePath))).includes(needle)
 }
 
 const validBody = () => ({
@@ -61,7 +49,7 @@ test('create then list returns the record', async () => {
   const rows = list.json()
   expect(rows.length).toBe(1)
   const row = rows[0]
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayStr = today()
   expect(row.jump_date).toBe(todayStr)
   expect(isNaN(Date.parse(row.created_at))).toBe(false)
   expect(row.first_name).toBe(body.first_name)
@@ -73,6 +61,40 @@ test('create then list returns the record', async () => {
   expect(row.street).toBe('X 1')
   expect(row.postal_code).toBe('4240')
   expect(row.city).toBe('Freistadt')
+  await app.close()
+})
+
+// The drop zone is 30 km from the Czech border. Drawing the contract with a PDF
+// standard font threw `WinAnsi cannot encode "ř"` before the row was inserted,
+// so the whole registration 500'd: no row, no contract, and a tablet that said
+// only "Server-Fehler. Bitte erneut versuchen." to a guest for whom no retry
+// could ever work.
+test('a guest whose name needs more than WinAnsi can register', async () => {
+  const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-umlaut-'))
+  const { app } = testServer({ exportDir })
+
+  const create = await app.inject({
+    method: 'POST',
+    url: '/api/registrations',
+    payload: {
+      ...validBody(),
+      first_name: 'Ondřej',
+      last_name: 'Nováček',
+      street: 'Hlavní třída 12',
+      city: 'Český Krumlov',
+    },
+  })
+  expect(create.statusCode).toBe(201)
+
+  const row = (await app.inject({ method: 'GET', url: '/api/registrations' })).json()[0]
+  expect(row.first_name).toBe('Ondřej')
+
+  // And the contract really carries the name, rather than the row having been
+  // saved while the PDF quietly lost it.
+  const pdfPath = path.join(exportDir, 'vertaege', row.contract_pdf_filename)
+  expect(await pdfContains(pdfPath, 'Ondřej')).toBe(true)
+  expect(await pdfContains(pdfPath, 'Nováček')).toBe(true)
+
   await app.close()
 })
 
@@ -120,7 +142,7 @@ test('filters registrations by jump_date', async () => {
   const emptyList = await app.inject({ method:'GET', url:'/api/registrations?date=2000-01-01' })
   expect(emptyList.json()).toEqual([])
 
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayStr = today()
   const todayList = await app.inject({ method:'GET', url:`/api/registrations?date=${todayStr}` })
   expect(todayList.json().length).toBe(1)
 
@@ -150,7 +172,7 @@ test('two concurrent registrations for the same name on the same day get distinc
   expect(filenames.length).toBe(2)
   expect(filenames[0]).not.toBe(filenames[1])
 
-  const dateStamp = new Date().toISOString().slice(0, 10).replaceAll('-', '.')
+  const dateStamp = today().replaceAll('-', '.')
   expect(filenames).toEqual([
     `${dateStamp}_Muster-Max (2).pdf`,
     `${dateStamp}_Muster-Max.pdf`,

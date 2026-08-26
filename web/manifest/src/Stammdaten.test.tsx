@@ -48,4 +48,16 @@ describe('Stammdaten', () => {
     expect(screen.getByText('Vergütung (EUR)')).toBeInTheDocument()
     expect((screen.getByLabelText('Tandemmaster pro Sprung') as HTMLInputElement).value).toBe('45')
   })
+
+  it('puts the amounts above the crew lists', async () => {
+    render(<Stammdaten />)
+    await screen.findByText('Preise (EUR)')
+
+    // What the screen is opened for on a normal day comes first. Asserted by
+    // document order rather than by looks, which is the part a test can know.
+    const headings = screen.getAllByRole('heading').map((h) => h.textContent)
+    expect(headings).toEqual([
+      'Preise (EUR)', 'Vergütung (EUR)', 'Tandemmaster', 'Kameraflieger',
+    ])
+  })
 })

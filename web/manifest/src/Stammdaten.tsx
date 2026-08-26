@@ -103,6 +103,12 @@ function StammdatenList({ title, addLabel, load, add, remove }: StammdatenListPr
 export default function Stammdaten() {
   return (
     <div className="stammdaten-screen">
+      {/*
+        The amounts first: they are what the screen is opened for on a normal
+        day. The crew lists change a few times a season, the prices are looked at
+        before every one of them.
+      */}
+      <Betraege />
       <StammdatenList
         title="Tandemmaster"
         addLabel="Name des Tandemmasters"
@@ -117,8 +123,6 @@ export default function Stammdaten() {
         add={addFlyer}
         remove={deleteFlyer}
       />
-      {/* The amounts sit under the crew they are paid to and charged for. */}
-      <Betraege />
     </div>
   )
 }

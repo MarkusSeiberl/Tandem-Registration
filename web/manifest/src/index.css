@@ -773,11 +773,12 @@ h2 {
   border-bottom: none;
 }
 
-/* Full width under the two crew lists: the amounts apply to everyone above. */
+/* Full width above the two crew lists: the amounts apply to everyone below, and
+   the rule under them is what separates the money from the names. */
 .betraege-section {
   flex-basis: 100%;
-  padding-top: 24px;
-  border-top: 1px solid var(--border);
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
   display: flex;
   flex-wrap: wrap;
   gap: 32px;

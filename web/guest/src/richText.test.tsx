@@ -39,6 +39,52 @@ describe('renderRichText', () => {
     expect(document.querySelector('strong')).toBeNull()
   })
 
+  it('italicises what stands between single stars', () => {
+    show('Vor *leise* danach')
+    expect(screen.getByText('leise').tagName).toBe('EM')
+    expect(document.body.textContent).toBe('Vor leise danach')
+  })
+
+  it('underlines what stands between double underscores', () => {
+    show('Vor __wichtig__ danach')
+    expect(screen.getByText('wichtig').tagName).toBe('U')
+    expect(document.body.textContent).toBe('Vor wichtig danach')
+  })
+
+  it('keeps bold bold when a single star stands right beside it', () => {
+    // The star that opens kursiv must never be read as half of a fett marker.
+    show('**fett** und *kursiv*')
+    expect(screen.getByText('fett').tagName).toBe('STRONG')
+    expect(screen.getByText('kursiv').tagName).toBe('EM')
+  })
+
+  it('lets the markers combine', () => {
+    show('***beides***')
+    const em = screen.getByText('beides')
+    expect(em.tagName).toBe('EM')
+    expect(em.parentElement?.tagName).toBe('STRONG')
+  })
+
+  it('lets an underline sit inside bold', () => {
+    show('**fett __und__ unterstrichen**')
+    expect(screen.getByText('und').tagName).toBe('U')
+    expect(document.body.textContent).toBe('fett und unterstrichen')
+  })
+
+  it('leaves a lone underscore pair alone', () => {
+    show('snake_case __ ohne Partner')
+    expect(document.body.textContent).toBe('snake_case __ ohne Partner')
+    expect(document.querySelector('u')).toBeNull()
+  })
+
+  it('leaves a single underscore in a word alone', () => {
+    // The texts are prose, not code, but a file name in them must survive.
+    show('Datei tandem_export_2026.xlsx')
+    expect(document.body.textContent).toBe('Datei tandem_export_2026.xlsx')
+    expect(document.querySelector('u')).toBeNull()
+    expect(document.querySelector('em')).toBeNull()
+  })
+
   it('renders plain text unchanged', () => {
     show('Ganz ohne Auszeichnung.')
     expect(document.body.textContent).toBe('Ganz ohne Auszeichnung.')

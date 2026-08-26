@@ -3,26 +3,77 @@ import type { ReactNode } from 'react'
 // Mirrors web/manifest/src/richText.tsx — the settings screen previews exactly
 // what this renders, so the two must agree character for character.
 
-const BOLD = /(\*\*[\s\S]+?\*\*)/g
+// Ordered longest first: '***' has to be recognised as one token before '**'
+// gets to claim its first two stars, and '**' before the single star that makes
+// text italic. Anything not matched here is text and stays text.
+const TOKEN = /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|__[\s\S]+?__|\*[\s\S]+?\*)/g
+
+// Tried in this order for the same reason. '**' is listed before '*' so that
+// '***fett kursiv***' peels the bold off first and leaves '*fett kursiv*' for
+// the recursion below.
+const RULES = [
+  { marker: '**', tag: 'strong' },
+  { marker: '__', tag: 'u' },
+  { marker: '*', tag: 'em' },
+] as const
+
+export type Marker = (typeof RULES)[number]['marker']
+
+// How many copies of `ch` sit in an unbroken run ending at / starting at `i`.
+function runBefore(text: string, i: number, ch: string): number {
+  let n = 0
+  while (i - n > 0 && text[i - n - 1] === ch) n += 1
+  return n
+}
+
+function runAfter(text: string, i: number, ch: string): number {
+  let n = 0
+  while (i + n < text.length && text[i + n] === ch) n += 1
+  return n
+}
 
 /**
- * Renders the club's texts, whose only markup is `**fett**`.
+ * Whether a run of `run` marker characters is a reading of `marker`.
+ *
+ * Stars are the only ambiguous case: one is kursiv, two are fett, three are
+ * both. Reading the run rather than the first character is what keeps „Kursiv"
+ * from peeling a single star off **fett** and quietly turning it into *kursiv*.
+ */
+function runCarries(run: number, marker: string): boolean {
+  if (marker[0] === '_') return run === marker.length
+  return run === marker.length || run === 3
+}
+
+/** Whether `text` is one span marked with `marker`, markers included. */
+function carries(text: string, marker: string): boolean {
+  const ch = marker[0]
+  const lead = runAfter(text, 0, ch)
+  if (lead !== runBefore(text, text.length, ch)) return false
+  if (!runCarries(lead, marker)) return false
+  // Nothing between the markers is not a span. An empty pair stays on screen as
+  // the characters it is made of — visible, and therefore fixable.
+  return text.length > lead * 2
+}
+
+/**
+ * Renders the club's texts, whose only markup is `**fett**`, `*kursiv*` and
+ * `__unterstrichen__`.
  *
  * Deliberately not Markdown: the texts are legal prose typed by a club official
- * in a textarea, where a stray underscore or hash is a stray underscore or
- * hash. One marker, one meaning, nothing else touched.
+ * in a textarea, where a stray hash or bracket is a stray hash or bracket. Three
+ * markers, three meanings, nothing else touched.
  *
- * A `**` without a partner stays on screen as two asterisks — visible, and
- * therefore fixable, which silently swallowing it would not be.
+ * A marker without a partner stays on screen as the characters it is made of —
+ * visible, and therefore fixable, which silently swallowing it would not be.
+ *
+ * The recursion is what lets the markers combine: the toolbar can put kursiv
+ * inside fett, and `***so***` or `**__so__**` come out as both.
  */
 export function renderRichText(text: string): ReactNode[] {
-  return text
-    .split(BOLD)
-    .map((part, i) =>
-      part.length > 4 && part.startsWith('**') && part.endsWith('**') ? (
-        <strong key={i}>{part.slice(2, -2)}</strong>
-      ) : (
-        part
-      )
-    )
+  return text.split(TOKEN).map((part, i) => {
+    const rule = RULES.find((r) => carries(part, r.marker))
+    if (!rule) return part
+    const Tag = rule.tag
+    return <Tag key={i}>{renderRichText(part.slice(rule.marker.length, -rule.marker.length))}</Tag>
+  })
 }

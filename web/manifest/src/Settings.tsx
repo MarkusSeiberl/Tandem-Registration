@@ -2,7 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { checkPaths, createBackup, getSettings, pickerAvailable, pickPath, putSettings } from './api'
 import type { PathChecks, PathState, PickKind } from './api'
-import { renderRichText, toggleBold } from './richText'
+import { renderRichText, toggleMarker } from './richText'
+import type { Marker } from './richText'
 
 // A path field: the text is still typeable, the button is the shortcut. What the
 // warning says depends on what was expected there, so the message is built from
@@ -59,9 +60,18 @@ function PathField(props: {
 
 // Where the manifest writes and what it prints on a contract. The amounts it
 // charges and pays out live on the Stammdaten screen, beside the crew.
+// The three markers the texts carry, in the order the toolbar offers them. The
+// letter is the one the button shows; the key is the shortcut every word
+// processor has trained the operator to reach for.
+const FORMATS: { marker: Marker; letter: string; label: string; key: string }[] = [
+  { marker: '**', letter: 'F', label: 'Fett', key: 'b' },
+  { marker: '*', letter: 'K', label: 'Kursiv', key: 'i' },
+  { marker: '__', letter: 'U', label: 'Unterstrichen', key: 'u' },
+]
+
 /**
  * One of the two texts the guest reads, with the only formatting they carry:
- * `**fett**`.
+ * `**fett**`, `*kursiv*` and `__unterstrichen__`.
  *
  * A textarea rather than a contenteditable field. The typing here is legal
  * prose, often pasted from a lawyer's mail, and a textarea gets that right —
@@ -83,10 +93,10 @@ function TextEditor({
 }) {
   const areaRef = useRef<HTMLTextAreaElement | null>(null)
 
-  function applyBold() {
+  function apply(marker: Marker) {
     const area = areaRef.current
     if (!area) return
-    const next = toggleBold(value, area.selectionStart, area.selectionEnd)
+    const next = toggleMarker(value, area.selectionStart, area.selectionEnd, marker)
     onChange(next.value)
     // After React writes the new value the selection is gone, so it is put back
     // on the next frame — around the same words, so the button can be pressed
@@ -98,21 +108,33 @@ function TextEditor({
   }
 
   function handleKeyDown(e: ReactKeyboardEvent<HTMLTextAreaElement>) {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
-      e.preventDefault()
-      applyBold()
-    }
+    if (!(e.ctrlKey || e.metaKey)) return
+    const format = FORMATS.find((f) => f.key === e.key.toLowerCase())
+    if (!format) return
+    // Strg+U is the browser's „view source“; inside this textarea it belongs to
+    // the editor, so all three shortcuts are claimed the same way.
+    e.preventDefault()
+    apply(format.marker)
   }
 
   return (
     <>
       <div className="text-toolbar">
-        <button type="button" className="btn secondary small" onClick={applyBold}>
-          <strong>F</strong>&nbsp;Fett
-        </button>
+        {FORMATS.map((format) => (
+          <button
+            key={format.marker}
+            type="button"
+            className="btn secondary small"
+            onClick={() => apply(format.marker)}
+          >
+            <span className={`marker-letter marker-${format.key}`}>{format.letter}</span>
+            &nbsp;{format.label}
+          </button>
+        ))}
         <span className="field-hint">
-          Auswahl markieren und auf „Fett" tippen (oder Strg+B). Fett steht im Text
-          zwischen **zwei Sternchen**.
+          Auswahl markieren und auf eine Schaltfläche tippen (oder Strg+B, Strg+I,
+          Strg+U). Im Text steht **fett** zwischen zwei Sternchen, *kursiv* zwischen
+          einem und __unterstrichen__ zwischen zwei Unterstrichen.
         </span>
       </div>
 

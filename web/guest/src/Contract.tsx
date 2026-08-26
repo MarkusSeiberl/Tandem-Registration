@@ -235,7 +235,7 @@ export default function Contract({
 
               {privacyOpen && (
                 <div className="privacy-text" role="region" aria-label="Datenschutzinformation">
-                  <p style={{ whiteSpace: 'pre-wrap' }}>{privacyText}</p>
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{renderRichText(privacyText)}</p>
                 </div>
               )}
 

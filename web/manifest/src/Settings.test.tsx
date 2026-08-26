@@ -300,4 +300,62 @@ describe('Settings', () => {
       'Vor **Absprung:** **danach**'
     )
   })
+
+  it('marks a passage kursiv and shows it in the preview', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.getSettings).mockResolvedValue({ ...CONFIG, contractText: 'Vor danach' })
+
+    render(<Settings />)
+    await screen.findByLabelText('Vertragstext')
+    await user.click(screen.getByRole('tab', { name: 'Vertragstext' }))
+
+    const area = screen.getByLabelText('Vertragstext') as HTMLTextAreaElement
+    const panel = screen.getByRole('tabpanel', { name: 'Vertrag' })
+    area.focus()
+    area.setSelectionRange(4, 10)
+    await user.click(within(panel).getByRole('button', { name: /Kursiv/ }))
+
+    expect((screen.getByLabelText('Vertragstext') as HTMLTextAreaElement).value).toBe(
+      'Vor *danach*'
+    )
+    expect(panel.querySelector('.text-preview em')?.textContent).toBe('danach')
+  })
+
+  it('marks a passage unterstrichen and shows it in the preview', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.getSettings).mockResolvedValue({ ...CONFIG, contractText: 'Vor danach' })
+
+    render(<Settings />)
+    await screen.findByLabelText('Vertragstext')
+    await user.click(screen.getByRole('tab', { name: 'Vertragstext' }))
+
+    const area = screen.getByLabelText('Vertragstext') as HTMLTextAreaElement
+    const panel = screen.getByRole('tabpanel', { name: 'Vertrag' })
+    area.focus()
+    area.setSelectionRange(4, 10)
+    await user.click(within(panel).getByRole('button', { name: /Unterstrichen/ }))
+
+    expect((screen.getByLabelText('Vertragstext') as HTMLTextAreaElement).value).toBe(
+      'Vor __danach__'
+    )
+    expect(panel.querySelector('.text-preview u')?.textContent).toBe('danach')
+  })
+
+  it('reaches all three markers by keyboard', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.getSettings).mockResolvedValue({ ...CONFIG, contractText: 'Vor danach' })
+
+    render(<Settings />)
+    await screen.findByLabelText('Vertragstext')
+    await user.click(screen.getByRole('tab', { name: 'Vertragstext' }))
+
+    const area = screen.getByLabelText('Vertragstext') as HTMLTextAreaElement
+    area.focus()
+    area.setSelectionRange(4, 10)
+    await user.keyboard('{Control>}i{/Control}')
+
+    expect((screen.getByLabelText('Vertragstext') as HTMLTextAreaElement).value).toBe(
+      'Vor *danach*'
+    )
+  })
 })

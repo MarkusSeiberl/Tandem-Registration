@@ -974,6 +974,26 @@ h2 {
   flex-wrap: wrap;
 }
 
+/* Each button wears the style it applies, so the toolbar reads at a glance
+   without spelling three markers out on the buttons themselves. */
+.marker-letter {
+  font-weight: 400;
+  font-style: normal;
+  text-decoration: none;
+}
+
+.marker-b {
+  font-weight: 700;
+}
+
+.marker-i {
+  font-style: italic;
+}
+
+.marker-u {
+  text-decoration: underline;
+}
+
 .text-toolbar .field-hint {
   flex: 1;
   min-width: 200px;

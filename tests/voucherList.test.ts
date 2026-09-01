@@ -209,3 +209,71 @@ test('the list is cached until the file changes on disk', async () => {
   expect(third).not.toBe(first)
   expect(third.byNumber.size).toBe(2)
 })
+
+import { writeVoucherSheets } from './helpers/voucherFile'
+
+// The club keeps one sheet per season and starts a new one when the old gets
+// long: "2025", "2026", "2026 - Part 2". Reading only the first sheet meant
+// every current-season voucher came back not_found — and the export sweep
+// treats not_found as "the list says this voucher is no good".
+test('a voucher on a later sheet is found', async () => {
+  const file = await writeVoucherSheets([
+    { name: '2025', rows: [{ lfdNr: '25-001', einzahlDat: new Date('2025-01-14'), art: 'Tandem' }] },
+    { name: '2026', rows: [{ lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' }] },
+    { name: '2026 - Part 2', rows: [{ lfdNr: '26-500', einzahlDat: new Date('2026-06-01'), art: 'Tandem' }] },
+  ])
+  const list = await readVoucherList(file)
+
+  expect(lookupVoucher(list, '25-001').status).toBe('ok')
+  expect(lookupVoucher(list, '26-001').status).toBe('ok')
+  expect(lookupVoucher(list, '26-500').status).toBe('ok')
+})
+
+test('an entry remembers the sheet it was read from', async () => {
+  // The writer addresses a row by sheet name and row number. A row number on
+  // its own means nothing once there is more than one sheet.
+  const file = await writeVoucherSheets([
+    { name: '2025', rows: [{ lfdNr: '25-001', einzahlDat: new Date('2025-01-14') }] },
+    { name: '2026 - Part 2', rows: [{ lfdNr: '26-500', einzahlDat: new Date('2026-06-01') }] },
+  ])
+  const list = await readVoucherList(file)
+
+  expect(lookupVoucher(list, '26-500').entry).toMatchObject({
+    sheetName: '2026 - Part 2', rowNumber: 2,
+  })
+  expect(lookupVoucher(list, '25-001').entry).toMatchObject({ sheetName: '2025', rowNumber: 2 })
+})
+
+test('a sheet without the voucher columns is passed over, not rejected', async () => {
+  // Clubs keep notes, price lists and address tables in the same workbook.
+  const file = await writeVoucherSheets([
+    { name: 'Preise', rows: [], headers: ['Leistung', 'Preis'] },
+    { name: '2026', rows: [{ lfdNr: '26-001', einzahlDat: new Date('2026-01-14') }] },
+  ])
+  const list = await readVoucherList(file)
+
+  expect(list.sheetNames).toEqual(['2026'])
+  expect(lookupVoucher(list, '26-001').status).toBe('ok')
+})
+
+test('the same number on two sheets is ambiguous, not first-sheet-wins', async () => {
+  // A number carried over by mistake is the club's to resolve. Picking the
+  // earlier sheet would silently redeem a voucher on the wrong season.
+  const file = await writeVoucherSheets([
+    { name: '2026', rows: [{ lfdNr: '26-001', einzahlDat: new Date('2026-01-14') }] },
+    { name: '2026 - Part 2', rows: [{ lfdNr: '26-001', einzahlDat: new Date('2026-06-01') }] },
+  ])
+  const list = await readVoucherList(file)
+
+  const result = lookupVoucher(list, '26-001')
+  expect(result.status).toBe('ambiguous')
+  expect(result.entry).toBeNull()
+})
+
+test('a workbook where no sheet has the columns still names what is missing', async () => {
+  const file = await writeVoucherSheets([
+    { name: 'Preise', rows: [], headers: ['Leistung', 'Preis'] },
+    { name: 'Adressen', rows: [], headers: ['Name', 'Ort'] },
+  ])
+  await expect(readVoucherList(file)).rejects.toThrow(/LfdNr/)
+})

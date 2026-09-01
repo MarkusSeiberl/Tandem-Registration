@@ -41,6 +41,8 @@ export function serviceFromArt(
 export interface VoucherEntry {
   /** As written in the sheet, for display. */
   number: string
+  /** Tab name of the sheet this row is on — with a sheet per season, a row number alone addresses nothing. */
+  sheetName: string
   /** 1-based sheet row, so the redemption can be written back to it. */
   rowNumber: number
   paidAt: Date | null
@@ -54,7 +56,8 @@ export interface VoucherEntry {
 }
 
 export interface VoucherList {
-  sheetName: string
+  /** Every sheet the vouchers were read from, in workbook order. */
+  sheetNames: string[]
   /** Normalised number -> every row carrying it. More than one means ambiguous. */
   byNumber: Map<string, VoucherEntry[]>
 }
@@ -132,12 +135,24 @@ export async function readVoucherList(filePath: string): Promise<VoucherList> {
     // club's operator, so it has to be German.
     throw new Error(`Die Gutscheinliste konnte nicht gelesen werden: ${filePath}`)
   }
-  const sheet = wb.worksheets[0]
-  if (!sheet) throw new Error('Die Gutscheinliste enthält kein Tabellenblatt.')
+  if (wb.worksheets.length === 0) {
+    throw new Error('Die Gutscheinliste enthält kein Tabellenblatt.')
+  }
 
-  const columns = headerColumns(sheet)
-  const missing = REQUIRED_HEADERS.filter((h) => !columns.has(h))
-  if (missing.length > 0) {
+  // The club runs a sheet per season — "2025", "2026", "2026 - Part 2" — and
+  // keeps price lists and address tables in the same workbook. So every sheet
+  // is offered, and the ones carrying the voucher columns are the list; a sheet
+  // without them is somebody else's table, not a broken voucher sheet.
+  const sheets = wb.worksheets
+    .map((sheet) => ({ sheet, columns: headerColumns(sheet) }))
+    .filter(({ columns }) => REQUIRED_HEADERS.every((h) => columns.has(h)))
+
+  if (sheets.length === 0) {
+    // Nothing in the workbook is a voucher sheet. The operator is told what a
+    // voucher sheet would need, measured against the first sheet — with no
+    // candidate to name, that is the one they are most likely looking at.
+    const columns = headerColumns(wb.worksheets[0])
+    const missing = REQUIRED_HEADERS.filter((h) => !columns.has(h))
     const names = missing.map((m) => (m === 'eingelöst' ? 'Eingelöst' : m === 'lfdnr' ? 'LfdNr' : 'EinzahlDat'))
     // The operator reads this message as it stands, so it has to agree in
     // number: "fehlt die Spalte LfdNr, Eingelöst" is not German.
@@ -146,45 +161,51 @@ export async function readVoucherList(filePath: string): Promise<VoucherList> {
       : `In der Gutscheinliste fehlen die Spalten ${names.join(', ')}.`)
   }
 
-  const at = (row: ExcelJS.Row, key: string) => {
-    const index = columns.get(key)
-    return index === undefined ? null : row.getCell(index).value
+  const byNumber = new Map<string, VoucherEntry[]>()
+
+  for (const { sheet, columns } of sheets) {
+    const at = (row: ExcelJS.Row, key: string) => {
+      const index = columns.get(key)
+      return index === undefined ? null : row.getCell(index).value
+    }
+
+    // eachRow visits only the rows that exist and hands each one its true 1-based
+    // sheet row number, skipping the gaps a club's list collects over the years.
+    // Counting the rows we happened to see would drift past the first gap, and
+    // the number stored here is what the redemption writer addresses when it puts
+    // a date back into this voucher's row.
+    sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber === 1) return
+
+      const number = cellText(at(row, 'lfdnr'))
+      // A blank number is a spacer or a half-typed row, not a voucher.
+      if (!number) return
+
+      const paid = cellDate(at(row, 'einzahldat'))
+      const art = cellText(at(row, 'art'))
+      const { service, isAddOn } = serviceFromArt(art)
+      const entry: VoucherEntry = {
+        number,
+        sheetName: sheet.name,
+        rowNumber,
+        paidAt: paid.date,
+        paidText: paid.text,
+        amount: cellNumber(at(row, 'betrag')),
+        art,
+        service,
+        isAddOn,
+        redeemedAt: cellDate(at(row, 'eingelöst')).date,
+      }
+      // Collected across sheets, so a number carried onto a second season is
+      // ambiguous rather than resolved by whichever sheet came first.
+      const key = normaliseVoucherNumber(number)
+      const existing = byNumber.get(key)
+      if (existing) existing.push(entry)
+      else byNumber.set(key, [entry])
+    })
   }
 
-  const byNumber = new Map<string, VoucherEntry[]>()
-  // eachRow visits only the rows that exist and hands each one its true 1-based
-  // sheet row number, skipping the gaps a club's list collects over the years.
-  // Counting the rows we happened to see would drift past the first gap, and
-  // the number stored here is what the redemption writer addresses when it puts
-  // a date back into this voucher's row.
-  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    if (rowNumber === 1) return
-
-    const number = cellText(at(row, 'lfdnr'))
-    // A blank number is a spacer or a half-typed row, not a voucher.
-    if (!number) return
-
-    const paid = cellDate(at(row, 'einzahldat'))
-    const art = cellText(at(row, 'art'))
-    const { service, isAddOn } = serviceFromArt(art)
-    const entry: VoucherEntry = {
-      number,
-      rowNumber,
-      paidAt: paid.date,
-      paidText: paid.text,
-      amount: cellNumber(at(row, 'betrag')),
-      art,
-      service,
-      isAddOn,
-      redeemedAt: cellDate(at(row, 'eingelöst')).date,
-    }
-    const key = normaliseVoucherNumber(number)
-    const existing = byNumber.get(key)
-    if (existing) existing.push(entry)
-    else byNumber.set(key, [entry])
-  })
-
-  return { sheetName: sheet.name, byNumber }
+  return { sheetNames: sheets.map(({ sheet }) => sheet.name), byNumber }
 }
 
 export type VoucherStatus =

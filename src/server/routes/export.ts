@@ -97,12 +97,21 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
             .run({ id: row.id, now: new Date().toISOString() })
           redemptionsWritten += 1
         } else if (outcome === 'invalid') {
-          // The list says this voucher is not good after all. Take the redemption
-          // back so it stops being counted as something the file still owes.
+          // The list says this voucher is not good after all — unpaid, or
+          // cancelled. Take the redemption back so it stops being counted as
+          // something the file still owes.
           db.prepare('UPDATE registrations SET voucher_redeemed_at=NULL WHERE id=@id')
             .run({ id: row.id })
           redemptionsInvalid += 1
-        } else if (outcome === 'failed') {
+        } else if (outcome === 'failed' || outcome === 'unknown') {
+          // 'unknown' is the list having no single row for this number: not
+          // there, or there twice. That is not the list saying no, so the
+          // redemption stays and the row stays in the queue for a human to
+          // resolve — a number typed with a digit missing, a voucher the club
+          // has yet to enter, the same number carried onto two sheets. It was
+          // once folded into 'invalid', and while only the first sheet of a
+          // multi-sheet list was being read, that erased every redemption of
+          // the current season on the first export.
           redemptionsPending += 1
         } else if (outcome === 'disabled') {
           // No list configured — the club switched the feature off. Nothing is

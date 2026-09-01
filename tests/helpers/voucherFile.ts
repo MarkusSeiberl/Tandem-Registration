@@ -21,24 +21,41 @@ const DEFAULT_HEADERS = [
   'Nachname', 'Vorname', 'Eingelöst', 'E-Mail', 'Spalte1',
 ]
 
+export type VoucherFileSheet = {
+  name: string
+  rows: VoucherFileRow[]
+  headers?: string[]
+}
+
 export async function writeVoucherFile(
   rows: VoucherFileRow[],
   options: { headers?: string[] } = {}
 ): Promise<string> {
-  const headers = options.headers ?? DEFAULT_HEADERS
+  return writeVoucherSheets([{ name: 'Tabelle1', rows, headers: options.headers }])
+}
+
+/**
+ * The club's list as it really is: one sheet per season, and whatever else
+ * someone added over the years. A voucher lives on exactly one of them, and
+ * which one is not derivable from the number.
+ */
+export async function writeVoucherSheets(sheets: VoucherFileSheet[]): Promise<string> {
   const wb = new ExcelJS.Workbook()
-  const ws = wb.addWorksheet('Tabelle1')
-  ws.addRow(headers)
-  for (const row of rows) {
-    const cells = headers.map((header) => {
-      if (header === 'LfdNr') return row.lfdNr ?? ''
-      if (header === 'EinzahlDat') return row.einzahlDat ?? null
-      if (header === 'Art') return row.art ?? ''
-      if (header === 'Betrag') return row.betrag ?? null
-      if (header === 'Eingelöst') return row.eingeloest ?? null
-      return ''
-    })
-    ws.addRow(cells)
+  for (const sheet of sheets) {
+    const headers = sheet.headers ?? DEFAULT_HEADERS
+    const ws = wb.addWorksheet(sheet.name)
+    ws.addRow(headers)
+    for (const row of sheet.rows) {
+      const cells = headers.map((header) => {
+        if (header === 'LfdNr') return row.lfdNr ?? ''
+        if (header === 'EinzahlDat') return row.einzahlDat ?? null
+        if (header === 'Art') return row.art ?? ''
+        if (header === 'Betrag') return row.betrag ?? null
+        if (header === 'Eingelöst') return row.eingeloest ?? null
+        return ''
+      })
+      ws.addRow(cells)
+    }
   }
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'tandem-vouchers-'))
   const filePath = path.join(dir, 'Tandemliste.xlsx')

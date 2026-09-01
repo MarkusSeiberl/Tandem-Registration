@@ -1,12 +1,15 @@
 import { test, expect, vi } from 'vitest'
 import ExcelJS from 'exceljs'
+import JSZip from 'jszip'
 import { promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
 import { redeemVoucher } from '../src/server/voucherRedeem'
 import * as voucherList from '../src/server/voucherList'
+import * as xlsxPatch from '../src/server/xlsxPatch'
 import { clearVoucherListCache } from '../src/server/voucherList'
-import { writeVoucherFile } from './helpers/voucherFile'
+import { writeVoucherFile, writeVoucherSheets } from './helpers/voucherFile'
+import { addForeignParts, changedParts, FOREIGN_PARTS, xlsxParts } from './helpers/xlsxParts'
 import { DEFAULT_PAYOUTS, DEFAULT_PRICES } from '../src/server/config'
 import type { Config } from '../src/server/config'
 
@@ -17,6 +20,15 @@ vi.mock('../src/server/voucherList', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/server/voucherList')>()
   return { ...actual, loadVoucherList: vi.fn(actual.loadVoucherList) }
 })
+
+// Likewise for the writer: replaceable for exactly one test, the one that has to
+// see the check refuse a workbook that came back short of a part.
+vi.mock('../src/server/xlsxPatch', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/server/xlsxPatch')>()
+  return { ...actual, patchDateCell: vi.fn(actual.patchDateCell) }
+})
+
+const realPatchDateCell = vi.mocked(xlsxPatch.patchDateCell).getMockImplementation()!
 
 async function configFor(voucherListPath: string): Promise<Config> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'tandem-redeem-'))
@@ -117,9 +129,77 @@ test('an invalid voucher is never marked as redeemed', async () => {
 
   expect(await redeemVoucher(cfg, '26-007', AUG_10())).toBe('invalid')
   expect(await redeemVoucher(cfg, '26-009', AUG_10())).toBe('invalid')
-  expect(await redeemVoucher(cfg, '99-999', AUG_10())).toBe('invalid')
   expect(await cellValue(file, 2, 'Eingelöst')).toBeNull()
   expect(await cellValue(file, 3, 'Eingelöst')).toBeNull()
+})
+
+test('a number the list does not carry is unknown, not invalid', async () => {
+  // 'invalid' is the list actively saying no — unpaid, cancelled — and the
+  // export sweep answers it by taking the redemption back. A number the list
+  // has never heard of says nothing about the voucher, and erasing a
+  // redemption over it is how a whole season's redemptions were lost while
+  // only the first sheet was being read.
+  clearVoucherListCache()
+  const file = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+  ])
+  const cfg = await configFor(file)
+
+  expect(await redeemVoucher(cfg, '99-999', AUG_10())).toBe('unknown')
+  expect(await cellValue(file, 2, 'Eingelöst')).toBeNull()
+})
+
+test('a number on two sheets is unknown rather than written to a guessed row', async () => {
+  clearVoucherListCache()
+  const file = await writeVoucherSheets([
+    { name: '2026', rows: [{ lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' }] },
+    { name: '2026 - Part 2', rows: [{ lfdNr: '26-001', einzahlDat: new Date('2026-06-01'), art: 'Tandem' }] },
+  ])
+  const cfg = await configFor(file)
+
+  expect(await redeemVoucher(cfg, '26-001', AUG_10())).toBe('unknown')
+})
+
+test('a voucher on a later sheet is written to that sheet', async () => {
+  clearVoucherListCache()
+  const file = await writeVoucherSheets([
+    { name: '2025', rows: [{ lfdNr: '25-001', einzahlDat: new Date('2025-01-14'), art: 'Tandem' }] },
+    { name: '2026', rows: [{ lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' }] },
+    { name: '2026 - Part 2', rows: [{ lfdNr: '26-500', einzahlDat: new Date('2026-06-01'), art: 'Tandem' }] },
+  ])
+  const cfg = await configFor(file)
+
+  expect(await redeemVoucher(cfg, '26-500', AUG_10())).toBe('written')
+
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.readFile(file)
+  const written = wb.getWorksheet('2026 - Part 2')!.getRow(2).getCell(8).value
+  expect(written instanceof Date && written.toISOString().slice(0, 10)).toBe('2026-08-10')
+  // The sheets it was not asked about keep their empty cells.
+  expect(wb.getWorksheet('2025')!.getRow(2).getCell(8).value).toBeNull()
+  expect(wb.getWorksheet('2026')!.getRow(2).getCell(8).value).toBeNull()
+})
+
+test("everything in the club's file except the one cell survives the write", async () => {
+  // The corruption this whole writer exists to prevent. Reading the workbook
+  // into ExcelJS and writing it back rebuilds every part and drops the ones it
+  // cannot model — a chart, a table, a formula cache — and Excel then opens the
+  // club's list with "unreadable content" and repairs it.
+  clearVoucherListCache()
+  const file = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+  ])
+  await addForeignParts(file)
+  const cfg = await configFor(file)
+  const before = await fs.readFile(file)
+
+  expect(await redeemVoucher(cfg, '26-001', AUG_10())).toBe('written')
+
+  const after = await fs.readFile(file)
+  const changed = await changedParts(before, after)
+  expect(changed.filter((name) => !name.startsWith('xl/worksheets/'))).toEqual(['xl/styles.xml'])
+  const parts = await xlsxParts(after)
+  for (const name of FOREIGN_PARTS) expect([...parts.keys()]).toContain(name)
 })
 
 test('the list is backed up once a day, not once per write', async () => {
@@ -336,4 +416,30 @@ test('a written list is left openable, with no temp file beside it', async () =>
   expect(await fs.readdir(path.dirname(file))).toEqual(['Tandemliste.xlsx'])
   const wb = new ExcelJS.Workbook()
   await expect(wb.xlsx.readFile(file)).resolves.toBeDefined()
+})
+
+test('a write that would lose a part of the file never reaches the disk', async () => {
+  // The last line of defence. Whatever goes wrong inside the writer, the club's
+  // folder must never end up holding a workbook that lost a part — the operator
+  // gets a retryable 'failed' and the list that was already there.
+  clearVoucherListCache()
+  const file = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+  ])
+  await addForeignParts(file)
+  const cfg = await configFor(file)
+  const before = await fs.readFile(file)
+
+  // Stands in for anything that could go wrong inside the writer: the patched
+  // workbook comes back one part short.
+  vi.mocked(xlsxPatch.patchDateCell).mockImplementationOnce(async (source, target) => {
+    const zip = await JSZip.loadAsync(await realPatchDateCell(source, target))
+    zip.remove('xl/charts/chart1.xml')
+    return zip.generateAsync({ type: 'nodebuffer' })
+  })
+
+  expect(await redeemVoucher(cfg, '26-001', AUG_10())).toBe('failed')
+
+  expect((await fs.readFile(file)).equals(before)).toBe(true)
+  expect(await fs.readdir(path.dirname(file))).toEqual(['Tandemliste.xlsx'])
 })

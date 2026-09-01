@@ -7,7 +7,7 @@ import path from 'path'
 import { openDb } from '../src/server/db'
 import { registerExportRoutes } from '../src/server/routes/export'
 import { DEFAULT_PAYOUTS, DEFAULT_PRICES } from '../src/server/config'
-import { writeVoucherFile } from './helpers/voucherFile'
+import { writeVoucherFile, writeVoucherSheets } from './helpers/voucherFile'
 import { clearVoucherListCache } from '../src/server/voucherList'
 import { today as localToday } from '../src/server/day'
 
@@ -571,5 +571,66 @@ test('a voucher that turned invalid leaves the queue instead of blocking it', as
   // Taken back, so it stops being counted as owed to the file.
   const row = db.prepare('SELECT voucher_redeemed_at FROM registrations').get() as any
   expect(row.voucher_redeemed_at).toBeNull()
+  await app.close()
+})
+
+test('a number the list does not carry keeps its redemption and stays in the queue', async () => {
+  clearVoucherListCache()
+  const voucherListPath = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+  ])
+  const db = openDb(':memory:')
+  const date = '2026-08-10'
+
+  db.prepare(`INSERT INTO registrations
+    (first_name,last_name,payment_method,voucher_number,price,
+     created_at,jump_date,paid_at,voucher_redeemed_at)
+    VALUES ('A','B','voucher','26-999',20,
+     '2026-08-10T10:00:00.000Z','2026-08-10','2026-08-10T10:00:00.000Z',
+     '2026-08-10T10:00:00.000Z')`).run()
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, makeCfgRef(dir, 'Freistadt', voucherListPath))
+
+  const res = await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+
+  // Silence from the list is not the list saying no. Erasing the redemption
+  // here is how a season of them was lost while only the first sheet of a
+  // multi-sheet list was being read: every current-year voucher came back
+  // not_found, and every one of them was quietly taken back.
+  expect(res.json().redemptionsInvalid).toBe(0)
+  expect(res.json().redemptionsPending).toBe(1)
+  const row = db.prepare('SELECT voucher_redeemed_at FROM registrations').get() as any
+  expect(row.voucher_redeemed_at).not.toBeNull()
+  await app.close()
+})
+
+test('a redemption on a later sheet of the list is written, not taken back', async () => {
+  clearVoucherListCache()
+  const voucherListPath = await writeVoucherSheets([
+    { name: '2025', rows: [{ lfdNr: '25-001', einzahlDat: new Date('2025-01-14'), art: 'Tandem' }] },
+    { name: '2026', rows: [{ lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' }] },
+  ])
+  const db = openDb(':memory:')
+  const date = '2026-08-10'
+
+  db.prepare(`INSERT INTO registrations
+    (first_name,last_name,payment_method,voucher_number,price,
+     created_at,jump_date,paid_at,voucher_redeemed_at)
+    VALUES ('A','B','voucher','26-001',20,
+     '2026-08-10T10:00:00.000Z','2026-08-10','2026-08-10T10:00:00.000Z',
+     '2026-08-10T10:00:00.000Z')`).run()
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, makeCfgRef(dir, 'Freistadt', voucherListPath))
+
+  const res = await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+
+  expect(res.json().redemptionsWritten).toBe(1)
+  expect(res.json().redemptionsInvalid).toBe(0)
+  const row = db.prepare('SELECT voucher_redeem_synced_at FROM registrations').get() as any
+  expect(row.voucher_redeem_synced_at).not.toBeNull()
   await app.close()
 })

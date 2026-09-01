@@ -7,14 +7,25 @@ import {
 } from './voucherList'
 import type { Config } from './config'
 import { isoDay } from './day'
+import { patchDateCell, xlsxPartNames } from './xlsxPatch'
 
 export type RedeemOutcome =
   /** The date reached the Eingelöst cell. */
   | 'written'
   /** Someone had already entered a date; it was left alone. */
   | 'already_redeemed'
-  /** Unpaid, cancelled, unknown or ambiguous — nothing was written or claimed. */
+  /** The list says this voucher is no good: unpaid, or cancelled. */
   | 'invalid'
+  /**
+   * The list has no single row for this number — not found, or found twice.
+   *
+   * Deliberately not 'invalid'. 'invalid' is the list actively saying no, and
+   * the export sweep answers it by taking the redemption back; silence says
+   * nothing about the voucher, and a redemption must not be erased over it. The
+   * two were one outcome once, and while only the first sheet of a multi-sheet
+   * list was being read, that erased a whole season's redemptions.
+   */
+  | 'unknown'
   /** File locked, missing or unreadable. Worth retrying. */
   | 'failed'
   /** No voucher list configured. */
@@ -127,6 +138,52 @@ async function backupOnce(cfg: Config, filePath: string, on: Date): Promise<void
   }
 }
 
+/**
+ * Parses a workbook out of bytes already in hand.
+ *
+ * ExcelJS's own type declarations predate Node's generic Buffer, so its `load`
+ * asks for a `Buffer` that no longer matches the one `fs.readFile` returns.
+ * Only the two declarations disagree — the value is exactly what it wants.
+ */
+async function loadWorkbook(bytes: Buffer): Promise<ExcelJS.Workbook> {
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.load(bytes as unknown as Parameters<typeof wb.xlsx.load>[0])
+  return wb
+}
+
+/**
+ * Whether the patched bytes are a workbook the club can open, holding the date.
+ *
+ * Checked while the new file is still only in memory, so a write that went
+ * wrong never reaches the club's folder at all — the operator sees a retryable
+ * 'failed' and the list on disk is the one that was already there. What it
+ * proves: the workbook still parses, every part that went in came back out, and
+ * the one cell that was meant to change is the date we meant to write.
+ */
+async function patchIsSound(
+  source: Buffer,
+  patched: Buffer,
+  sheetName: string,
+  rowNumber: number,
+  column: number,
+  day: Date
+): Promise<boolean> {
+  try {
+    const before = await xlsxPartNames(source)
+    const after = await xlsxPartNames(patched)
+    if (before.some((name) => !after.includes(name))) return false
+
+    const wb = await loadWorkbook(patched)
+    const sheet = wb.getWorksheet(sheetName)
+    if (!sheet) return false
+    const written = sheet.getRow(rowNumber).getCell(column).value
+    return written instanceof Date && written.getTime() === day.getTime()
+  } catch {
+    // Unparseable is the failure this check exists to catch.
+    return false
+  }
+}
+
 export async function redeemVoucher(
   cfg: Config,
   number: string,
@@ -153,6 +210,7 @@ async function redeemNow(
     // Only a voucher the list calls good gets a date. An unpaid or cancelled one
     // must not be marked used, and an ambiguous one must not have a row guessed.
     if (found.status === 'redeemed') return 'already_redeemed'
+    if (found.status === 'not_found' || found.status === 'ambiguous') return 'unknown'
     if (found.status !== 'ok' || !found.entry) return 'invalid'
     entry = found.entry
   } catch {
@@ -164,9 +222,15 @@ async function redeemNow(
     await cleanupStaleTempFiles(filePath)
     await backupOnce(cfg, filePath, on)
 
-    const wb = new ExcelJS.Workbook()
-    await wb.xlsx.readFile(filePath)
-    const sheet = wb.worksheets[0]
+    // Read once, into memory. The checks below and the write that follows then
+    // describe the same bytes: re-opening the path between them would leave a
+    // window in which the club saves the file and the row moves.
+    const source = await fs.readFile(filePath)
+
+    const wb = await loadWorkbook(source)
+    // By name, not by position: the club keeps a sheet per season, and which one
+    // a voucher is on is what the parse recorded.
+    const sheet = wb.getWorksheet(entry.sheetName)
     if (!sheet) return 'failed'
     const columns = headerColumns(sheet)
     const redeemedColumn = columns.get('eingelöst')
@@ -191,23 +255,30 @@ async function redeemNow(
     if (cell.value !== null && cell.value !== undefined && String(cell.value).trim() !== '') {
       return 'already_redeemed'
     }
-    // Only the value is set. ExcelJS shares style records between cells, so
-    // assigning `numFmt` here would silently restyle every other date cell in
-    // this column that happens to share the cell's style — rows we were never
-    // asked to touch. The column already carries its own date format for
-    // empty cells, so a written `Date` displays as a date without us
-    // reassigning anything.
-    cell.value = excelDay(on)
 
-    // ExcelJS's writeFile is createWriteStream(filename), i.e. flag 'w': the
-    // club's list is truncated the moment it opens and stays partial for the
-    // whole serialisation. A crash, a dropped OneDrive share or a full disk in
-    // that window would leave an unopenable .xlsx and no way back. Serialising
-    // into a sibling temp file and renaming it over the target keeps the path
-    // either wholly the old file or wholly the new one — rename is atomic
-    // within a volume, and a sibling is on the same volume by construction.
+    // The workbook above was read to decide *whether* to write. It is never
+    // written back: ExcelJS reconstructs every part of an .xlsx from its own
+    // model, and drops whatever the model has no room for — the formula cache,
+    // charts, tables, conditional formatting, the revision metadata Excel
+    // co-authoring keeps. A part that vanishes while something still points at
+    // it is what made Excel open the club's list with "unreadable content" and
+    // repair it. patchDateCell instead edits the one worksheet part inside the
+    // zip and carries every other part across unread.
+    const day = excelDay(on)
+    const patched = await patchDateCell(source, {
+      sheetName: entry.sheetName, row: entry.rowNumber, column: redeemedColumn, date: day,
+    })
+    if (!(await patchIsSound(source, patched, entry.sheetName, entry.rowNumber, redeemedColumn, day))) {
+      return 'failed'
+    }
+
+    // A sibling temp file and a rename over the target: the path is then either
+    // wholly the old file or wholly the new one. A crash, a dropped OneDrive
+    // share or a full disk mid-write can only cost the temp file. Rename is
+    // atomic within a volume, and a sibling is on the same volume by
+    // construction.
     temp = tempSibling(filePath)
-    await wb.xlsx.writeFile(temp)
+    await fs.writeFile(temp, patched)
     await fs.rename(temp, filePath)
     temp = null
     // The file on disk changed, so the parsed copy is stale.

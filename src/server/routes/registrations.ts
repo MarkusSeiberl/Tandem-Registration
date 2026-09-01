@@ -323,8 +323,10 @@ export function registerRegistrationRoutes(
             db.prepare('UPDATE registrations SET voucher_redeemed_at=@now WHERE id=@id')
               .run({ id, now: new Date().toISOString() })
           }
-          // 'invalid', 'already_redeemed' and 'disabled' claim nothing: an invalid
-          // voucher must not sit in a retry queue that then never empties.
+          // 'invalid', 'unknown', 'already_redeemed' and 'disabled' claim
+          // nothing: a voucher the list rejects, or has no single row for, must
+          // not sit in a retry queue that then never empties. The operator saw
+          // the same verdict beside the field before collecting.
         }
         // Putting a row back to open drops a redemption that never reached the
         // file. One that did is left alone — silently deleting a date from the

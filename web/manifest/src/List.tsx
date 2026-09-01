@@ -397,8 +397,13 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         </span>
         {/* What is still to be collected, and what already went into the till. */}
         <span className="list-total list-total-open">Offen: {formatEuro(sumOf(openRows))}</span>
-        <span className="list-total">Kassiert Bar: {formatEuro(paidVia('cash'))}</span>
-        <span className="list-total">Kassiert Karte: {formatEuro(paidVia('card'))}</span>
+        {/* The two tills stack rather than sitting side by side: at closing they
+            are counted one after the other, and as a column the amounts line up
+            under each other instead of drifting apart when the toolbar wraps. */}
+        <div className="list-total-tills">
+          <span className="list-total">Kassiert Bar: {formatEuro(paidVia('cash'))}</span>
+          <span className="list-total">Kassiert Karte: {formatEuro(paidVia('card'))}</span>
+        </div>
       </div>
 
       {exportMessage && <p className="hint">{exportMessage}</p>}

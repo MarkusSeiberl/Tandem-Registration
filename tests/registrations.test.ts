@@ -222,7 +222,10 @@ test('DELETE /api/registrations/:id removes the row', async () => {
   await app.close()
 })
 
-test('DELETE /api/registrations/:id also removes the generated contract PDF', async () => {
+// The contract is a signed legal document. Deleting the row cleans up the
+// application's view of the day; the PDF on disk is the club's record and
+// stays, even if the entry was a mistake.
+test('DELETE /api/registrations/:id keeps the generated contract PDF on disk', async () => {
   const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-del-'))
   const { app } = testServer({ exportDir })
   const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
@@ -234,7 +237,7 @@ test('DELETE /api/registrations/:id also removes the generated contract PDF', as
 
   const del = await app.inject({ method: 'DELETE', url: `/api/registrations/${id}` })
   expect(del.statusCode).toBe(204)
-  expect(fs.existsSync(pdfPath)).toBe(false)
+  expect(fs.existsSync(pdfPath)).toBe(true)
 
   await app.close()
 })

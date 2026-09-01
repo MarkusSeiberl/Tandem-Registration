@@ -385,18 +385,11 @@ export function registerRegistrationRoutes(
 
   app.delete('/api/registrations/:id', async (req, reply) => {
     const id = (req.params as any).id
-    const row = db.prepare('SELECT contract_pdf_filename FROM registrations WHERE id=?').get(id) as
-      { contract_pdf_filename: string | null } | undefined
     const result = db.prepare('DELETE FROM registrations WHERE id=?').run(id)
     if (result.changes === 0) return reply.code(404).send()
 
-    // Best-effort: remove the generated contract PDF too. A failure here (file
-    // already gone, permissions) must not fail the delete — the DB row, the
-    // source of truth, is already removed.
-    if (row?.contract_pdf_filename) {
-      const filePath = path.join(cfgRef.current.exportDir, 'vertaege', row.contract_pdf_filename)
-      await fs.unlink(filePath).catch(() => {})
-    }
+    // The generated contract PDF is deliberately left on disk: it is a signed
+    // legal document, and removing the row must not destroy the club's record.
 
     sse.broadcast('changed', { id })
     return reply.code(204).send()

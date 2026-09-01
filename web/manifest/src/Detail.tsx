@@ -341,6 +341,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             <input
               type="number"
               className="numeral"
+              min={0}
               value={loadNumber}
               onChange={(e) => setLoadNumber(e.target.value === '' ? '' : Number(e.target.value))}
             />

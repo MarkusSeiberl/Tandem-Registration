@@ -193,6 +193,11 @@ export function registerRegistrationRoutes(
       return reply.code(400).send({ error: 'Kassiert-Status ungültig' })
     if ('payment_method' in body && !PAYMENT_METHODS.includes(body.payment_method))
       return reply.code(400).send({ error: 'Zahlungsart ungültig' })
+    // Cleared with null like camera_flyer_id; a load is only ever counted
+    // upwards, so a negative number is a typo, not a load.
+    if ('load_number' in body && body.load_number !== null &&
+        (!Number.isInteger(body.load_number) || body.load_number < 0))
+      return reply.code(400).send({ error: 'Load-Nr. ungültig' })
     if ('extra_booking' in body && !EXTRA_BOOKINGS.includes(body.extra_booking))
       return reply.code(400).send({ error: 'Zusatzbuchung ungültig' })
     if ('weight_surcharge' in body && !WEIGHT_SURCHARGES.includes(body.weight_surcharge))

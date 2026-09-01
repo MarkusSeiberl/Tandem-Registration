@@ -612,6 +612,38 @@ async function eingeloestCell(file: string, row: number) {
   return ws.getRow(row).getCell(headers.indexOf('Eingelöst')).value
 }
 
+test('patch rejects a negative load number', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { load_number: -1 }
+  })
+  expect(res.statusCode).toBe(400)
+  expect(res.json().error).toBe('Load-Nr. ungültig')
+  await app.close()
+})
+
+test('patch rejects a fractional load number but allows clearing with null', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+
+  const frac = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { load_number: 2.5 }
+  })
+  expect(frac.statusCode).toBe(400)
+
+  await app.inject({ method: 'PATCH', url: `/api/registrations/${id}`, payload: { load_number: 3 } })
+  const cleared = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { load_number: null }
+  })
+  expect(cleared.statusCode).toBe(200)
+  expect(cleared.json().load_number).toBeNull()
+  await app.close()
+})
+
 test('a voucher list that cannot be written never fails the operator’s save', async () => {
   const { app, collect } = await voucherServer(MISSING_LIST)
   const res = await collect(true)

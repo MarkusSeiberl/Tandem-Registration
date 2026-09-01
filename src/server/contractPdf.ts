@@ -113,9 +113,6 @@ const PAGE2 = {
   // dd.mm.yyyy date at 10pt, hence the smaller size here.
   datum: { x: 220, y: 82, size: 9 },
   signature: { x: 440, y: 84, width: 90, height: 36 },
-  // Caption under the signature blank for guests under 18. Small enough to sit
-  // beneath the pre-printed line without touching the page edge.
-  guardian: { x: 360, y: 70, size: 7 },
 }
 
 function dataUrlToBytes(dataUrl: string): Uint8Array {
@@ -149,10 +146,6 @@ export async function fillContractPdf(
 
   draw(page2, data.ort, PAGE2.ort)
   draw(page2, data.datum, PAGE2.datum)
-
-  if (data.age < 18) {
-    draw(page2, 'gesetzlicher Vertreter bei Minderjährigen unter 18 Jahre', PAGE2.guardian)
-  }
 
   const signatureImage = await doc.embedPng(dataUrlToBytes(data.signaturePngDataUrl))
   page2.drawImage(signatureImage, {

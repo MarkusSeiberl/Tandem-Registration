@@ -35,20 +35,6 @@ test('fillContractPdf output is larger than the bare template (text + image were
   expect(buf.length).toBeGreaterThan(templateBytes.length)
 })
 
-test('a minor guest gets the guardian caption under the signature', async () => {
-  const buf = await fillContractPdf(templateBytes, { ...sampleData(), age: 17 })
-
-  const text = await pdfText(buf)
-  expect(text).toContain('gesetzlicher Vertreter bei Minderjährigen unter 18 Jahre')
-})
-
-test('an adult contract carries no guardian caption', async () => {
-  const buf = await fillContractPdf(templateBytes, sampleData())
-
-  const text = await pdfText(buf)
-  expect(text).not.toContain('gesetzlicher Vertreter')
-})
-
 // The club jumps 30 km from the Czech border, and the guests arrive from there,
 // from Poland and from Turkey. Every one of those alphabets lives outside
 // WinAnsi, which is all the PDF standard fonts can encode — a contract drawn

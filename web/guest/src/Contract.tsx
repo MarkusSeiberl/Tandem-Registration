@@ -11,6 +11,8 @@ export interface ContractProps {
   onBack?: () => void
   submitting?: boolean
   errors?: string[] | null
+  /** Guest is under 18 — the signature has to come from the legal guardian. */
+  minor?: boolean
 }
 
 const CANVAS_WIDTH = 700
@@ -22,6 +24,7 @@ export default function Contract({
   onBack,
   submitting,
   errors,
+  minor,
 }: ContractProps) {
   const [text, setText] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -264,6 +267,11 @@ export default function Contract({
         <div className="sign-section" ref={signSectionRef}>
           <h2>Unterschrift</h2>
           <p>Mit deiner Unterschrift bestätigst du, den Vertrag gelesen und akzeptiert zu haben.</p>
+          {minor && (
+            <p className="minor-note">
+              Unterschrift: gesetzlicher Vertreter bei Minderjährigen unter 18 Jahre
+            </p>
+          )}
           <canvas
             ref={canvasRef}
             width={CANVAS_WIDTH}

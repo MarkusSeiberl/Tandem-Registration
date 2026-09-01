@@ -321,6 +321,12 @@ p {
   text-align: left;
 }
 
+.minor-note {
+  margin: 4px 0 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
 /* Big tap target: this is ticked on a tablet, often with a gloved finger. */
 .privacy-check {
   display: flex;

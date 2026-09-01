@@ -80,6 +80,7 @@ function App() {
           <Contract
             onNext={handleSign}
             onCancel={resetToWelcome}
+            minor={formValues !== null && formValues.age < 18}
             // Back to the form with everything still in it. The signature is
             // not kept: it belongs to the data it was drawn under, and that is
             // exactly what the guest went back to change.

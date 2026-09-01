@@ -192,4 +192,20 @@ describe('Contract', () => {
       screen.getByText('Es liegt derzeit kein Vertragstext vor. Bitte wende dich an das Personal.')
     )
   })
+
+  it('tells a minor that the legal guardian must sign', async () => {
+    render(<Contract onNext={vi.fn()} minor />)
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    expect(
+      screen.getByText('Unterschrift: gesetzlicher Vertreter bei Minderjährigen unter 18 Jahre')
+    ).toBeInTheDocument()
+  })
+
+  it('shows no guardian note for an adult', async () => {
+    render(<Contract onNext={vi.fn()} />)
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    expect(screen.queryByText(/gesetzlicher Vertreter/)).not.toBeInTheDocument()
+  })
 })

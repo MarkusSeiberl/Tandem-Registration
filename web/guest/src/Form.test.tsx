@@ -94,6 +94,21 @@ describe('Form', () => {
     expect(onNext).not.toHaveBeenCalled()
   })
 
+  it('rejects 139 cm and accepts the 140 cm minimum', async () => {
+    const user = userEvent.setup()
+    const onNext = vi.fn()
+    render(<Form onNext={onNext} />)
+
+    await fillValid(user)
+    await user.clear(screen.getByLabelText('Größe (cm)'))
+    await user.type(screen.getByLabelText('Größe (cm)'), '139')
+    expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+
+    await user.clear(screen.getByLabelText('Größe (cm)'))
+    await user.type(screen.getByLabelText('Größe (cm)'), '140')
+    expect(screen.getByRole('button', { name: 'Weiter' })).toBeEnabled()
+  })
+
   it('requires a gender to be chosen', async () => {
     const user = userEvent.setup()
     const onNext = vi.fn()

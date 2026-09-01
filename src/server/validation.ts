@@ -20,7 +20,7 @@ export function validateGuest(input: any):
   if (!s(input?.last_name)) e.push('Nachname fehlt')
   if (!GENDERS.includes(input?.gender)) e.push('Geschlecht fehlt')
   if (!int(input?.age, 1, 120)) e.push('Alter ungültig')
-  if (!int(input?.height_cm, 100, 220)) e.push('Größe ungültig')
+  if (!int(input?.height_cm, 140, 220)) e.push('Größe ungültig')
   if (!int(input?.weight_kg, 20, 200)) e.push('Gewicht ungültig')
   if (!s(input?.street)) e.push('Straße und Hausnummer fehlt')
   // Deliberately only a presence check: guests from outside AT bring 5-digit (DE)

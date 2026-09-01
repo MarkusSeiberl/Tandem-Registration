@@ -37,9 +37,9 @@ test('weight_kg boundaries', () => {
 
 // Height boundaries and validation
 test('height_cm boundaries', () => {
-  expect(validateGuest({ ...base, height_cm:100 }).ok).toBe(true)
+  expect(validateGuest({ ...base, height_cm:140 }).ok).toBe(true)
   expect(validateGuest({ ...base, height_cm:220 }).ok).toBe(true)
-  expect(validateGuest({ ...base, height_cm:99 }).ok).toBe(false)
+  expect(validateGuest({ ...base, height_cm:139 }).ok).toBe(false)
   expect(validateGuest({ ...base, height_cm:221 }).ok).toBe(false)
   expect(validateGuest({ ...base, height_cm:170.5 }).ok).toBe(false)
 })

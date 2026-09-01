@@ -117,7 +117,7 @@ function validate(v: RawValues): Errors {
   if (v.lastName.trim().length === 0) e.lastName = 'Nachname fehlt'
   if (v.gender === '') e.gender = 'Geschlecht fehlt'
   if (!isInt(v.age, 1, 120)) e.age = 'Alter ungültig (1–120)'
-  if (!isInt(v.height, 100, 220)) e.height = 'Größe ungültig (100–220 cm)'
+  if (!isInt(v.height, 140, 220)) e.height = 'Größe ungültig (140–220 cm)'
   if (!isInt(v.weight, 20, 200)) e.weight = 'Gewicht ungültig (20–200 kg)'
   if (v.street.trim().length === 0) e.street = 'Straße und Hausnummer fehlt'
   // Presence only — see the matching note in src/server/validation.ts.
@@ -343,7 +343,7 @@ export default function Form({ onNext, onCancel, initialValues }: FormProps) {
           <div className="field-row">
             <div className="field">
               <label htmlFor="height_cm">Größe (cm)</label>
-              <input id="height_cm" type="number" inputMode="tel" min={100} max={220} {...field('height')} />
+              <input id="height_cm" type="number" inputMode="tel" min={140} max={220} {...field('height')} />
               {showError('height') && <p className="error">{showError('height')}</p>}
             </div>
 

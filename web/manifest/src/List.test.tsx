@@ -233,13 +233,32 @@ describe('List', () => {
       makeRow({ id: 2, price: 100 }),
       // Not manifested yet — must not break the sum.
       makeRow({ id: 3, price: null }),
-      makeRow({ id: 4, price: 270, paid_at: '2026-07-09T12:00:00.000Z' }),
+      makeRow({ id: 4, price: 270, payment_method: 'cash', paid_at: '2026-07-09T12:00:00.000Z' }),
     ])
 
     renderList()
 
     expect(await screen.findByText('Offen: 510 €')).toBeInTheDocument()
-    expect(screen.getByText('Kassiert: 270 €')).toBeInTheDocument()
+    expect(screen.getByText('Kassiert Bar: 270 €')).toBeInTheDocument()
+    expect(screen.getByText('Kassiert Karte: 0 €')).toBeInTheDocument()
+  })
+
+  it('splits the collected sum by till, counting a voucher row by its top-up', async () => {
+    const paid = { paid_at: '2026-07-09T12:00:00.000Z' }
+    vi.mocked(api.list).mockResolvedValue([
+      makeRow({ id: 1, price: 100, payment_method: 'cash', ...paid }),
+      makeRow({ id: 2, price: 200, payment_method: 'card', ...paid }),
+      makeRow({ id: 3, price: 50, payment_method: 'voucher', voucher_payment_method: 'cash', ...paid }),
+      // Collected, but nobody recorded the till: belongs to neither sum.
+      makeRow({ id: 4, price: 30, ...paid }),
+      // Still open cash — not collected, not counted.
+      makeRow({ id: 5, price: 400, payment_method: 'cash' }),
+    ])
+
+    renderList()
+
+    expect(await screen.findByText('Kassiert Bar: 150 €')).toBeInTheDocument()
+    expect(screen.getByText('Kassiert Karte: 200 €')).toBeInTheDocument()
   })
 
   it('shows the day it was handed, in the format the input speaks', async () => {

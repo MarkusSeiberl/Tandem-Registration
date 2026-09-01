@@ -106,3 +106,14 @@ export function serviceOfVoucher(service: VoucherService | '' | null | undefined
 export function atLeast(booking: ExtraBooking, minimum: ExtraBooking): ExtraBooking {
   return SERVICE_RANK[booking] >= SERVICE_RANK[minimum] ? booking : minimum
 }
+
+// Mirror of collectedVia() in src/server/pricing.ts. Which till a row's money
+// landed in: a voucher row is only ever cash or card through its top-up, so the
+// answer comes from voucher_payment_method there. null means nobody recorded
+// it — that money is unaccounted for at closing.
+export function collectedVia(
+  row: { payment_method?: string | null; voucher_payment_method?: string | null }
+): 'cash' | 'card' | null {
+  const method = row.payment_method === 'voucher' ? row.voucher_payment_method : row.payment_method
+  return method === 'cash' || method === 'card' ? method : null
+}

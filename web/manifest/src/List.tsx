@@ -6,7 +6,7 @@ import {
 import type { DayTables, Registration } from './api'
 import { useEvents } from './useEvents'
 import { extraBookingLabel, paymentLabel, weightSurchargeLabel } from './labels'
-import { formatEuro } from './pricing'
+import { collectedVia, formatEuro } from './pricing'
 import { today } from './date'
 import TrashIcon from './TrashIcon'
 
@@ -248,6 +248,8 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   const openRows = sortedRows.filter((r) => r.paid_at == null)
   const paidRows = sortedRows.filter((r) => r.paid_at != null)
   const sumOf = (items: Registration[]) => items.reduce((sum, r) => sum + (r.price ?? 0), 0)
+  const paidVia = (via: 'cash' | 'card') =>
+    sumOf(paidRows.filter((r) => collectedVia(r) === via))
 
   function toggleChecked(id: number) {
     setCheckedIds((prev) => {
@@ -395,7 +397,8 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         </span>
         {/* What is still to be collected, and what already went into the till. */}
         <span className="list-total list-total-open">Offen: {formatEuro(sumOf(openRows))}</span>
-        <span className="list-total">Kassiert: {formatEuro(sumOf(paidRows))}</span>
+        <span className="list-total">Kassiert Bar: {formatEuro(paidVia('cash'))}</span>
+        <span className="list-total">Kassiert Karte: {formatEuro(paidVia('card'))}</span>
       </div>
 
       {exportMessage && <p className="hint">{exportMessage}</p>}

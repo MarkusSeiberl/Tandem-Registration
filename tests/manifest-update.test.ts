@@ -644,6 +644,18 @@ test('patch rejects a fractional load number but allows clearing with null', asy
   await app.close()
 })
 
+test('patch accepts load number 0 as valid', async () => {
+  const { app } = testServer()
+  const { id } = (await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })).json()
+  const res = await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { load_number: 0 }
+  })
+  expect(res.statusCode).toBe(200)
+  expect(res.json().load_number).toBe(0)
+  await app.close()
+})
+
 test('a voucher list that cannot be written never fails the operator’s save', async () => {
   const { app, collect } = await voucherServer(MISSING_LIST)
   const res = await collect(true)

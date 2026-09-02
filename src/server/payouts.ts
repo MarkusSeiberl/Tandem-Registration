@@ -75,6 +75,7 @@ export interface PaidRow {
   tandem_master_id?: number | null
   camera_flyer_id?: number | null
   extra_booking?: string | null
+  weight_surcharge?: string | null
 }
 
 // What the club owes its crew for a jump day. The rates are flat per jump, so this
@@ -93,6 +94,18 @@ export function payoutSections(
     const master = (row.tandem_master_id != null && masterNames.get(row.tandem_master_id)) ||
       UNASSIGNED_MASTER
     record(masters, master, 'jump', 0, payouts.tandem_master)
+
+    // The heavier guest is the master's jump to fly, so the club's surcharge for
+    // it reaches the person who flew it. Read from the stored field rather than
+    // from the weight: the manifest waives that field as an exception, and a
+    // waiver the guest gets but the payout ignores is two answers to one question.
+    // A rate of 0 records nothing — a club that pays no bonus, and every day
+    // frozen before the bonus existed, would otherwise collect "× 0,00 €" lines.
+    if (row.weight_surcharge === 'over_90' && payouts.weight_over_90 > 0) {
+      record(masters, master, 'over_90', 1, payouts.weight_over_90)
+    } else if (row.weight_surcharge === 'over_100' && payouts.weight_over_100 > 0) {
+      record(masters, master, 'over_100', 2, payouts.weight_over_100)
+    }
 
     // The rate follows the service actually flown, so a video paid for by a voucher
     // counts exactly like one booked and paid today.

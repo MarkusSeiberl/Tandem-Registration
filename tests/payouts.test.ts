@@ -100,3 +100,62 @@ test('an amount with cents is written the German way', () => {
     { ...DEFAULT_PAYOUTS, tandem_master: 1234.5 })[0]
   expect(section.entries[0].calculation).toBe('1 × 1.234,50 €')
 })
+
+test('an overweight guest earns the tandemmaster the bonus on top of the jump', () => {
+  const section = masterSection([jump(), jump({ weight_surcharge: 'over_90' })])
+  expect(section?.entries).toEqual([
+    { name: 'Seiberl Markus', calculation: '2 × 45,00 € + 1 × 15,00 €', amount: 105 },
+  ])
+  expect(section?.total).toBe(105)
+})
+
+test('the rates keep their order — jump, then 90 kg, then 100 kg', () => {
+  const section = masterSection([
+    jump({ weight_surcharge: 'over_100' }),
+    jump({ weight_surcharge: 'over_90' }),
+    jump(),
+  ])
+  expect(section?.entries[0].calculation).toBe('3 × 45,00 € + 1 × 15,00 € + 1 × 25,00 €')
+  expect(section?.entries[0].amount).toBe(175)
+})
+
+test('a waived surcharge pays the master nothing extra', () => {
+  // The manifest can set the field back to 'none' as an exception for the guest.
+  // The bonus follows that decision, not the weight on the row.
+  const section = masterSection([jump({ weight_surcharge: 'none', weight_kg: 95 })])
+  expect(section?.entries[0].calculation).toBe('1 × 45,00 €')
+  expect(section?.total).toBe(45)
+})
+
+test('a bonus rate of 0 adds no line to the calculation', () => {
+  // A club that pays no bonus — and every day flown before the bonus existed —
+  // would otherwise collect "× 0,00 €" lines that say nothing.
+  const section = payoutSections(
+    [jump({ weight_surcharge: 'over_90' }), jump({ weight_surcharge: 'over_100' })],
+    MASTERS, FLYERS,
+    { ...DEFAULT_PAYOUTS, weight_over_90: 0, weight_over_100: 0 },
+  ).find(s => s.title.includes('Tandemmaster'))
+  expect(section?.entries[0].calculation).toBe('2 × 45,00 €')
+  expect(section?.total).toBe(90)
+})
+
+test('an unassigned jump carries its bonus into the ohne-Tandemmaster line', () => {
+  const section = masterSection([
+    jump({ tandem_master_id: null, weight_surcharge: 'over_100' }),
+  ])
+  expect(section?.entries).toEqual([
+    { name: 'ohne Tandemmaster', calculation: '1 × 45,00 € + 1 × 25,00 €', amount: 70 },
+  ])
+})
+
+test('the bonus reaches the master even when the guest flew on a voucher', () => {
+  // A voucher never covers the weight surcharge, and the payout follows the jump
+  // that was flown either way.
+  const section = masterSection([
+    jump({
+      weight_surcharge: 'over_90',
+      payment_method: 'voucher', voucher_service: 'jump', price: 40,
+    }),
+  ])
+  expect(section?.entries[0].amount).toBe(60)
+})

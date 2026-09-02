@@ -25,18 +25,27 @@ export const DEFAULT_PRICES: Prices = {
 
 // What the club pays out per jump, in EUR. Separate from `Prices` because these
 // amounts never touch what a guest owes — they are the club's side of the day.
+// The two weight amounts are what the master gets on top for flying the heavier
+// guest; they carry the same names as their counterparts in `Prices`, because
+// they are triggered by the same `weight_surcharge` on the row.
 export interface Payouts {
   tandem_master: number
   video: number
   video_photo: number
+  weight_over_90: number
+  weight_over_100: number
 }
 
-export const PAYOUT_KEYS = ['tandem_master', 'video', 'video_photo'] as const
+export const PAYOUT_KEYS = [
+  'tandem_master', 'video', 'video_photo', 'weight_over_90', 'weight_over_100',
+] as const
 
 export const DEFAULT_PAYOUTS: Payouts = {
   tandem_master: 45,
   video: 60,
   video_photo: 80,
+  weight_over_90: 15,
+  weight_over_100: 25,
 }
 
 export interface Config {

@@ -70,7 +70,9 @@ test('put settings leaves prices untouched when the body has none', async () => 
 test('get settings exposes the payout rates', async () => {
   const { app } = testServer()
   const res = await app.inject({ method: 'GET', url: '/api/settings' })
-  expect(res.json().payouts).toEqual({ tandem_master: 45, video: 60, video_photo: 80 })
+  expect(res.json().payouts).toEqual({
+    tandem_master: 45, video: 60, video_photo: 80, weight_over_90: 15, weight_over_100: 25,
+  })
   await app.close()
 })
 
@@ -78,10 +80,17 @@ test('put settings stores new payout rates', async () => {
   const { app, cfgRef } = testServer()
   const res = await app.inject({
     method: 'PUT', url: '/api/settings',
-    payload: { payouts: { tandem_master: 50, video: 65, video_photo: 85 } },
+    payload: {
+      payouts: {
+        tandem_master: 50, video: 65, video_photo: 85,
+        weight_over_90: 20, weight_over_100: 30,
+      },
+    },
   })
   expect(res.statusCode).toBe(200)
-  expect(cfgRef.current.payouts).toEqual({ tandem_master: 50, video: 65, video_photo: 85 })
+  expect(cfgRef.current.payouts).toEqual({
+    tandem_master: 50, video: 65, video_photo: 85, weight_over_90: 20, weight_over_100: 30,
+  })
   await app.close()
 })
 
@@ -113,6 +122,26 @@ test('put settings rejects a non-numeric or negative payout rate', async () => {
   expect(res.statusCode).toBe(400)
   expect(res.json().error).toBe('Vergütung ungültig')
   expect(cfgRef.current.payouts.tandem_master).toBe(45)
+  await app.close()
+})
+
+test('put settings rejects a negative weight bonus and keeps the stored one', async () => {
+  const { app, cfgRef } = testServer()
+  const res = await app.inject({
+    method: 'PUT', url: '/api/settings', payload: { payouts: { weight_over_90: -1 } },
+  })
+  expect(res.statusCode).toBe(400)
+  expect(res.json().error).toBe('Vergütung weight_over_90 ungültig')
+  expect(cfgRef.current.payouts.weight_over_90).toBe(15)
+  await app.close()
+})
+
+test('a client that sends only tandem_master does not wipe the weight bonus', async () => {
+  const { app, cfgRef } = testServer()
+  await app.inject({
+    method: 'PUT', url: '/api/settings', payload: { payouts: { tandem_master: 50 } },
+  })
+  expect(cfgRef.current.payouts.weight_over_100).toBe(25)
   await app.close()
 })
 

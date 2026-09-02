@@ -57,6 +57,21 @@ test('a partial payout block keeps the stored rates and fills the rest', async (
   expect(cfg.payouts.video_photo).toBe(80)
 })
 
+test('the payout defaults carry the tandemmaster weight bonus', async () => {
+  const dir = await makeDir()
+  const cfg = loadConfig(dir)
+  expect(cfg.payouts.weight_over_90).toBe(15)
+  expect(cfg.payouts.weight_over_100).toBe(25)
+})
+
+test('a payout block written before the weight bonus existed gains it', async () => {
+  const dir = await makeDir({ payouts: { tandem_master: 50, video: 60, video_photo: 80 } })
+  const cfg = loadConfig(dir)
+  expect(cfg.payouts.tandem_master).toBe(50)
+  expect(cfg.payouts.weight_over_90).toBe(15)
+  expect(cfg.payouts.weight_over_100).toBe(25)
+})
+
 test('prices survive a save/load round trip', async () => {
   const dir = await makeDir()
   const cfg = loadConfig(dir)

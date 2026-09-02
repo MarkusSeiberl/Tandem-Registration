@@ -92,7 +92,9 @@ export function registerVoucherRoutes(
   })
 
   // What the manifest banner counts: redemptions we recorded that the club's
-  // file has not received. Invalid vouchers are never in here by construction.
+  // file has not received — every collected voucher row until the next export,
+  // since nothing but the export writes into the file. A voucher the list
+  // rejects sits in here too, until that export takes the redemption back.
   //
   // The predicate is word for word the export sweep's queue (routes/export.ts).
   // The two used to differ, and each difference was a row the banner counted

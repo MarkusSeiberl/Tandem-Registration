@@ -10,7 +10,6 @@ import {
   VOUCHER_SERVICES, WEIGHT_SURCHARGES,
 } from '../pricing'
 import type { Config } from '../config'
-import { redeemVoucher } from '../voucherRedeem'
 import { dayIsFrozen, repriceDay, startDay, tablesForDay } from '../dayTables'
 import { today } from '../day'
 
@@ -285,10 +284,12 @@ export function registerRegistrationRoutes(
       // hit SQLITE_BUSY. The operator's save is already committed at this
       // point and must survive either.
       try {
-        // Collecting a voucher row is the moment it is spent. The write into the
-        // club's file is attempted now; if it fails, the row keeps
-        // voucher_redeemed_at without a sync stamp until the export sweep
-        // (Task 8) retries it.
+        // Collecting a voucher row is the moment it is spent — for us. Nothing
+        // is written into the club's file here: that file lives in the club's
+        // OneDrive, is read whole and written whole, and can be locked or
+        // mid-sync at exactly the moment the operator is standing at the till.
+        // The row is queued instead, and the export sweep does every write,
+        // every retry and every verdict on the list in one place.
         const after = db.prepare('SELECT * FROM registrations WHERE id=?').get(id) as any
         // A corrected number moves the redemption to a different voucher. The
         // date already written stays in the club's file — the same rule as
@@ -307,26 +308,15 @@ export function registerRegistrationRoutes(
             SET voucher_redeemed_at=@redeemed, voucher_redeem_synced_at=NULL WHERE id=@id`)
             .run({ id, redeemed: stillOnVoucher ? new Date().toISOString() : null })
         }
-        // `!current.paid_at` keeps this to the transition into collected. Every
-        // later save of an already-collected row would otherwise re-read the
-        // whole workbook to find a date that is already there.
-        if (paid === true && !current.paid_at &&
+        // `!current.paid_at` keeps this to the transition into collected, and a
+        // row whose redemption already reached the file is left alone: a
+        // re-collect must not hand the sweep a date it has long since written.
+        // Whether the list accepts the number at all is the sweep's question;
+        // the operator saw that verdict beside the field before collecting.
+        if (paid === true && !current.paid_at && !after?.voucher_redeem_synced_at &&
             after?.payment_method === 'voucher' && after.voucher_number) {
-          const outcome = await redeemVoucher(cfgRef.current, after.voucher_number, new Date())
-          if (outcome === 'written') {
-            db.prepare(`UPDATE registrations
-              SET voucher_redeemed_at=@now, voucher_redeem_synced_at=@now WHERE id=@id`)
-              .run({ id, now: new Date().toISOString() })
-          } else if (outcome === 'failed') {
-            // Ours to remember; the export sweep (Task 8) is meant to pick
-            // this up later, but until that lands the file simply lags.
-            db.prepare('UPDATE registrations SET voucher_redeemed_at=@now WHERE id=@id')
-              .run({ id, now: new Date().toISOString() })
-          }
-          // 'invalid', 'unknown', 'already_redeemed' and 'disabled' claim
-          // nothing: a voucher the list rejects, or has no single row for, must
-          // not sit in a retry queue that then never empties. The operator saw
-          // the same verdict beside the field before collecting.
+          db.prepare('UPDATE registrations SET voucher_redeemed_at=@now WHERE id=@id')
+            .run({ id, now: new Date().toISOString() })
         }
         // Putting a row back to open drops a redemption that never reached the
         // file. One that did is left alone — silently deleting a date from the

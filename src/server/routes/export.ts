@@ -60,9 +60,10 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
     const dayPayouts = tablesForDay(db, date, cfgRef.current).payouts
     const payouts = payoutSections(rows, masters, flyers, dayPayouts)
 
-    // Every redemption that did not reach the club's file when the row was
-    // collected gets one more attempt here. This is the "at latest at export"
-    // half of the promise; the collect handler is the other.
+    // Every redemption the club's file has not received is written here, and
+    // only here. Collecting merely queues one (see routes/registrations.ts):
+    // the file is the club's OneDrive workbook, read whole and written whole,
+    // and the till is the wrong moment to find out it is locked.
     //
     // Deliberately not scoped to `date`: the queue is everything still owed to
     // the file, whatever day it was collected on. A file locked all Saturday

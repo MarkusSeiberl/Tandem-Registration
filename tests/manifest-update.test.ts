@@ -588,7 +588,7 @@ test('rejects a note that is not text', async () => {
 async function voucherServer(voucherListPath: string) {
   clearVoucherListCache()
   const exportDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tandem-manifest-'))
-  const { app } = testServer({ exportDir, voucherListPath })
+  const { app, db } = testServer({ exportDir, voucherListPath })
   const { id } = (await app.inject({
     method: 'POST', url: '/api/registrations', payload: validBody(),
   })).json()
@@ -599,7 +599,11 @@ async function voucherServer(voucherListPath: string) {
   const collect = (paid: boolean, alsoChanged: Record<string, unknown> = {}) => app.inject({
     method: 'PATCH', url: `/api/registrations/${id}`, payload: { paid, ...alsoChanged },
   })
-  return { app, id, collect }
+  // The only thing that writes into the club's file. Several tests below need a
+  // redemption that has actually reached it, and this is the one way to get one.
+  const runExport = () => app.inject({ method: 'POST', url: '/api/export' })
+  const row = () => db.prepare('SELECT * FROM registrations WHERE id=?').get(id) as any
+  return { app, id, collect, runExport, row }
 }
 
 const MISSING_LIST = path.join(os.tmpdir(), 'tandem-gibt-es-nicht', 'Tandemliste.xlsx')
@@ -671,7 +675,7 @@ test('a voucher list that cannot be written never fails the operator’s save', 
   await app.close()
 })
 
-test('a redemption that reaches the list stamps both columns', async () => {
+test('collecting queues the redemption and leaves the list untouched', async () => {
   const file = await writeVoucherFile([
     { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
   ])
@@ -679,9 +683,26 @@ test('a redemption that reaches the list stamps both columns', async () => {
   const res = await collect(true)
 
   expect(res.statusCode).toBe(200)
+  // Spent as far as we are concerned, and owed to the file — but the writing
+  // itself belongs to the export alone, so the cell is still empty.
   expect(res.json().voucher_redeemed_at).not.toBeNull()
+  expect(res.json().voucher_redeem_synced_at).toBeNull()
+  expect(await eingeloestCell(file, 2)).toBeNull()
+  await app.close()
+})
+
+test('the export writes what collecting queued, and stamps the sync', async () => {
+  const file = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+  ])
+  const { app, collect, runExport, row } = await voucherServer(file)
+  await collect(true)
+
+  const res = await runExport()
+  expect(res.json().redemptionsWritten).toBe(1)
+
   // The sync stamp is the claim that the file has it — so the file must.
-  expect(res.json().voucher_redeem_synced_at).not.toBeNull()
+  expect(row().voucher_redeem_synced_at).not.toBeNull()
   expect(await eingeloestCell(file, 2)).toBeInstanceOf(Date)
   await app.close()
 })
@@ -702,8 +723,10 @@ test('un-collecting leaves a redemption the list already has', async () => {
   const file = await writeVoucherFile([
     { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
   ])
-  const { app, collect } = await voucherServer(file)
-  const synced = (await collect(true)).json().voucher_redeemed_at
+  const { app, collect, runExport, row } = await voucherServer(file)
+  await collect(true)
+  await runExport()
+  const synced = row().voucher_redeemed_at
   const res = await collect(false)
 
   expect(res.json().paid_at).toBeNull()
@@ -720,9 +743,10 @@ test('correcting the voucher number hands the new one back to the export sweep',
     { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
     { lfdNr: '26-002', einzahlDat: new Date('2026-01-15'), art: 'Tandem' },
   ])
-  const { app, id, collect } = await voucherServer(file)
-  const first = (await collect(true)).json()
-  expect(first.voucher_redeem_synced_at).not.toBeNull()
+  const { app, id, collect, runExport, row } = await voucherServer(file)
+  await collect(true)
+  await runExport()
+  expect(row().voucher_redeem_synced_at).not.toBeNull()
 
   const res = await app.inject({
     method: 'PATCH', url: `/api/registrations/${id}`, payload: { voucher_number: '26-002' },
@@ -745,13 +769,15 @@ test('saving an already collected row does not go near the list again', async ()
   const file = await writeVoucherFile([
     { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
   ])
-  const { app, collect } = await voucherServer(file)
-  const first = (await collect(true)).json()
+  const { app, collect, runExport, row } = await voucherServer(file)
+  await collect(true)
+  await runExport()
+  const first = row()
 
   // Every save from the detail screen re-sends the collected flag alongside
   // whatever actually changed. If the redemption block re-ran on those, it
-  // would re-read the whole workbook each time — and here, with the list gone,
-  // it would overwrite a settled redemption with a fresh unsynced one.
+  // would overwrite a settled redemption with a fresh unsynced one and hand the
+  // export a row it has already written off.
   await fs.rm(path.dirname(file), { recursive: true, force: true })
   const again = (await collect(true, { notes: 'Fährt später' })).json()
   expect(again.notes).toBe('Fährt später')

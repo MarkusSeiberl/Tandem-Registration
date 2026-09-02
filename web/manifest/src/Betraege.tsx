@@ -18,13 +18,17 @@ const PAYOUT_FIELDS: { key: keyof Payouts; label: string }[] = [
   { key: 'tandem_master', label: 'Tandemmaster pro Sprung' },
   { key: 'video', label: 'Kameraflieger Video' },
   { key: 'video_photo', label: 'Kameraflieger Video + Foto' },
+  { key: 'weight_over_90', label: 'Tandemmaster Zuschlag ab 90 kg' },
+  { key: 'weight_over_100', label: 'Tandemmaster Zuschlag ab 100 kg' },
 ]
 
 const EMPTY_PRICES: Prices = {
   jump: 0, video: 0, video_photo: 0, weight_over_90: 0, weight_over_100: 0,
 }
 
-const EMPTY_PAYOUTS: Payouts = { tandem_master: 0, video: 0, video_photo: 0 }
+const EMPTY_PAYOUTS: Payouts = {
+  tandem_master: 0, video: 0, video_photo: 0, weight_over_90: 0, weight_over_100: 0,
+}
 
 type Field<T> = { key: keyof T; label: string }
 
@@ -95,7 +99,7 @@ export default function Betraege() {
     jump: '', video: '', video_photo: '', weight_over_90: '', weight_over_100: '',
   })
   const [payoutInputs, setPayoutInputs] = useState<Record<keyof Payouts, string>>({
-    tandem_master: '', video: '', video_photo: '',
+    tandem_master: '', video: '', video_photo: '', weight_over_90: '', weight_over_100: '',
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)

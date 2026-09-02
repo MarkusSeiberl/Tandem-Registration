@@ -18,7 +18,9 @@ const CONFIG: SettingsType = {
   backupDir: '',
   voucherListPath: '',
   prices: { jump: 270, video: 100, video_photo: 120, weight_over_90: 40, weight_over_100: 60 },
-  payouts: { tandem_master: 45, video: 60, video_photo: 80 },
+  payouts: {
+    tandem_master: 45, video: 60, video_photo: 80, weight_over_90: 15, weight_over_100: 25,
+  },
 }
 
 const field = (label: string) => screen.getByLabelText(label) as HTMLInputElement
@@ -53,7 +55,9 @@ describe('Beträge', () => {
 
     await waitFor(() => expect(api.putSettings).toHaveBeenCalled())
     const sent = vi.mocked(api.putSettings).mock.calls[0][0]
-    expect(sent.payouts).toEqual({ tandem_master: 50, video: 60, video_photo: 80 })
+    expect(sent.payouts).toEqual({
+      tandem_master: 50, video: 60, video_photo: 80, weight_over_90: 15, weight_over_100: 25,
+    })
     expect(sent.prices?.jump).toBe(270)
     // The directories belong to the settings screen — sending them from here
     // would let a stale value overwrite what was saved there.
@@ -80,6 +84,35 @@ describe('Beträge', () => {
     await userEvent.click(save())
 
     expect(await screen.findByText('Vergütung „Kameraflieger Video" ungültig')).toBeInTheDocument()
+    expect(api.putSettings).not.toHaveBeenCalled()
+  })
+
+  it('shows and saves the tandemmaster weight bonus', async () => {
+    render(<Betraege />)
+    await screen.findByText('Preise (EUR)')
+
+    expect(field('Tandemmaster Zuschlag ab 90 kg').value).toBe('15')
+    expect(field('Tandemmaster Zuschlag ab 100 kg').value).toBe('25')
+
+    await userEvent.clear(field('Tandemmaster Zuschlag ab 100 kg'))
+    await userEvent.type(field('Tandemmaster Zuschlag ab 100 kg'), '30')
+    await userEvent.click(save())
+
+    await waitFor(() => expect(api.putSettings).toHaveBeenCalled())
+    const sent = vi.mocked(api.putSettings).mock.calls[0][0]
+    expect(sent.payouts?.weight_over_100).toBe(30)
+    expect(sent.payouts?.weight_over_90).toBe(15)
+  })
+
+  it('refuses to save an empty weight bonus', async () => {
+    render(<Betraege />)
+    await screen.findByText('Preise (EUR)')
+
+    await userEvent.clear(field('Tandemmaster Zuschlag ab 90 kg'))
+    await userEvent.click(save())
+
+    expect(await screen.findByText('Vergütung „Tandemmaster Zuschlag ab 90 kg" ungültig'))
+      .toBeInTheDocument()
     expect(api.putSettings).not.toHaveBeenCalled()
   })
 })

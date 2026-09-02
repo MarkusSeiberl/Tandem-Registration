@@ -53,6 +53,8 @@ export interface Payouts {
   tandem_master: number
   video: number
   video_photo: number
+  weight_over_90: number
+  weight_over_100: number
 }
 
 export interface Registration {

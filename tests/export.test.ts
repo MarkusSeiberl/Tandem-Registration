@@ -606,6 +606,48 @@ test('a number the list does not carry keeps its redemption and stays in the que
   await app.close()
 })
 
+test('POST /api/export pays the tandemmaster the weight bonus in the same line', async () => {
+  const db = openDb(':memory:')
+  const date = '2026-09-02'
+  const hans = db.prepare('INSERT INTO tandem_masters (name,active) VALUES (?,1)')
+    .run('Hans').lastInsertRowid
+  const insert = db.prepare(`INSERT INTO registrations
+    (first_name,last_name,age,weight_kg,street,postal_code,city,email,phone,
+     accepted_terms,price,payment_method,extra_booking,weight_surcharge,
+     tandem_master_id,camera_flyer_id,created_at,jump_date)
+    VALUES (?,'B',30,?,'X 1','4240','Freistadt','a@b.de','0660',1,?,'cash','none',?,?,null,?,?)`)
+  const now = new Date().toISOString()
+  insert.run('Eins', 80, 270, 'none', hans, now, date)
+  insert.run('Zwei', 95, 310, 'over_90', hans, now, date)
+  insert.run('Drei', 105, 330, 'over_100', hans, now, date)
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, makeCfgRef(dir))
+
+  await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.readFile(path.join(dir, `Tandem_${date}.xlsx`))
+  const ws = wb.worksheets[0]
+  const lines: [any, any, any][] = []
+  ws.eachRow(r => lines.push([r.getCell(1).value, r.getCell(2).value, r.getCell(3).value]))
+
+  expect(lines).toContainEqual(['Hans', '3 × 45,00 € + 1 × 15,00 € + 1 × 25,00 €', 175])
+
+  // The guest rows still say where those amounts came from. The Zuschlag column
+  // is far to the right, so this reads whole rows rather than the first three
+  // cells the payout block uses. `r.values` is 1-based with a hole at index 0.
+  const allCells: any[][] = []
+  ws.eachRow(r => allCells.push((r.values as any[]).slice(1)))
+  expect(allCells.some(c => c.includes('ab 90 kg'))).toBe(true)
+  expect(allCells.some(c => c.includes('ab 100 kg'))).toBe(true)
+  // …and the column holding the calculation is wide enough to show all of it.
+  expect(ws.getColumn(2).width).toBeGreaterThanOrEqual(40)
+
+  await app.close()
+})
+
 test('a redemption on a later sheet of the list is written, not taken back', async () => {
   clearVoucherListCache()
   const voucherListPath = await writeVoucherSheets([

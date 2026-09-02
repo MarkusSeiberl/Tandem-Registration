@@ -7,6 +7,8 @@ import { DEFAULT_PAYOUTS, DEFAULT_PRICES } from '../src/server/config'
 // The server files a jump under its local day, so the tests have to ask the
 // same question the same way — see src/server/day.ts.
 import { today } from '../src/server/day'
+import { openDb } from '../src/server/db'
+import { tablesForDay } from '../src/server/dayTables'
 
 // What a jump costs is a fact of the day it was flown. The price table in the
 // settings is where the NEXT day starts from — it is not a retroactive opinion
@@ -228,4 +230,45 @@ test('the export pays the crew at the rates of the day it exports', async () => 
   // The day was flown at 45, and raising the rate afterwards does not rewrite it.
   expect(found).toContain('45,00 €')
   fs.rmSync(dir, { recursive: true, force: true })
+})
+
+// A snapshot written before the weight bonus existed does not name it. Spreading
+// it over today's config — which is what makes an incomplete snapshot safe for
+// every other amount — would make a re-export of that day pay a bonus nobody
+// agreed to and nobody handed over.
+test('a day frozen before the weight bonus existed pays none of it', () => {
+  const db = openDb(':memory:')
+  db.prepare('INSERT INTO day_tables (jump_date, prices, payouts) VALUES (?,?,?)').run(
+    '2026-08-01',
+    JSON.stringify(DEFAULT_PRICES),
+    JSON.stringify({ tandem_master: 45, video: 60, video_photo: 80 }),
+  )
+  const cfg = { prices: DEFAULT_PRICES, payouts: DEFAULT_PAYOUTS } as any
+
+  const tables = tablesForDay(db, '2026-08-01', cfg)
+
+  expect(tables.payouts.weight_over_90).toBe(0)
+  expect(tables.payouts.weight_over_100).toBe(0)
+  // Every other amount still falls back to today's config, as before.
+  expect(tables.payouts.tandem_master).toBe(45)
+  expect(tables.prices).toEqual(DEFAULT_PRICES)
+})
+
+test('a snapshot that names the weight bonus keeps its own amounts', () => {
+  const db = openDb(':memory:')
+  db.prepare('INSERT INTO day_tables (jump_date, prices, payouts) VALUES (?,?,?)').run(
+    '2026-08-02',
+    JSON.stringify(DEFAULT_PRICES),
+    JSON.stringify({ ...DEFAULT_PAYOUTS, weight_over_90: 20 }),
+  )
+  const cfg = { prices: DEFAULT_PRICES, payouts: DEFAULT_PAYOUTS } as any
+
+  expect(tablesForDay(db, '2026-08-02', cfg).payouts.weight_over_90).toBe(20)
+})
+
+test('a day with no snapshot at all is quoted at today rates, bonus included', () => {
+  const db = openDb(':memory:')
+  const cfg = { prices: DEFAULT_PRICES, payouts: DEFAULT_PAYOUTS } as any
+
+  expect(tablesForDay(db, '2026-08-03', cfg).payouts.weight_over_90).toBe(15)
 })

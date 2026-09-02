@@ -24,12 +24,18 @@ export interface DayTables {
  */
 const SELECT = 'SELECT prices, payouts FROM day_tables WHERE jump_date=?'
 
+// Amounts that did not exist when older snapshots were written. A frozen day that
+// does not name them was flown without them, so they fall back to nothing rather
+// than to whatever the settings say today — a re-export of a settled day has to
+// keep matching the sheet the club already handed out.
+const PAYOUTS_BEFORE: Partial<Payouts> = { weight_over_90: 0, weight_over_100: 0 }
+
 function parse(row: { prices: string; payouts: string }, fallback: DayTables): DayTables {
   return {
     // Spread over the fallback so a snapshot written by an older version, or one
     // missing an amount, cannot take that amount down to undefined.
     prices: { ...fallback.prices, ...safeParse(row.prices) },
-    payouts: { ...fallback.payouts, ...safeParse(row.payouts) },
+    payouts: { ...fallback.payouts, ...PAYOUTS_BEFORE, ...safeParse(row.payouts) },
   }
 }
 

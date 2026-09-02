@@ -73,7 +73,7 @@ Three npm scripts, chained by `build:all`:
 ```jsonc
 "build:web":    "npm --prefix web/guest run build && npm --prefix web/manifest run build",
 "build:server": "esbuild src/server/main.ts --bundle --platform=node --format=cjs --target=node22 --external:better-sqlite3 --outfile=dist/server.cjs",
-"build:exe":    "node scripts/check-native-binary.mjs && node scripts/build-exe.mjs && node scripts/copy-native-binary.mjs",
+"build:exe":    "node scripts/check-native-binary.mjs && node scripts/build-exe.mjs && node scripts/patch-subsystem.mjs && node scripts/copy-native-binary.mjs",
 "build:all":    "npm run build:web && npm run build:server && npm run build:exe"
 ```
 
@@ -89,8 +89,50 @@ Three npm scripts, chained by `build:all`:
   (`check-native-binary.mjs`), (2) runs `@yao-pkg/pkg` (the maintained fork
   of `vercel/pkg`; original `pkg` is unmaintained and doesn't support current
   Node) against `dist/server.cjs` to produce the single-file Windows
-  executable, then (3) copies `better_sqlite3.node` into `dist/` beside the
-  exe (`copy-native-binary.mjs`) so it can be shipped alongside it.
+  executable, (3) flips the exe's PE subsystem to GUI so it starts without a
+  terminal window (`patch-subsystem.mjs`, see below), then (4) copies
+  `better_sqlite3.node` into `dist/` beside the exe (`copy-native-binary.mjs`)
+  so it can be shipped alongside it.
+
+### No console window (GUI subsystem)
+
+`pkg` always emits a PE with subsystem `WINDOWS_CUI` (3, "console"), so
+double-clicking the exe popped a black terminal with a taskbar button — one the
+operator must not close, since closing it kills the server mid-registration.
+`scripts/patch-subsystem.mjs` rewrites that field to `WINDOWS_GUI` (2) after
+packaging. The byte sits at `e_lfanew + 92` (`e_lfanew` is the 4-byte LE offset
+at 0x3C; then 4 bytes of `PE\0\0` signature, the 20-byte COFF header, and the
+optional header's Subsystem field at offset 68 — same in PE32 and PE32+). The
+script refuses anything that isn't a PE or whose subsystem is neither 2 nor 3,
+and is idempotent, so re-running it on an already-patched exe is a no-op.
+Covered by `tests/patchSubsystem.test.ts` against synthetic PE headers.
+
+Three consequences, all handled in `src/server/main.ts`:
+
+- **No console to print to.** `console.log`/`console.error` go nowhere in the
+  packaged exe, so the startup banner is invisible there (it still prints in
+  dev). Fatal startup problems — missing `better_sqlite3.node`, missing fonts,
+  an occupied port — go through `fatal()`, which additionally shows the message
+  in a Windows message box (PowerShell + `System.Windows.Forms.MessageBox`,
+  command passed as `-EncodedCommand` and the text as base64 so quotes,
+  umlauts and newlines can't break the quoting). Without it the exe would die
+  completely silently.
+- **Starting the exe again reopens the manifest.** With no console and no
+  taskbar window, an operator who closes the browser tab has nothing left to
+  click. So a second start — which fails with `EADDRINUSE` because the first
+  instance owns the port — probes `http://127.0.0.1:PORT/api/health`; if a
+  Tandem answers, it just opens the manifest in the browser and exits 0,
+  leaving the running instance untouched. `EADDRINUSE` from something that is
+  *not* Tandem (IIS, Skype) still reports a real error in the message box.
+- **The web assets are extracted only after `listen` succeeds.** The temp dir
+  (`os.tmpdir()/tandem-web`) is created empty before `@fastify/static` is
+  registered (it needs an existing root) and filled in the `listen().then()`.
+  Otherwise the second start above would rewrite the very files the running
+  instance is serving to the tablets.
+
+Also: `openBrowser` passes `windowsHide: true` — the `cmd.exe` behind
+`start "" <url>` would otherwise flash a window now that the exe has no console
+of its own.
 
 ### Node version / ABI matching (do NOT hardcode the target)
 
@@ -273,12 +315,16 @@ undefined and better-sqlite3 resolves normally from `node_modules`.)
 - `DIR` env var overrides where `tandem.db` and `config.json` are read from
   and written to; defaults to the exe's own folder.
 - **Reaching the server / why `tandem.local` is unreliable.** On startup the
-  console prints the URLs that actually work: `http://localhost:PORT/...` on
-  the host itself, and `http://<LAN-IP>:PORT/...` for other devices (the app
-  lists every non-internal IPv4 it finds — pick the one on the same Wi-Fi as
-  the tablets). **Prefer the LAN IP** — it is the only method that works on
-  every device. `tandem.local` (mDNS) is offered as a "if supported" extra and
-  frequently does NOT resolve because:
+  URLs that actually work are logged: `http://localhost:PORT/...` on the host
+  itself, and `http://<LAN-IP>:PORT/...` for other devices (the app lists every
+  non-internal IPv4 it finds — pick the one on the same Wi-Fi as the tablets).
+  Note the packaged exe has no console (see "No console window" above), so
+  there the banner is invisible; on the host itself the browser opens by
+  itself at startup and again on every further double-click of the exe. The
+  LAN IPs for the tablets currently have no such fallback — they are visible
+  only in a dev run. **Prefer the LAN IP** — it is the only method that works
+  on every device. `tandem.local` (mDNS) is offered as a "if supported" extra
+  and frequently does NOT resolve because:
   - **Android** does not resolve typed `.local` mDNS hostnames in the browser
     at all. iOS/iPadOS, macOS and modern Windows do.
   - **Virtual adapters** (Hyper-V, WSL, VirtualBox/VMware, VPNs) make the host
@@ -353,6 +399,23 @@ Two follow-on issues surfaced on subsequent Windows runs and were also fixed:
    by embedding `web/*/dist` into the exe (`pkg.config.json` assets) and
    extracting them to a temp dir at startup, so deployment is just the exe +
    `better_sqlite3.node`.
+
+### Verified on Windows (2026-09)
+
+Built with `npm run build:all` on Windows 11 / Node 24.18.0 and smoke-tested
+against the real `dist/tandem.exe` (`PORT=8123`, `DIR` pointing at a scratch
+folder):
+
+- The patched exe's PE subsystem reads back as `2` (GUI).
+- Started by double-click equivalent (`Start-Process`): no console window and
+  no taskbar button (`MainWindowHandle` is 0), `GET /api/health` →
+  `{"ok":true}`.
+- Starting the exe a second time exits with code 0, reopens the manifest in the
+  browser, and leaves the first instance serving (`/api/health` still ok).
+- With `better_sqlite3.node` deliberately absent, the exe blocks on a message
+  box titled "Tandem" (child `powershell.exe`) instead of dying silently.
+- `POST /api/shutdown` (the manifest's "Programm beenden" button) ends the
+  packaged GUI-subsystem process cleanly.
 
 Cannot be verified on Linux/WSL (no Windows, no way to execute a `.exe`,
 no `wine` installed in this environment):

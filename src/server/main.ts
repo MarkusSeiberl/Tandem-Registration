@@ -1,7 +1,8 @@
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
-import { exec } from 'child_process'
+import http from 'http'
+import { exec, execFileSync } from 'child_process'
 import { Bonjour } from 'bonjour-service'
 import { openDb } from './db'
 import { loadConfig, saveConfig } from './config'
@@ -14,6 +15,40 @@ import { FONT_ASSETS } from './contractPdf'
 
 const dir = process.env.DIR || installDir
 
+/**
+ * Ends the program on a problem the operator has to fix.
+ *
+ * The shipped exe is patched to the Windows GUI subsystem so it starts without
+ * a terminal (see scripts/patch-subsystem.mjs), which also means it has no
+ * console to print to: a `console.error` before `process.exit(1)` would make
+ * the exe die completely silently. So the packaged build additionally puts the
+ * message in a Windows message box. In dev the console is the message box.
+ */
+function fatal(message: string): never {
+  console.error(message)
+  if (isPackaged && process.platform === 'win32') {
+    // The text travels as base64 so quotes, umlauts and newlines in it cannot
+    // break out of the PowerShell command; the command itself is passed as
+    // -EncodedCommand (UTF-16LE base64), the documented quoting-proof form.
+    const b64 = Buffer.from(message, 'utf8').toString('base64')
+    const script =
+      `Add-Type -AssemblyName System.Windows.Forms;` +
+      `$m=[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${b64}'));` +
+      `[System.Windows.Forms.MessageBox]::Show($m,'Tandem',0,16)|Out-Null`
+    try {
+      execFileSync(
+        'powershell',
+        ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+          Buffer.from(script, 'utf16le').toString('base64')],
+        { windowsHide: true, stdio: 'ignore' },
+      )
+    } catch {
+      // A message box is a courtesy — never let it mask the actual failure.
+    }
+  }
+  process.exit(1)
+}
+
 // In the packaged exe, better-sqlite3's native binary ships as a real file next
 // to the exe (pkg can't dlopen it from the virtual snapshot). In dev, let
 // better-sqlite3 resolve it normally from node_modules.
@@ -22,18 +57,16 @@ const nativeBinding = isPackaged ? path.join(installDir, 'better_sqlite3.node') 
 // Fail fast with an actionable message if the native binary isn't beside the
 // exe, instead of a raw MODULE_NOT_FOUND from deep inside better-sqlite3.
 if (nativeBinding && !fs.existsSync(nativeBinding)) {
-  console.error(
-    `\n[tandem] Start fehlgeschlagen: SQLite-Datei nicht gefunden.\n` +
+  fatal(
+    `[tandem] Start fehlgeschlagen: SQLite-Datei nicht gefunden.\n` +
       `Erwartet wird die Datei genau hier (neben tandem.exe):\n` +
       `  ${nativeBinding}\n\n` +
       `Bitte 'better_sqlite3.node' (exakt dieser Name) in denselben Ordner\n` +
       `wie tandem.exe legen. Aktueller Ordnerinhalt:\n` +
       (fs.existsSync(installDir)
         ? fs.readdirSync(installDir).map((f) => `  - ${f}`).join('\n')
-        : `  (Ordner ${installDir} nicht lesbar)`) +
-      `\n`,
+        : `  (Ordner ${installDir} nicht lesbar)`),
   )
-  process.exit(1)
 }
 
 const contractTemplate = fs.readFileSync(assetPath('Befoerderungsvertrag.pdf'))
@@ -45,14 +78,12 @@ const contractTemplate = fs.readFileSync(assetPath('Befoerderungsvertrag.pdf'))
 const missingFonts = FONT_ASSETS.filter((name) => !fs.existsSync(assetPath(name)))
 if (missingFonts.length > 0) {
   const many = missingFonts.length > 1
-  console.error(
-    `\n[tandem] Start fehlgeschlagen: Schriftdatei${many ? 'en' : ''} nicht gefunden.\n` +
+  fatal(
+    `[tandem] Start fehlgeschlagen: Schriftdatei${many ? 'en' : ''} nicht gefunden.\n` +
       `Ohne sie kann kein Beförderungsvertrag gedruckt werden.\n` +
       `${many ? 'Diese Dateien fehlen' : 'Diese Datei fehlt'}:\n` +
-      missingFonts.map((name) => `  - ${assetPath(name)}`).join('\n') +
-      `\n`,
+      missingFonts.map((name) => `  - ${assetPath(name)}`).join('\n'),
   )
-  process.exit(1)
 }
 
 const db = openDb(path.join(dir, 'tandem.db'), nativeBinding)
@@ -88,15 +119,25 @@ function extractDir(src: string, dest: string) {
 }
 
 let webRoot: string
+// Runs once the port is ours — see the call site below for why it is not done
+// here.
+let extractWeb = () => {}
 if (isPackaged) {
   // Assets are embedded at <snapshot>/web (relative to the config file dir);
   // the bundled server.cjs lives at <snapshot>/dist, so `web` is one level up.
   const embeddedWeb = path.join(__dirname, '..', 'web')
   webRoot = path.join(os.tmpdir(), 'tandem-web')
-  try {
-    extractDir(embeddedWeb, webRoot)
-  } catch (err) {
-    console.error('[tandem] Konnte eingebettete Web-Dateien nicht entpacken:', err)
+  // The folder is created empty right away because @fastify/static needs its
+  // root to exist at registration time. Filling it is deferred until the
+  // listen succeeds: a second start that finds Tandem already running must not
+  // rewrite the very files the running instance is serving to the tablets.
+  fs.mkdirSync(webRoot, { recursive: true })
+  extractWeb = () => {
+    try {
+      extractDir(embeddedWeb, webRoot)
+    } catch (err) {
+      console.error('[tandem] Konnte eingebettete Web-Dateien nicht entpacken:', err)
+    }
   }
 } else {
   webRoot = path.join(installDir, 'web')
@@ -105,6 +146,8 @@ if (isPackaged) {
 registerStatic(app, webRoot)
 
 const port = Number(process.env.PORT) || 80
+// Port 80 is the default so the tablets' URLs carry no port at all.
+const p = port === 80 ? '' : `:${port}`
 
 let bonjour: Bonjour | undefined
 let shuttingDown = false
@@ -138,13 +181,40 @@ process.on('SIGTERM', () => shutdown('SIGTERM'))
 // Best-effort: open the manifest screen in the default browser. Only done for
 // the packaged .exe — auto-popping a browser window on every `npm start` or
 // e2e test run (which also boots this file via tsx) would be disruptive.
-function openBrowser(url: string) {
+function openBrowser(url: string, done?: () => void) {
   const cmd =
     process.platform === 'win32' ? `start "" "${url}"`
     : process.platform === 'darwin' ? `open "${url}"`
     : `xdg-open "${url}"`
-  exec(cmd, (err) => {
+  // windowsHide keeps the cmd.exe that runs `start` from flashing a window up
+  // — visible now that the exe itself no longer owns a console.
+  exec(cmd, { windowsHide: true }, (err) => {
     if (err) console.error('[tandem] Konnte Browser nicht automatisch öffnen:', err.message)
+    done?.()
+  })
+}
+
+/** True if a Tandem server already answers on this port of this machine. */
+function tandemAlreadyRunning(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = http.get(
+      { host: '127.0.0.1', port, path: '/api/health', timeout: 2000 },
+      (res) => {
+        let body = ''
+        res.setEncoding('utf8')
+        res.on('data', (chunk) => { body += chunk })
+        res.on('end', () => {
+          try {
+            resolve((JSON.parse(body) as { ok?: boolean }).ok === true)
+          } catch {
+            resolve(false)
+          }
+        })
+      },
+    )
+    // Anything else on the port (IIS, another web server) fails one of these.
+    req.on('timeout', () => req.destroy())
+    req.on('error', () => resolve(false))
   })
 }
 
@@ -163,6 +233,7 @@ function lanIPv4(): string[] {
 }
 
 app.listen({ port, host: '0.0.0.0' }).then(() => {
+  extractWeb()
   bonjour = new Bonjour()
   // Advertise an A record for `tandem.local` itself (host), not just a
   // `_http._tcp` service under the machine's own hostname — otherwise nothing
@@ -171,7 +242,6 @@ app.listen({ port, host: '0.0.0.0' }).then(() => {
   // Android, so the banner below leads with localhost + the raw LAN IP.
   bonjour.publish({ name: 'tandem', type: 'http', port, host: 'tandem.local' })
 
-  const p = port === 80 ? '' : `:${port}`
   console.log('')
   console.log('==============================================')
   console.log('  Tandem läuft und ist einsatzbereit!')
@@ -200,7 +270,23 @@ app.listen({ port, host: '0.0.0.0' }).then(() => {
   console.log('  Zum Beenden dieses Fenster schließen oder STRG+C drücken.')
   console.log('')
   if (isPackaged) openBrowser(`http://localhost${p}/manifest`)
-}).catch((err) => {
-  console.error('[tandem] Start fehlgeschlagen:', err.message)
-  process.exit(1)
+}).catch(async (err: NodeJS.ErrnoException) => {
+  // Starting tandem.exe a second time is how the operator gets the manifest
+  // page back after closing the browser tab — the exe has no console and no
+  // taskbar window any more, so there is nothing else left to click. The port
+  // is taken by our own first instance, so we land here; reopen the page and
+  // leave that instance running, untouched.
+  if (err.code === 'EADDRINUSE' && await tandemAlreadyRunning()) {
+    openBrowser(`http://localhost${p}/manifest`, () => process.exit(0))
+    return
+  }
+  if (err.code === 'EADDRINUSE') {
+    fatal(
+      `[tandem] Start fehlgeschlagen: Port ${port} ist belegt.\n` +
+        `Ein anderes Programm (z. B. IIS, Skype oder ein Webserver) hört bereits\n` +
+        `auf diesem Port. Dieses Programm beenden — oder Tandem auf einem anderen\n` +
+        `Port starten:  set PORT=8080 && tandem.exe`,
+    )
+  }
+  fatal(`[tandem] Start fehlgeschlagen: ${err.message}`)
 })

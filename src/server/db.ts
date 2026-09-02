@@ -35,6 +35,14 @@ export function openDb(path: string, nativeBinding?: string): Database.Database 
     -- The price list and payout rates one jump day runs on, frozen by that day's
     -- first registration. What a jump costs is a fact of the day it was flown,
     -- not of whatever the settings screen says when someone later opens the row.
+    -- Who was on duty as Betriebsleiter that day. Its own table rather than a
+    -- column on day_tables: a row in day_tables is what marks a day as flown
+    -- (dayIsFrozen), so writing a name there would freeze the day's price list
+    -- as a side effect of typing.
+    CREATE TABLE IF NOT EXISTS day_manager (
+      jump_date TEXT PRIMARY KEY,
+      name TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS day_tables (
       jump_date TEXT PRIMARY KEY,
       prices TEXT NOT NULL,

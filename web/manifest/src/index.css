@@ -206,14 +206,16 @@ h2 {
   flex-wrap: wrap;
 }
 
-.date-field {
+.date-field,
+.manager-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 14px;
 }
 
-.date-field input {
+.date-field input,
+.manager-field input {
   font: inherit;
   padding: 8px 10px;
   border: 2px solid var(--border);
@@ -226,6 +228,7 @@ h2 {
    Exportieren button and the delete icon line up (the button's default line
    height otherwise makes it a few px taller than the input/icon). */
 .list-toolbar .date-field input,
+.list-toolbar .manager-field input,
 .list-toolbar .btn {
   height: 40px;
 }

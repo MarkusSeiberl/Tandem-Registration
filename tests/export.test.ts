@@ -127,6 +127,30 @@ test('POST /api/export writes Datum/Ort/Betriebsleiter meta rows, BL left blank'
   await app.close()
 })
 
+test('POST /api/export writes the Betriebsleiter named for that day', async () => {
+  const db = openDb(':memory:')
+  const date = '2026-07-09'
+  seed(db, date)
+  db.prepare('INSERT INTO day_manager (jump_date,name) VALUES (?,?)').run(date, 'Max Muster')
+  // A neighbouring day's name must not leak into this sheet.
+  db.prepare('INSERT INTO day_manager (jump_date,name) VALUES (?,?)').run('2026-07-10', 'Maria Berger')
+
+  const dir = await makeTmpDir()
+  const app = Fastify()
+  registerExportRoutes(app, db, makeCfgRef(dir, 'Freistadt'))
+
+  await app.inject({ method: 'POST', url: `/api/export?date=${date}` })
+
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.readFile(path.join(dir, `Tandem_${date}.xlsx`))
+  const ws = wb.worksheets[0]
+
+  expect(ws.getRow(3).getCell(1).value).toBe('Betriebsleiter (BL)')
+  expect(ws.getRow(3).getCell(2).value).toBe('Max Muster')
+
+  await app.close()
+})
+
 test('POST /api/export defaults to today and creates the export dir if missing', async () => {
   const db = openDb(':memory:')
   const today = localToday()

@@ -325,6 +325,26 @@ export async function dayTables(date: string): Promise<DayTables> {
   return asJson<DayTables>(res)
 }
 
+// Who was on duty as Betriebsleiter on one jump day. Stored against the date
+// rather than in the settings, so the export of a day flown weeks ago still
+// names whoever was there then. '' means nobody named one.
+export async function dayManager(date: string): Promise<{ name: string }> {
+  const res = await fetch(apiUrl(`/api/day-manager/${encodeURIComponent(date)}`))
+  if (!res.ok) throw new Error(await errorMessage(res, 'Betriebsleiter konnte nicht geladen werden'))
+  return asJson<{ name: string }>(res)
+}
+
+/** Answers with the stored name, which is the trimmed one — '' clears the day. */
+export async function saveDayManager(date: string, name: string): Promise<{ name: string }> {
+  const res = await fetch(apiUrl(`/api/day-manager/${encodeURIComponent(date)}`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) throw new Error(await errorMessage(res, 'Betriebsleiter speichern fehlgeschlagen'))
+  return asJson<{ name: string }>(res)
+}
+
 // Copies today's settings onto one day and re-prices its registrations, apart
 // from those carrying a manual correction.
 export async function repriceDay(date: string): Promise<{ updated: number }> {

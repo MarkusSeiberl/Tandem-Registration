@@ -4,6 +4,7 @@ import { SseHub } from './sse'
 import { registerRegistrationRoutes } from './routes/registrations'
 import { registerStammdatenRoutes } from './routes/stammdaten'
 import { registerExportRoutes } from './routes/export'
+import { registerDayManagerRoutes } from './routes/dayManager'
 import { registerSettingsRoutes } from './routes/settings'
 import { registerBackupRoutes } from './routes/backup'
 import { registerVoucherRoutes } from './routes/voucher'
@@ -29,6 +30,7 @@ export function buildServer(
   registerRegistrationRoutes(app, db, sse, cfgRef, contractTemplate, notify)
   registerStammdatenRoutes(app, db)
   registerExportRoutes(app, db, cfgRef)
+  registerDayManagerRoutes(app, db)
   registerBackupRoutes(app, db, cfgRef)
   registerSettingsRoutes(app, cfgRef, persist)
   registerVoucherRoutes(app, db, cfgRef)

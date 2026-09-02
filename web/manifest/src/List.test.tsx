@@ -16,6 +16,8 @@ vi.mock('./api', () => ({
   pendingRedemptions: vi.fn(),
   dayTables: vi.fn(),
   repriceDay: vi.fn(),
+  dayManager: vi.fn(),
+  saveDayManager: vi.fn(),
 }))
 
 // The day is a prop now — App owns it, so it outlives a trip to another tab.
@@ -83,6 +85,122 @@ describe('List', () => {
     vi.mocked(api.dayTables).mockResolvedValue({
       prices: PRICES, payouts: PAYOUTS, frozen: true,
       current: { prices: PRICES, payouts: PAYOUTS },
+    })
+    vi.mocked(api.dayManager).mockResolvedValue({ name: '' })
+    vi.mocked(api.saveDayManager).mockImplementation(async (_date, name) => ({ name: name.trim() }))
+  })
+
+  // The Betriebsleiter on duty. It is a fact of the day, so it is loaded with
+  // the day and written back against that date — the export reads it from there.
+  describe('Betriebsleiter', () => {
+    const field = () => screen.getByLabelText('Betriebsleiter')
+
+    // The suite does not reset mocks between tests, so call counts carry over —
+    // and "was not saved" is exactly what a few of these assert. Implementations
+    // set in the outer beforeEach survive this.
+    beforeEach(() => {
+      vi.clearAllMocks()
+    })
+
+    it('shows the name stored for the day', async () => {
+      vi.mocked(api.list).mockResolvedValue([])
+      vi.mocked(api.dayManager).mockResolvedValue({ name: 'Max Muster' })
+
+      renderList({ date: '2026-07-09' })
+
+      await waitFor(() => expect(field()).toHaveValue('Max Muster'))
+      expect(api.dayManager).toHaveBeenCalledWith('2026-07-09')
+    })
+
+    it('starts empty on a day nobody named one for', async () => {
+      vi.mocked(api.list).mockResolvedValue([])
+
+      renderList({ date: '2026-07-09' })
+
+      await waitFor(() => expect(field()).toHaveValue(''))
+    })
+
+    it('saves the typed name against the day when the field is left', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([])
+      renderList({ date: '2026-07-09' })
+      await waitFor(() => expect(field()).toHaveValue(''))
+
+      await user.type(field(), 'Max Muster')
+      expect(api.saveDayManager).not.toHaveBeenCalled()
+      await user.tab()
+
+      await waitFor(() =>
+        expect(api.saveDayManager).toHaveBeenCalledWith('2026-07-09', 'Max Muster'))
+    })
+
+    it('does not write the day again when the name was not touched', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([])
+      vi.mocked(api.dayManager).mockResolvedValue({ name: 'Max Muster' })
+      renderList({ date: '2026-07-09' })
+      await waitFor(() => expect(field()).toHaveValue('Max Muster'))
+
+      await user.click(field())
+      await user.tab()
+
+      expect(api.saveDayManager).not.toHaveBeenCalled()
+    })
+
+    // Clicking Exportieren blurs the field, and the sheet has to carry what is
+    // standing in it — not the name from before the last keystroke.
+    it('writes a pending name before the export runs', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([])
+      const calls: string[] = []
+      vi.mocked(api.saveDayManager).mockImplementation(async () => {
+        calls.push('save')
+        return { name: 'Max Muster' }
+      })
+      vi.mocked(api.exportDay).mockImplementation(async () => {
+        calls.push('export')
+        return {
+          path: 'C:/export/Tandem_2026-07-09.xlsx', count: 0,
+          redemptionsWritten: 0, redemptionsPending: 0, redemptionsInvalid: 0,
+        }
+      })
+      renderList({ date: '2026-07-09' })
+      await waitFor(() => expect(field()).toHaveValue(''))
+
+      await user.type(field(), 'Max Muster')
+      await user.click(screen.getByRole('button', { name: 'Exportieren' }))
+
+      await screen.findByText(/Export erstellt/)
+      expect(calls).toEqual(['save', 'export'])
+    })
+
+    // A sheet whose Betriebsleiter line is out of date is worse than no sheet:
+    // it looks finished and names the wrong person.
+    it('does not export when the name could not be saved', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([])
+      vi.mocked(api.saveDayManager).mockRejectedValue(new Error('Betriebsleiter speichern fehlgeschlagen'))
+      renderList({ date: '2026-07-09' })
+      await waitFor(() => expect(field()).toHaveValue(''))
+
+      await user.type(field(), 'Max Muster')
+      await user.click(screen.getByRole('button', { name: 'Exportieren' }))
+
+      expect(await screen.findByText('Betriebsleiter speichern fehlgeschlagen')).toBeInTheDocument()
+      expect(api.exportDay).not.toHaveBeenCalled()
+    })
+
+    it('reports a failed save instead of dropping it silently', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([])
+      vi.mocked(api.saveDayManager).mockRejectedValue(new Error('Betriebsleiter speichern fehlgeschlagen'))
+      renderList({ date: '2026-07-09' })
+      await waitFor(() => expect(field()).toHaveValue(''))
+
+      await user.type(field(), 'Max Muster')
+      await user.tab()
+
+      expect(await screen.findByText('Betriebsleiter speichern fehlgeschlagen')).toBeInTheDocument()
     })
   })
 

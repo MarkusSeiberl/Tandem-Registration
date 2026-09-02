@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  dayTables, exportDay, list, masters as fetchMasters, patch, pendingRedemptions,
-  remove, repriceDay,
+  dayManager, dayTables, exportDay, list, masters as fetchMasters, patch, pendingRedemptions,
+  remove, repriceDay, saveDayManager,
 } from './api'
 import type { DayTables, Registration } from './api'
 import { useEvents } from './useEvents'
@@ -164,6 +164,12 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // prices — and the one action that changes them — belong here.
   const [day, setDay] = useState<DayTables | null>(null)
   const [repricing, setRepricing] = useState(false)
+  // Who was on duty as Betriebsleiter. A fact of the day, so it is loaded with
+  // the day and written back against that date; the export reads it from there.
+  const [manager, setManager] = useState('')
+  // What the server has. Leaving the field untouched must not write anything —
+  // an unchanged name would otherwise be re-saved on every visit to the screen.
+  const savedManager = useRef('')
 
   const refresh = useCallback(() => {
     setLoading(true)
@@ -193,6 +199,27 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   useEffect(() => {
     dayTables(date).then(setDay).catch(() => {})
   }, [date, rows])
+
+  // The name belongs to the date, so switching days swaps it. `stale` guards
+  // the slower answer of a day the operator has already clicked away from.
+  useEffect(() => {
+    let stale = false
+    setManager('')
+    savedManager.current = ''
+    dayManager(date)
+      .then((r) => {
+        if (stale) return
+        setManager(r.name)
+        savedManager.current = r.name
+      })
+      .catch(() => {
+        // Not being able to read the name must not take the list down with it —
+        // the field simply stays empty and can be typed into.
+      })
+    return () => {
+      stale = true
+    }
+  }, [date])
 
   useEffect(() => {
     fetchMasters()
@@ -273,8 +300,32 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     }
   }
 
+  /**
+   * Writes the field if it has been changed. Answers whether the day's name is
+   * now safe on the server, so the export can refuse to write a sheet whose
+   * Betriebsleiter line would be out of date.
+   */
+  async function saveManager(): Promise<boolean> {
+    const name = manager.trim()
+    if (name === savedManager.current) return true
+    try {
+      const saved = await saveDayManager(date, name)
+      savedManager.current = saved.name
+      setManager(saved.name)
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Betriebsleiter speichern fehlgeschlagen')
+      return false
+    }
+  }
+
   async function handleExport() {
     setExportMessage(null)
+    // Clicking the button blurs the field, but the blur save is only started —
+    // the sheet has to carry what stands in the field, not the name from before
+    // the last keystroke. A failed save stops the export rather than writing a
+    // sheet with the wrong Betriebsleiter on it.
+    if (!(await saveManager())) return
     setExporting(true)
     try {
       const result = await exportDay(date)
@@ -379,6 +430,17 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         >
           Heute
         </button>
+        {/* Beside the date, because it is the same kind of fact: what this day
+            was. The export writes it into the Betriebsleiter (BL) line. */}
+        <label className="manager-field">
+          Betriebsleiter
+          <input
+            type="text"
+            value={manager}
+            onChange={(e) => setManager(e.target.value)}
+            onBlur={() => { void saveManager() }}
+          />
+        </label>
         <button type="button" className="btn secondary" onClick={handleExport} disabled={exporting}>
           {exporting ? 'Exportiere…' : 'Exportieren'}
         </button>

@@ -138,11 +138,15 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
       r.weight_surcharge = weightSurchargeLabel(r.weight_surcharge)
       r.address = `${r.street}, ${r.postal_code}, ${r.city}`
     }
+    const manager = (db.prepare('SELECT name FROM day_manager WHERE jump_date=?')
+      .get(date) as { name: string } | undefined)?.name ?? ''
     const meta = [
       { label: 'Datum', value: date },
       { label: 'Ort', value: cfgRef.current.jumpLocation },
-      // Left blank on purpose — the Betriebsleiter signs this by hand.
-      { label: 'Betriebsleiter (BL)', value: '' },
+      // Whoever was on duty that day, as named on the manifest screen. Still
+      // blank when nobody named one — the line is then signed by hand, the way
+      // it always was.
+      { label: 'Betriebsleiter (BL)', value: manager },
     ]
     const buf = await buildWorkbook(rows, DEFAULT_COLUMNS, meta, totals, payouts)
     const dir = cfgRef.current.exportDir

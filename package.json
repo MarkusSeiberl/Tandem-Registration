@@ -8,7 +8,7 @@
     "start": "tsx src/server/main.ts",
     "build:web": "npm --prefix web/guest run build && npm --prefix web/manifest run build",
     "build:server": "esbuild src/server/main.ts --bundle --platform=node --format=cjs --target=node22 --external:better-sqlite3 --outfile=dist/server.cjs",
-    "build:exe": "node scripts/check-native-binary.mjs && node scripts/build-exe.mjs && node scripts/patch-subsystem.mjs && node scripts/copy-native-binary.mjs",
+    "build:exe": "node scripts/check-native-binary.mjs && node scripts/build-exe.mjs && node scripts/patch-subsystem.mjs && node scripts/patch-version-info.mjs && node scripts/copy-native-binary.mjs",
     "build:all": "npm run build:web && npm run build:server && npm run build:exe",
     "test:e2e": "playwright test"
   },

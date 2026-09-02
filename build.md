@@ -73,7 +73,7 @@ Three npm scripts, chained by `build:all`:
 ```jsonc
 "build:web":    "npm --prefix web/guest run build && npm --prefix web/manifest run build",
 "build:server": "esbuild src/server/main.ts --bundle --platform=node --format=cjs --target=node22 --external:better-sqlite3 --outfile=dist/server.cjs",
-"build:exe":    "node scripts/check-native-binary.mjs && node scripts/build-exe.mjs && node scripts/patch-subsystem.mjs && node scripts/copy-native-binary.mjs",
+"build:exe":    "node scripts/check-native-binary.mjs && node scripts/build-exe.mjs && node scripts/patch-subsystem.mjs && node scripts/patch-version-info.mjs && node scripts/copy-native-binary.mjs",
 "build:all":    "npm run build:web && npm run build:server && npm run build:exe"
 ```
 
@@ -90,9 +90,11 @@ Three npm scripts, chained by `build:all`:
   of `vercel/pkg`; original `pkg` is unmaintained and doesn't support current
   Node) against `dist/server.cjs` to produce the single-file Windows
   executable, (3) flips the exe's PE subsystem to GUI so it starts without a
-  terminal window (`patch-subsystem.mjs`, see below), then (4) copies
-  `better_sqlite3.node` into `dist/` beside the exe (`copy-native-binary.mjs`)
-  so it can be shipped alongside it.
+  terminal window (`patch-subsystem.mjs`, see below), (4) rewrites the exe's
+  Windows version strings so the process is called "Tandem Registrierung"
+  instead of "Node.js JavaScript Runtime" (`patch-version-info.mjs`, see
+  below), then (5) copies `better_sqlite3.node` into `dist/` beside the exe
+  (`copy-native-binary.mjs`) so it can be shipped alongside it.
 
 ### No console window (GUI subsystem)
 
@@ -133,6 +135,51 @@ Three consequences, all handled in `src/server/main.ts`:
 Also: `openBrowser` passes `windowsHide: true` — the `cmd.exe` behind
 `start "" <url>` would otherwise flash a window now that the exe has no console
 of its own.
+
+### Process name in the Task Manager (version resource)
+
+`pkg` builds the exe on top of a stock `node.exe` and inherits its Windows
+version resource, and Windows names a running process after that resource's
+`FileDescription`. So the Task Manager listed `tandem.exe` as **"Node.js
+JavaScript Runtime"** — with no console window and no taskbar button (see
+above), the operator had no way to recognise the registration server among the
+processes. `scripts/patch-version-info.mjs` rewrites four strings after
+packaging:
+
+| Field | before | after |
+| --- | --- | --- |
+| `FileDescription` | Node.js JavaScript Runtime | Tandem Registrierung |
+| `ProductName` | Node.js | Tandem |
+| `InternalName` | node | tandem |
+| `OriginalFilename` | node.exe | tandem.exe |
+
+`CompanyName`, `LegalCopyright` and the version numbers stay as Node shipped
+them — the embedded runtime really is Node, and the copyright is its own.
+
+**The resource is edited byte-for-byte in place, never rebuilt.** `pkg` appends
+its payload (bundled sources and assets, ~22 MB) *after* the last PE section
+and addresses it by absolute file offset, so any tool that regenerates the PE
+(`rcedit`, `resedit`, …) drops or displaces the payload and leaves an exe that
+no longer starts. The script therefore keeps the file size and every existing
+offset intact: it only rewrites bytes inside the `StringTable` of
+`VS_VERSION_INFO`, keeping that table's declared length constant. Leftover
+space is absorbed by the last entry, whose declared length is inflated to cover
+it — a `String` struct may be longer than its content, readers take the value
+via `wValueLength`.
+
+That fixed length is the one constraint: the new strings must fit into the
+space the Node ones occupied (each struct 4-byte aligned). They do, with a few
+bytes to spare — shrinking `FileDescription` from 26 to 20 characters pays for
+the longer `OriginalFilename` and `InternalName`. If a future rename doesn't
+fit, the script aborts with the byte counts instead of shifting anything.
+It is idempotent (a second run reports "nothing to patch"), and refuses a file
+that is not a PE, has no `.rsrc` section, or carries no version block. Covered
+by `tests/patchVersionInfo.test.ts` against a synthetically built version
+resource.
+
+Two things the rename does *not* change: the taskbar/window title (there is no
+window) and the exe's icon (still Node's — an icon is a separate resource that
+cannot be swapped without rebuilding `.rsrc`).
 
 ### Node version / ABI matching (do NOT hardcode the target)
 

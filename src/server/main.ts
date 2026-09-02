@@ -64,7 +64,11 @@ const notify = isPackaged ? notifyRegistration : undefined
 // The path dialogs are Windows dialogs. On any other system the settings screen
 // simply keeps its text fields — see src/server/routes/pickPath.ts.
 const pickPath = process.platform === 'win32' ? pickPathWindows : undefined
-const app = buildServer(db, cfgRef, contractTemplate, (c) => saveConfig(dir, c), notify, pickPath)
+// The manifest's "Programm beenden" button ends up here — the same orderly
+// shutdown as Strg+C, so Bonjour is unpublished and the database closes cleanly
+// instead of the operator killing the console window.
+const app = buildServer(db, cfgRef, contractTemplate, (c) => saveConfig(dir, c), notify, pickPath,
+  () => { void shutdown('Beenden über das Manifest') })
 
 app.get('/api/contract', async () => ({ text: cfgRef.current.contractText }))
 

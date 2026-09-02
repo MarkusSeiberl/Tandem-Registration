@@ -325,6 +325,21 @@ export async function dayTables(date: string): Promise<DayTables> {
   return asJson<DayTables>(res)
 }
 
+// Whether this client may stop the server: only the machine it runs on, and only
+// a build that owns its process (the packaged exe). The manifest has no login and
+// every device on the club WLAN can open it, so the answer is the server's.
+export async function shutdownAllowed(): Promise<{ allowed: boolean }> {
+  const res = await fetch(apiUrl('/api/shutdown-allowed'))
+  if (!res.ok) throw new Error('Status des Beenden-Buttons konnte nicht geladen werden')
+  return asJson<{ allowed: boolean }>(res)
+}
+
+/** Ends the program — for the guest tablets as well. Ask the operator first. */
+export async function shutdownApp(): Promise<void> {
+  const res = await fetch(apiUrl('/api/shutdown'), { method: 'POST' })
+  if (!res.ok) throw new Error(await errorMessage(res, 'Beenden fehlgeschlagen'))
+}
+
 // Who was on duty as Betriebsleiter on one jump day. Stored against the date
 // rather than in the settings, so the export of a day flown weeks ago still
 // names whoever was there then. '' means nobody named one.

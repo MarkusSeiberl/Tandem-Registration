@@ -14,7 +14,8 @@ const templateBytes = fs.readFileSync(
 export function testServer(
   cfgOverrides: Partial<Config> = {},
   notify?: (guestName: string) => void,
-  pickPath?: PickPath
+  pickPath?: PickPath,
+  shutdown?: () => void
 ) {
   const cfgRef = {
     current: {
@@ -31,7 +32,7 @@ export function testServer(
   }
   const db = openDb(':memory:')
   return {
-    app: buildServer(db, cfgRef, templateBytes, undefined, notify, pickPath),
+    app: buildServer(db, cfgRef, templateBytes, undefined, notify, pickPath, shutdown),
     cfgRef,
     db,
   }

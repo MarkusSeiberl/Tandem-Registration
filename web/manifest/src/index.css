@@ -257,6 +257,61 @@ h2 {
   cursor: not-allowed;
 }
 
+/* Beenden sits at the foot of the sidebar: `margin-top: auto` pushes it below
+   the tabs however few of them there are, so it is never mistaken for one. */
+.sidebar-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 16px;
+}
+
+.sidebar-bottom .hint,
+.sidebar-bottom .error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Filled, not outlined like the other danger buttons: it is the one control on
+   the screen that ends the day for every device, and it should read that way. */
+/* White, not --accent-contrast: that token turns near-black in the dark theme
+   and would sit on the red fill unreadable. */
+.btn.shutdown {
+  width: 100%;
+  background: var(--error);
+  color: #ffffff;
+  border-color: var(--error);
+}
+
+.btn.shutdown:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+/* What is left after the server is gone. */
+.app-closed {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.app-closed h1 {
+  margin: 0;
+  font-size: 22px;
+  color: var(--text-h);
+}
+
+.app-closed p {
+  margin: 0;
+  color: var(--text);
+}
+
 /* Row-level actions: small enough to sit inside a table row without stretching
    it, but still a full tap target on the manifest tablet. */
 .btn.small {

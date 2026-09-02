@@ -5,6 +5,7 @@ import { registerRegistrationRoutes } from './routes/registrations'
 import { registerStammdatenRoutes } from './routes/stammdaten'
 import { registerExportRoutes } from './routes/export'
 import { registerDayManagerRoutes } from './routes/dayManager'
+import { registerShutdownRoutes } from './routes/shutdown'
 import { registerSettingsRoutes } from './routes/settings'
 import { registerBackupRoutes } from './routes/backup'
 import { registerVoucherRoutes } from './routes/voucher'
@@ -19,7 +20,10 @@ export function buildServer(
   contractTemplate: Buffer,
   persist?: (c: Config) => void,
   notify?: (guestName: string) => void,
-  pickPath?: PickPath
+  pickPath?: PickPath,
+  // Only the packaged exe passes this: it is the one build that owns its own
+  // process and can end it cleanly (see main.ts).
+  shutdown?: () => void
 ): FastifyInstance {
   const app = Fastify({ bodyLimit: 5 * 1024 * 1024 }) // signatures
   const sse = new SseHub()
@@ -36,5 +40,6 @@ export function buildServer(
   registerVoucherRoutes(app, db, cfgRef)
   registerPickPathRoutes(app, pickPath)
   registerPathRoutes(app)
+  registerShutdownRoutes(app, shutdown)
   return app
 }

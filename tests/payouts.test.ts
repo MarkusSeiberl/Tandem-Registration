@@ -159,3 +159,13 @@ test('the bonus reaches the master even when the guest flew on a voucher', () =>
   ])
   expect(section?.entries[0].amount).toBe(60)
 })
+
+test('the overweight bonus is the master\'s alone — the camera flyer earns none', () => {
+  // The flyer is beside the tandem, not under it: the guest's weight changes
+  // nothing about their jump.
+  const section = flyerSection([
+    jump({ camera_flyer_id: 7, extra_booking: 'video', weight_surcharge: 'over_100' }),
+  ])
+  expect(section?.entries[0].calculation).toBe('1 × 60,00 €')
+  expect(section?.total).toBe(60)
+})

@@ -59,9 +59,9 @@ const THIN_BOTTOM_BORDER: Partial<ExcelJS.Borders> = {
 
 // The payout block writes name / calculation / amount into the first three
 // columns. Those hold guest data in the rows above, which is narrower than a
-// calculation like "3 × 45,00 € + 1 × 15,00 € + 1 × 25,00 €" — the columns are
-// widened to fit both rather than clipping the arithmetic the block exists to show.
-const PAYOUT_COLUMN_WIDTHS = [26, 40, 14]
+// calculation like "12 × 45,00 € + 10 × 15,00 € + 3 × 25,00 €" — the columns
+// are widened to fit both rather than clipping the arithmetic the block exists to show.
+const PAYOUT_COLUMN_WIDTHS = [26, 44, 14]
 
 export async function buildWorkbook(
   rows: any[],

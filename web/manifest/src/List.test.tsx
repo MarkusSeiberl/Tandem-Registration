@@ -73,7 +73,7 @@ describe('List', () => {
     jump: 270, video: 100, video_photo: 120, weight_over_90: 40, weight_over_100: 60,
   }
   const PAYOUTS = {
-    tandem_master: 45, video: 60, video_photo: 80, weight_over_90: 0, weight_over_100: 0,
+    tandem_master: 45, video: 60, video_photo: 80, weight_over_90: 15, weight_over_100: 25,
   }
 
   beforeEach(() => {

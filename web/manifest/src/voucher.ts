@@ -57,7 +57,9 @@ export function voucherStatusText(check: VoucherCheck): StatusLine | null {
 }
 
 // Separate from the status: what the voucher covers is a different question from
-// whether it is valid, and both can be wrong at once.
+// whether it is valid, and both can be wrong at once. The Art is always said out
+// loud once a number is known — it is the wording the guest bought, and reading
+// it here beats opening the list — while the tone is what carries the mismatch.
 export function voucherServiceText(
   check: VoucherCheck,
   chosen: VoucherService | ''
@@ -67,8 +69,8 @@ export function voucherServiceText(
     return { text: `Laut Liste: ${check.art} — deckt keinen Sprung ab.`, tone: 'muted' }
   }
   // No mapping means nothing to compare against; better mute than wrong.
-  if (!check.service || chosen === '' || check.service === chosen) return null
-  return { text: `Laut Liste: ${check.art}.`, tone: 'warn' }
+  const mismatch = !!check.service && chosen !== '' && check.service !== chosen
+  return { text: `Laut Liste: ${check.art}.`, tone: mismatch ? 'warn' : 'muted' }
 }
 
 // Shown, never compared. Every voucher the club issued before the last price

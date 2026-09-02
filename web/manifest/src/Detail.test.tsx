@@ -564,6 +564,33 @@ describe('Detail', () => {
     expect(await screen.findByText(/Laut Liste: Tandem \+ Video/)).toBeInTheDocument()
   })
 
+  it('names the Art even when it matches the chosen Leistung', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+    await screen.findByText(/Bezahlt am/)
+    await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump_video')
+
+    // Agreement is worth saying out loud: the Art is what the list was paid
+    // for, and reading it off the screen beats opening the list to check.
+    const line = await screen.findByText(/Laut Liste: Tandem \+ Video/)
+    expect(line.className).not.toContain('warn')
+  })
+
+  it('names the Art when no Leistung is chosen yet', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await typeVoucherNumber(user, '26-001')
+
+    expect(await screen.findByText(/Laut Liste: Tandem \+ Video/)).toBeInTheDocument()
+  })
+
   it('shows the amount then and now, without calling the gap a problem', async () => {
     const user = userEvent.setup()
     vi.mocked(api.checkVoucher).mockResolvedValue(OK_CHECK)

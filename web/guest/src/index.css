@@ -484,6 +484,14 @@ p {
   margin: 6px 0 0;
 }
 
+/* The quiet sibling of .error: a note that is always there, not a verdict on
+   what the guest typed. Same rhythm, muted rather than red. */
+.field-note {
+  font-size: 16px;
+  margin: 6px 0 0;
+  opacity: 0.7;
+}
+
 /*
  * Field groups (Person / Körperdaten / Adresse / Kontakt). A bare <fieldset>
  * carries a browser default border and padding, so both are reset here.

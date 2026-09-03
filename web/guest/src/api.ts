@@ -55,6 +55,9 @@ export interface RegistrationPayload {
   city: string
   email: string
   phone: string
+  // The one field the guest may leave blank. Omitted rather than sent empty:
+  // the server treats absent and '' alike, and omitting keeps the wire honest.
+  voucher_number?: string
   signature_png: string
   accepted_terms: true
   // The guest's acknowledgement of the data-protection notice, kept apart from

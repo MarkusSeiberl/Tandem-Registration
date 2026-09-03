@@ -70,7 +70,17 @@ export function registerRegistrationRoutes(
       datum: jumpDate.split('-').reverse().join('.'),
       signaturePngDataUrl: v.signature_png,
     })
-    const filename = await writeContractPdf(vertraegeDir, base, pdf)
+    // A number the guest brought has to reach the PDF here, not later: the
+    // restamp in PATCH only runs when the number *changes*, so an operator who
+    // saves the guest's number unchanged would leave the contract blank for
+    // good. Unlike that restamp this one is not best-effort — it happens on
+    // bytes that are not a file yet, so a failure fails the registration the
+    // same way a failed fillContractPdf does, and no half-stamped contract can
+    // reach the disk. Nobody is flying this jump yet, hence no Tandemmaster.
+    const stamped = v.voucher_number
+      ? await stampContract(pdf, { voucherNumber: v.voucher_number, tandemMaster: null })
+      : pdf
+    const filename = await writeContractPdf(vertraegeDir, base, stamped)
 
     // The guest never picks anything priced, so a fresh row starts at the plain
     // jump price. The manifest recomputes it as soon as it saves an extra or a
@@ -86,10 +96,12 @@ export function registerRegistrationRoutes(
       (first_name,last_name,gender,age,height_cm,weight_kg,
        street,postal_code,city,email,phone,contract_pdf_filename,
        accepted_terms,privacy_ack_at,created_at,jump_date,
+       voucher_number,payment_method,
        extra_booking,weight_surcharge,price,price_override)
       VALUES (@first_name,@last_name,@gender,@age,@height_cm,@weight_kg,
        @street,@postal_code,@city,@email,@phone,
        @contract_pdf_filename,1,@privacy_ack_at,@created_at,@jump_date,
+       @voucher_number,@payment_method,
        'none',@weight_surcharge,@price,0)`)
       .run({
         ...v, contract_pdf_filename: filename, created_at: new Date().toISOString(),
@@ -97,6 +109,18 @@ export function registerRegistrationRoutes(
         // data-protection notice is a record the club may have to stand behind.
         privacy_ack_at: new Date().toISOString(),
         jump_date: jumpDate, weight_surcharge: weightSurcharge,
+        // A guest who writes down a voucher number has said how they mean to
+        // pay, so the row reaches the manifest on that method with the list's
+        // verdict already beside the field. It is not binding: paying cash
+        // after all is one select away, and the manifest clears the number with
+        // it. The price is untouched either way — voucherCovered needs a
+        // voucher_service, and choosing that stays the operator's job.
+        //
+        // Both are named explicitly because `...v` carries voucher_number only
+        // when the guest sent one, and better-sqlite3 refuses a statement whose
+        // named parameter has no value at all.
+        voucher_number: v.voucher_number ?? null,
+        payment_method: v.voucher_number ? 'voucher' : null,
         price: computePrice({ weight_surcharge: weightSurcharge }, dayPrices),
       })
     sse.broadcast('changed', { id: info.lastInsertRowid })

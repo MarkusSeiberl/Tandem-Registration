@@ -102,3 +102,31 @@ test('rejects a registration without the data-protection acknowledgement', () =>
 test('accepting the contract does not stand in for the acknowledgement', () => {
   expect(validateGuest({ ...base, accepted_terms: true, privacy_ack: false }).ok).toBe(false)
 })
+
+// The only optional field of the form. Absent and empty mean the same thing:
+// this guest has no voucher.
+test('a registration without a voucher number is valid', () => {
+  expect(validateGuest(base).ok).toBe(true)
+  const r = validateGuest({ ...base, voucher_number: '   ' })
+  expect(r.ok).toBe(true)
+  expect((r as any).value.voucher_number).toBeUndefined()
+})
+
+test('a voucher number is trimmed and kept', () => {
+  const r = validateGuest({ ...base, voucher_number: '  GS-2026-0042 ' })
+  expect(r.ok).toBe(true)
+  expect((r as any).value.voucher_number).toBe('GS-2026-0042')
+})
+
+// Not a format rule — a brake. A jammed scanner must not write a novel into
+// the database.
+test('rejects a voucher number longer than 60 characters', () => {
+  const r = validateGuest({ ...base, voucher_number: 'G'.repeat(61) })
+  expect(r.ok).toBe(false)
+  expect((r as any).errors).toContain('Gutschein-Nr. ungültig')
+  expect(validateGuest({ ...base, voucher_number: 'G'.repeat(60) }).ok).toBe(true)
+})
+
+test('rejects a voucher number that is not a string', () => {
+  expect(validateGuest({ ...base, voucher_number: 42 }).ok).toBe(false)
+})

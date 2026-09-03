@@ -6,6 +6,11 @@
 // `gender` is a radio group, not a text input, but it occupies one station in
 // the chain like everything else — skipping it would leave the one field that
 // cannot be reached with an Enter key unreachable by the arrows too.
+//
+// `voucherNumber` is the one optional field of the form and sits last. Being in
+// the chain is what makes Enter on `phone` move on instead of submitting, and
+// what makes the arrows reach it; `validate()` never puts an error on it, so
+// `firstErrorField` can never send the guest here.
 export const FIELD_CHAIN = [
   'firstName',
   'lastName',
@@ -18,6 +23,7 @@ export const FIELD_CHAIN = [
   'city',
   'email',
   'phone',
+  'voucherNumber',
 ] as const
 
 export type FieldName = (typeof FIELD_CHAIN)[number]

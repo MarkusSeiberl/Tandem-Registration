@@ -138,6 +138,9 @@ describe('Form', () => {
   })
 
   // The labels of every text/number input, in the order the guest meets them.
+  // The mandatory ones. Gutschein-Nr. is deliberately not in here — it is the
+  // one field a guest may leave alone, and every case built on this list would
+  // be wrong about it.
   const TEXT_FIELDS = [
     'Vorname', 'Nachname', 'Alter', 'Größe (cm)', 'Gewicht (kg)',
     'Straße und Hausnummer', 'PLZ', 'Wohnort', 'E-Mail', 'Telefon',
@@ -152,7 +155,13 @@ describe('Form', () => {
     }
     // The radio group carries the marker itself; the individual radios cannot.
     expect(screen.getByRole('radiogroup')).toHaveAttribute('aria-required', 'true')
-    expect(screen.getByText('Alle Felder sind Pflichtfelder.')).toBeInTheDocument()
+    // The single exception, and the intro line has to name it: a form that
+    // claims everything is mandatory and then shows an optional field is worse
+    // than one that says nothing at all.
+    expect(screen.getByLabelText('Gutschein-Nr. (optional)')).not.toBeRequired()
+    expect(
+      screen.getByText('Alle Felder sind Pflichtfelder – bis auf die Gutschein-Nr.')
+    ).toBeInTheDocument()
   })
 
   // Guards against a field being added to the form without a validation rule:
@@ -193,6 +202,51 @@ describe('Form', () => {
     await user.type(screen.getByLabelText('PLZ'), 'SW1A 1AA')
 
     expect(screen.getByRole('button', { name: 'Weiter' })).toBeEnabled()
+  })
+
+  it('lets the guest submit without a voucher number', async () => {
+    const user = userEvent.setup()
+    const onNext = vi.fn()
+    render(<Form onNext={onNext} />)
+
+    await fillValid(user)
+
+    const submit = screen.getByRole('button', { name: 'Weiter' })
+    expect(submit).toBeEnabled()
+    await user.click(submit)
+
+    // Absent, not empty: nothing the guest did not type reaches the server.
+    expect(onNext).toHaveBeenCalledTimes(1)
+    expect(onNext.mock.calls[0][0]).not.toHaveProperty('voucher_number')
+  })
+
+  it('passes a typed voucher number on, trimmed', async () => {
+    const user = userEvent.setup()
+    const onNext = vi.fn()
+    render(<Form onNext={onNext} />)
+
+    await fillValid(user)
+    await user.type(screen.getByLabelText('Gutschein-Nr. (optional)'), '  GS-2026-0042  ')
+    await user.click(screen.getByRole('button', { name: 'Weiter' }))
+
+    expect(onNext.mock.calls[0][0].voucher_number).toBe('GS-2026-0042')
+  })
+
+  it('keeps the voucher number when the guest comes back from the contract', () => {
+    render(
+      <Form
+        onNext={vi.fn()}
+        initialValues={{
+          first_name: 'Anna', last_name: 'Muster', gender: 'female',
+          age: 30, height_cm: 170, weight_kg: 70,
+          street: 'Hauptstraße 1', postal_code: '4240', city: 'Freistadt',
+          email: 'anna@example.com', phone: '0664 1234567',
+          voucher_number: 'GS-2026-0042',
+        }}
+      />
+    )
+
+    expect(screen.getByLabelText('Gutschein-Nr. (optional)')).toHaveValue('GS-2026-0042')
   })
 })
 
@@ -282,7 +336,7 @@ describe('Form field navigation', () => {
     expect(screen.getByRole('button', { name: 'Vorheriges Feld' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Nächstes Feld' })).toBeEnabled()
 
-    await user.click(screen.getByLabelText('Telefon'))
+    await user.click(screen.getByLabelText('Gutschein-Nr. (optional)'))
     expect(screen.getByRole('button', { name: 'Nächstes Feld' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Vorheriges Feld' })).toBeEnabled()
   })
@@ -293,10 +347,25 @@ describe('Form field navigation', () => {
     render(<Form onNext={onNext} />)
 
     await fillValid(user)
-    await user.click(screen.getByLabelText('Telefon'))
+    // The optional field is the last station now, and Enter has to submit from
+    // there whether or not the guest typed anything into it.
+    await user.click(screen.getByLabelText('Gutschein-Nr. (optional)'))
     await user.keyboard('{Enter}')
 
     expect(onNext).toHaveBeenCalledTimes(1)
+  })
+
+  it('moves on from Telefon instead of submitting from it', async () => {
+    const user = userEvent.setup()
+    const onNext = vi.fn()
+    render(<Form onNext={onNext} />)
+
+    await fillValid(user)
+    await user.click(screen.getByLabelText('Telefon'))
+    await user.keyboard('{Enter}')
+
+    expect(onNext).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Gutschein-Nr. (optional)')).toHaveFocus()
   })
 
   it('jumps to the first field in error on Enter in the last field', async () => {
@@ -309,7 +378,7 @@ describe('Form field navigation', () => {
     await user.clear(screen.getByLabelText('Wohnort'))
     await user.clear(screen.getByLabelText('Alter'))
 
-    await user.click(screen.getByLabelText('Telefon'))
+    await user.click(screen.getByLabelText('Gutschein-Nr. (optional)'))
     await user.keyboard('{Enter}')
 
     expect(onNext).not.toHaveBeenCalled()
@@ -349,4 +418,5 @@ describe('Form field navigation', () => {
     expect(onNext).toHaveBeenCalledTimes(1)
     expect(onNext.mock.calls[0][0].first_name).toBe('Max')
   })
+
 })

@@ -6,6 +6,8 @@ export interface GuestInput {
   age: number; height_cm: number; weight_kg: number
   street: string; postal_code: string; city: string
   email: string; phone: string
+  /** The one field a guest may leave empty. Absent, never ''. */
+  voucher_number?: string
   signature_png: string; accepted_terms: true; privacy_ack: true
 }
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
@@ -36,5 +38,26 @@ export function validateGuest(input: any):
   // into the contract acceptance is exactly the packaging Art. 7(2) DSGVO does
   // not recognise, so the guest has to tick it as its own act.
   if (input?.privacy_ack !== true) e.push('Datenschutzinformation nicht bestätigt')
-  return e.length ? { ok: false, errors: e } : { ok: true, value: input as GuestInput }
+
+  // The one optional field. Absent, empty and whitespace all mean "this guest
+  // has no voucher", and all three leave the row's voucher_number NULL — an ''
+  // in the column would look like a number nobody can look up.
+  const raw = input?.voucher_number
+  if (raw !== undefined && raw !== null && typeof raw !== 'string') {
+    e.push('Gutschein-Nr. ungültig')
+  }
+  const voucher = typeof raw === 'string' ? raw.trim() : ''
+  // A cap rather than a format: the club's number ranges change over the years,
+  // and matching one against the list is normaliseVoucherNumber's job anyway.
+  // This only stops a jammed scanner from writing a novel into the column.
+  if (voucher.length > 60) e.push('Gutschein-Nr. ungültig')
+
+  if (e.length) return { ok: false, errors: e }
+  // Copied rather than handed through: this is the one field the validator
+  // normalises, and rewriting the request body would do it behind the caller's
+  // back.
+  const value = { ...input } as GuestInput
+  if (voucher === '') delete value.voucher_number
+  else value.voucher_number = voucher
+  return { ok: true, value }
 }

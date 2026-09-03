@@ -31,6 +31,8 @@ export interface FormValues {
   city: string
   email: string
   phone: string
+  /** The one optional datum of this form — absent when the guest has none. */
+  voucher_number?: string
 }
 
 export interface FormProps {
@@ -53,8 +55,10 @@ interface RawValues {
   city: string
   email: string
   phone: string
+  voucherNumber: string
 }
 
+// No entry for voucherNumber: the one field that cannot be filled in wrongly.
 interface Errors {
   firstName?: string
   lastName?: string
@@ -81,6 +85,7 @@ const EMPTY: RawValues = {
   city: '',
   email: '',
   phone: '',
+  voucherNumber: '',
 }
 
 // The form works in strings — that is what an input holds, and what lets a
@@ -100,6 +105,7 @@ function toRaw(values: FormValues | null | undefined): RawValues {
     city: values.city,
     email: values.email,
     phone: values.phone,
+    voucherNumber: values.voucher_number ?? '',
   }
 }
 
@@ -194,6 +200,7 @@ export default function Form({ onNext, onCancel, initialValues }: FormProps) {
       if (target) focusField(target)
       return
     }
+    const voucherNumber = values.voucherNumber.trim()
     onNext({
       first_name: values.firstName.trim(),
       last_name: values.lastName.trim(),
@@ -207,19 +214,23 @@ export default function Form({ onNext, onCancel, initialValues }: FormProps) {
       city: values.city.trim(),
       email: values.email.trim(),
       phone: values.phone.trim(),
+      // Left out entirely when empty: an absent number and an empty string
+      // would otherwise be two ways of saying the same thing, and only one of
+      // them survives the trip through the API.
+      ...(voucherNumber === '' ? {} : { voucher_number: voucherNumber }),
     })
   }
 
-  // Every field here is mandatory — there is no optional guest datum. `required`
-  // and aria-required say so before the guest has left a field empty, which the
+  // Every field here is mandatory except the Gutschein-Nr. `required` and
+  // aria-required say so before the guest has left a field empty, which the
   // error messages can only do afterwards. The form keeps `noValidate`, so the
   // browser's own English bubbles stay out of the way of the German messages.
-  function field(name: keyof RawValues) {
+  function field(name: keyof RawValues, optional = false) {
     const isLast = name === LAST_FIELD
     return {
       value: values[name],
-      required: true,
-      'aria-required': true,
+      required: !optional,
+      'aria-required': !optional,
       'aria-invalid': showError(name as keyof Errors) ? true : undefined,
       // Labels the Android Enter key before the guest presses it the first time.
       enterKeyHint: isLast ? ('done' as const) : ('next' as const),
@@ -258,7 +269,7 @@ export default function Form({ onNext, onCancel, initialValues }: FormProps) {
   return (
     <section className="screen form-screen">
       <h1>Deine Daten</h1>
-      <p className="form-intro">Alle Felder sind Pflichtfelder.</p>
+      <p className="form-intro">Alle Felder sind Pflichtfelder – bis auf die Gutschein-Nr.</p>
       <form onSubmit={handleSubmit} noValidate>
         <fieldset className="field-group">
           <legend>Person</legend>
@@ -397,6 +408,24 @@ export default function Form({ onNext, onCancel, initialValues }: FormProps) {
             <label htmlFor="phone">Telefon</label>
             <input id="phone" type="tel" autoComplete="tel" {...field('phone')} />
             {showError('phone') && <p className="error">{showError('phone')}</p>}
+          </div>
+        </fieldset>
+
+        {/*
+          Its own group rather than a line under Kontakt: a voucher number is
+          not a contact detail, and the legend would say something untrue. Last,
+          because a guest without a voucher should not meet a field that is none
+          of their business before their own name.
+        */}
+        <fieldset className="field-group">
+          <legend>Gutschein</legend>
+
+          <div className="field">
+            <label htmlFor="voucher_number">Gutschein-Nr. (optional)</label>
+            {/* No inputMode: the club's numbers are not reliably numeric, and a
+                digit pad would shut out exactly the ones that carry letters. */}
+            <input id="voucher_number" type="text" {...field('voucherNumber', true)} />
+            <p className="field-note">Falls du einen Gutschein hast.</p>
           </div>
         </fieldset>
 

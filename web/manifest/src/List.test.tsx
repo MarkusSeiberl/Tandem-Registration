@@ -586,6 +586,29 @@ describe('List', () => {
       expect(screen.getByText(/Nur kassierte Tandems mit Gutschein/)).toBeInTheDocument()
     })
 
+    // A voucher row with an unpaid top-up is in both openVoucherRows and
+    // noPaymentOpenRows at once (see collectedVia in pricing.ts) — the case the
+    // merged sentence has to keep readable rather than letting "und haben"
+    // read as continuing "davon 1 mit Gutschein".
+    it('reads naturally when an open voucher row is also missing a Zahlungsart', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({ id: 1, payment_method: null, price: 270 }),
+        makeRow({
+          id: 2, payment_method: 'voucher', voucher_payment_method: null,
+          voucher_number: 'G-1', price: 30,
+        }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findAllByText('Anna Muster')
+
+      await user.click(exportButton())
+
+      expect(await screen.findByText(
+        /^2 Tandems sind noch nicht kassiert und haben noch keine Zahlungsart, davon 1 mit Gutschein\.$/
+      )).toBeInTheDocument()
+    })
+
     it('gets the singular right for a single open tandem', async () => {
       const user = userEvent.setup()
       vi.mocked(api.list).mockResolvedValue([
@@ -791,6 +814,32 @@ describe('List', () => {
       expect(api.exportDay).not.toHaveBeenCalled()
       await waitFor(() => expect(within(paidTable()).getByText('Anna Muster')).toBeInTheDocument())
       expect(within(openTable()).getByText('Bruno Beispiel')).toBeInTheDocument()
+    })
+
+    // Retrying after a partial failure is fine — openRows is re-derived at
+    // click time and the PATCH is idempotent — but the panel must not go on
+    // describing the day from before the row that already landed.
+    it('updates the panel counts after a partial collect failure', async () => {
+      const user = userEvent.setup()
+      const a = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', payment_method: 'cash', price: 270 })
+      const b = makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', payment_method: 'card', price: 270 })
+      vi.mocked(api.list).mockResolvedValue([a, b])
+      vi.mocked(api.patch).mockImplementation(async (id) => {
+        if (id === 1) return { ...a, paid_at: '2026-07-09T12:00:00.000Z' }
+        throw new Error('Speichern fehlgeschlagen')
+      })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+      expect(await screen.findByText(/^2 Tandems sind noch nicht kassiert\.$/)).toBeInTheDocument()
+
+      await user.click(
+        await screen.findByRole('button', { name: 'Alle kassieren und exportieren' }))
+
+      await screen.findByText('Speichern fehlgeschlagen')
+      expect(await screen.findByText(/^1 Tandem ist noch nicht kassiert\.$/)).toBeInTheDocument()
+      expect(screen.queryByText(/^2 Tandems sind noch nicht kassiert\.$/)).not.toBeInTheDocument()
     })
 
     // Nothing is open, so there is nothing to collect — offering the button

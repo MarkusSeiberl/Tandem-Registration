@@ -186,9 +186,11 @@ function warningCounts(w: ExportWarning): string {
     if (w.noPaymentOpen === w.open) {
       // Every open tandem is also a no-Zahlungsart tandem — the ordinary
       // mid-day state. One sentence for one set of rows, or the reader counts
-      // each of them twice.
+      // each of them twice. The voucher clause goes last: put right after
+      // "kassiert", it reads as if "und haben" continues "davon N mit
+      // Gutschein" rather than the open subject.
       const haveVerb = w.open === 1 ? 'hat' : 'haben'
-      parts.push(`${openSubject} ${openVerb} noch nicht kassiert${voucher} und ${haveVerb} noch keine Zahlungsart.`)
+      parts.push(`${openSubject} ${openVerb} noch nicht kassiert und ${haveVerb} noch keine Zahlungsart${voucher}.`)
     } else {
       parts.push(`${openSubject} ${openVerb} noch nicht kassiert${voucher}.`)
       if (w.noPaymentOpen > 0) {
@@ -234,6 +236,23 @@ function warningExplanation(w: ExportWarning): string {
     parts.push('Tandems ohne Zahlungsart zählt der Export unter „Summe ohne Zahlungsart“.')
   }
   return parts.join(' ')
+}
+
+/**
+ * The same counts as ExportWarning, taken from a plain row array instead of
+ * component state — so a re-check that already has its own snapshot (a
+ * bulk-collect loop's `freshRows`) can describe exactly that snapshot without
+ * waiting for it to land back in `rows`.
+ */
+function computeExportWarning(source: Registration[]): ExportWarning {
+  const open = source.filter((r) => r.paid_at == null)
+  const noPayment = source.filter((r) => collectedVia(r) === null && (r.price ?? 0) > 0)
+  return {
+    open: open.length,
+    openVoucher: open.filter((r) => r.payment_method === 'voucher').length,
+    noPayment: noPayment.length,
+    noPaymentOpen: noPayment.filter((r) => r.paid_at == null).length,
+  }
 }
 
 export default function List({ onSelect, date, onDateChange }: ListProps) {
@@ -464,19 +483,21 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // Collects every still-open row through the row button's own PATCH, then
   // exports. Sequential on purpose: the rows are few, and a failure has to stop
   // the run rather than leave the rest in flight. Each patch is folded into
-  // `rows` as it lands — the same pattern handleSetPaid uses — so a row that
-  // was collected before a later one failed keeps showing as collected, and so
-  // the no-Zahlungsart re-check below reads what actually happened rather than
-  // the pre-collect snapshot the bulk PATCH itself never touches.
+  // `rows` with the same functional setRows(prev => ...) handleSetPaid uses,
+  // so a refresh() landing mid-loop cannot be clobbered by the next iteration.
+  // `freshRows` stays a separate local snapshot for the re-check below (and for
+  // the failure path) to read — a local snapshot cannot be raced by a late
+  // refresh() the way reading back from `rows` could.
   async function handleCollectAllAndExport() {
     setCollecting(true)
+    setError(null)
     setExportMessage(null)
     let freshRows = rows
     try {
       for (const row of openRows) {
         const updated = await patch(row.id, { paid: true })
         freshRows = freshRows.map((r) => (r.id === updated.id ? updated : r))
-        setRows(freshRows)
+        setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
       }
     } catch (err) {
       // A half-collected day must not reach the club's sheet — it would look
@@ -485,6 +506,10 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
       // before the failure have already broadcast, and an SSE-triggered
       // refresh() clears error, which would erase this without a trace.
       setExportMessage(err instanceof Error ? err.message : 'Kassieren fehlgeschlagen')
+      // The panel below is still open (it is what "Alle kassieren und
+      // exportieren" hangs off) and must describe what the table now shows,
+      // not the pre-collect count the operator originally pressed on.
+      setExportWarning(computeExportWarning(freshRows))
       return
     } finally {
       setCollecting(false)
@@ -493,11 +518,9 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     // problem the panel warned about can still stand after "collect all". Ask
     // again rather than writing a sheet with the day's revenue parked under
     // "Summe ohne Zahlungsart".
-    const stillNoPayment = freshRows.filter(
-      (r) => collectedVia(r) === null && (r.price ?? 0) > 0
-    )
-    if (stillNoPayment.length > 0) {
-      setExportWarning({ open: 0, openVoucher: 0, noPayment: stillNoPayment.length, noPaymentOpen: 0 })
+    const afterCollect = computeExportWarning(freshRows)
+    if (afterCollect.noPayment > 0) {
+      setExportWarning(afterCollect)
       return
     }
     await runExport()

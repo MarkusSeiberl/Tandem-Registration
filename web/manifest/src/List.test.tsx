@@ -600,6 +600,26 @@ describe('List', () => {
         .toBeInTheDocument()
     })
 
+    // A fresh registration is inserted with no payment_method at all, so for
+    // most of the day "open" and "no Zahlungsart" are the same tandems. Two
+    // independent sentences would count each of them twice.
+    it('does not count the same open tandems twice as also missing a Zahlungsart', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({ id: 1, payment_method: null, price: 270 }),
+        makeRow({ id: 2, payment_method: null, price: 270 }),
+        makeRow({ id: 3, payment_method: null, price: 270 }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findAllByText('Anna Muster')
+
+      await user.click(exportButton())
+
+      expect(await screen.findByText(
+        /^3 Tandems sind noch nicht kassiert und haben noch keine Zahlungsart\.$/
+      )).toBeInTheDocument()
+    })
+
     // A collected row without a Zahlungsart is exactly what the sheet's
     // "Summe ohne Zahlungsart" line flags, so it is worth catching while it can
     // still be fixed.
@@ -723,6 +743,54 @@ describe('List', () => {
 
       expect(await screen.findByText('Speichern fehlgeschlagen')).toBeInTheDocument()
       expect(api.exportDay).not.toHaveBeenCalled()
+    })
+
+    // The bulk PATCH only stamps paid_at, never a Zahlungsart, so "collect all"
+    // can walk straight into the second problem the panel warned about. The
+    // operator must be asked again, not have the sheet written silently.
+    it('asks again instead of exporting when the collected rows still have no Zahlungsart', async () => {
+      const user = userEvent.setup()
+      const a = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', payment_method: null, price: 270 })
+      const b = makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', payment_method: null, price: 270 })
+      vi.mocked(api.list).mockResolvedValue([a, b])
+      vi.mocked(api.patch).mockImplementation(async (id) =>
+        ({ ...(id === 1 ? a : b), paid_at: '2026-07-09T12:00:00.000Z' }))
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+      await user.click(
+        await screen.findByRole('button', { name: 'Alle kassieren und exportieren' }))
+
+      expect(await screen.findByText(/2 Tandems haben keine Zahlungsart\./)).toBeInTheDocument()
+      expect(api.exportDay).not.toHaveBeenCalled()
+      expect(screen.queryByRole('button', { name: 'Alle kassieren und exportieren' }))
+        .not.toBeInTheDocument()
+    })
+
+    // The comment in handleCollectAllAndExport names the half-collected day as
+    // the reason for the whole design — this is that day: one row lands, the
+    // next fails.
+    it('keeps a row that was collected before a later one failed', async () => {
+      const user = userEvent.setup()
+      const a = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', payment_method: 'cash', price: 270 })
+      const b = makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', payment_method: 'card', price: 270 })
+      vi.mocked(api.list).mockResolvedValue([a, b])
+      vi.mocked(api.patch).mockImplementation(async (id) => {
+        if (id === 1) return { ...a, paid_at: '2026-07-09T12:00:00.000Z' }
+        throw new Error('Speichern fehlgeschlagen')
+      })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+      await user.click(
+        await screen.findByRole('button', { name: 'Alle kassieren und exportieren' }))
+
+      expect(await screen.findByText('Speichern fehlgeschlagen')).toBeInTheDocument()
+      expect(api.exportDay).not.toHaveBeenCalled()
+      await waitFor(() => expect(within(paidTable()).getByText('Anna Muster')).toBeInTheDocument())
+      expect(within(openTable()).getByText('Bruno Beispiel')).toBeInTheDocument()
     })
 
     // Nothing is open, so there is nothing to collect — offering the button

@@ -158,41 +158,77 @@ interface ExportWarning {
   open: number
   openVoucher: number
   noPayment: number
+  /**
+   * Of `open`, how many are also in `noPayment` — a fresh registration has
+   * neither a Zahlungsart nor a paid_at, so for most of the day these are the
+   * same tandems. Kept separate so the two counts can be reconciled into one
+   * honest sentence instead of reading as twice the problem.
+   */
+  noPaymentOpen: number
 }
 
 /** The panel's first line: what the day still has open, in words. */
 function warningCounts(w: ExportWarning): string {
   const parts: string[] = []
+  // Rows without a Zahlungsart that are not among the open ones — the ones an
+  // "open" sentence cannot already be covering.
+  const collectedNoPayment = w.noPayment - w.noPaymentOpen
+
   if (w.open > 0) {
-    const open = w.open === 1
-      ? '1 Tandem ist noch nicht kassiert'
-      : `${w.open} Tandems sind noch nicht kassiert`
+    const openSubject = w.open === 1 ? '1 Tandem' : `${w.open} Tandems`
+    const openVerb = w.open === 1 ? 'ist' : 'sind'
     const voucher = w.openVoucher === 0
       ? ''
       : w.openVoucher === 1
         ? ', davon 1 mit Gutschein'
         : `, davon ${w.openVoucher} mit Gutschein`
-    parts.push(`${open}${voucher}.`)
+
+    if (w.noPaymentOpen === w.open) {
+      // Every open tandem is also a no-Zahlungsart tandem — the ordinary
+      // mid-day state. One sentence for one set of rows, or the reader counts
+      // each of them twice.
+      const haveVerb = w.open === 1 ? 'hat' : 'haben'
+      parts.push(`${openSubject} ${openVerb} noch nicht kassiert${voucher} und ${haveVerb} noch keine Zahlungsart.`)
+    } else {
+      parts.push(`${openSubject} ${openVerb} noch nicht kassiert${voucher}.`)
+      if (w.noPaymentOpen > 0) {
+        parts.push(w.noPaymentOpen === 1
+          ? '1 davon hat auch keine Zahlungsart.'
+          : `${w.noPaymentOpen} davon haben auch keine Zahlungsart.`)
+      }
+    }
   }
-  if (w.noPayment > 0) {
-    parts.push(w.noPayment === 1
-      ? '1 Tandem hat keine Zahlungsart.'
-      : `${w.noPayment} Tandems haben keine Zahlungsart.`)
+
+  if (collectedNoPayment > 0) {
+    // Once an open sentence has already claimed a number, a bare "N Tandems"
+    // here would read as yet another group — so it is named as what it is
+    // once there is something else on the page to confuse it with.
+    if (w.open > 0) {
+      parts.push(collectedNoPayment === 1
+        ? '1 bereits kassiertes Tandem hat außerdem keine Zahlungsart.'
+        : `${collectedNoPayment} bereits kassierte Tandems haben außerdem keine Zahlungsart.`)
+    } else {
+      parts.push(collectedNoPayment === 1
+        ? '1 Tandem hat keine Zahlungsart.'
+        : `${collectedNoPayment} Tandems haben keine Zahlungsart.`)
+    }
   }
   return parts.join(' ')
 }
 
 /**
  * Why those counts matter, in terms of the two files the export writes. The
- * "nachgetragen" promise is not reassurance: the export's redemption sweep is
- * deliberately not scoped to the exported date, so a later export does pick up
- * whatever was collected in the meantime.
+ * "nachgetragen" promise only holds once a row is collected: collecting is
+ * what stamps voucher_redeemed_at, and the export's redemption sweep only ever
+ * picks up rows that carry it. An open row that stays open is not queued for
+ * anything, however many exports run in the meantime.
  */
 function warningExplanation(w: ExportWarning): string {
   const parts: string[] = []
   if (w.open > 0) {
     parts.push('Nur kassierte Tandems mit Gutschein werden in die Gutscheinliste ' +
-      'eingetragen. Offene bleiben stehen und werden beim nächsten Export nachgetragen.')
+      'eingetragen. Offene bleiben stehen; sobald sie kassiert sind, trägt sie der ' +
+      'nächste Export nach.')
   }
   if (w.noPayment > 0) {
     parts.push('Tandems ohne Zahlungsart zählt der Export unter „Summe ohne Zahlungsart“.')
@@ -344,6 +380,8 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // method: it adds 0 € to that line, so counting it here would send the
   // operator hunting for a field that has to stay empty.
   const noPaymentRows = rows.filter((r) => collectedVia(r) === null && (r.price ?? 0) > 0)
+  // The overlap between openRows and noPaymentRows — see ExportWarning.noPaymentOpen.
+  const noPaymentOpenRows = noPaymentRows.filter((r) => r.paid_at == null)
   const sumOf = (items: Registration[]) => items.reduce((sum, r) => sum + (r.price ?? 0), 0)
   const paidVia = (via: 'cash' | 'card') =>
     sumOf(paidRows.filter((r) => collectedVia(r) === via))
@@ -425,26 +463,44 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
 
   // Collects every still-open row through the row button's own PATCH, then
   // exports. Sequential on purpose: the rows are few, and a failure has to stop
-  // the run rather than leave the rest in flight.
+  // the run rather than leave the rest in flight. Each patch is folded into
+  // `rows` as it lands — the same pattern handleSetPaid uses — so a row that
+  // was collected before a later one failed keeps showing as collected, and so
+  // the no-Zahlungsart re-check below reads what actually happened rather than
+  // the pre-collect snapshot the bulk PATCH itself never touches.
   async function handleCollectAllAndExport() {
     setCollecting(true)
-    setError(null)
+    setExportMessage(null)
+    let freshRows = rows
     try {
       for (const row of openRows) {
-        await patch(row.id, { paid: true })
+        const updated = await patch(row.id, { paid: true })
+        freshRows = freshRows.map((r) => (r.id === updated.id ? updated : r))
+        setRows(freshRows)
       }
     } catch (err) {
       // A half-collected day must not reach the club's sheet — it would look
       // finished while some of the money is still shown as outstanding.
-      setError(err instanceof Error ? err.message : 'Kassieren fehlgeschlagen')
+      // Reported through exportMessage rather than error: the rows collected
+      // before the failure have already broadcast, and an SSE-triggered
+      // refresh() clears error, which would erase this without a trace.
+      setExportMessage(err instanceof Error ? err.message : 'Kassieren fehlgeschlagen')
       return
     } finally {
       setCollecting(false)
     }
+    // The bulk PATCH only stamps paid_at, never a Zahlungsart — so the second
+    // problem the panel warned about can still stand after "collect all". Ask
+    // again rather than writing a sheet with the day's revenue parked under
+    // "Summe ohne Zahlungsart".
+    const stillNoPayment = freshRows.filter(
+      (r) => collectedVia(r) === null && (r.price ?? 0) > 0
+    )
+    if (stillNoPayment.length > 0) {
+      setExportWarning({ open: 0, openVoucher: 0, noPayment: stillNoPayment.length, noPaymentOpen: 0 })
+      return
+    }
     await runExport()
-    // The rows were collected on the server; this is what moves them into the
-    // Kassiert table on screen.
-    refresh()
   }
 
   // Nothing is written until the operator has seen what the day is missing.
@@ -460,6 +516,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
       open: openRows.length,
       openVoucher: openVoucherRows.length,
       noPayment: noPaymentRows.length,
+      noPaymentOpen: noPaymentOpenRows.length,
     })
   }
 
@@ -552,7 +609,12 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
             onBlur={() => { void saveManager() }}
           />
         </label>
-        <button type="button" className="btn secondary" onClick={handleExport} disabled={exporting}>
+        <button
+          type="button"
+          className="btn secondary"
+          onClick={handleExport}
+          disabled={collecting || exporting}
+        >
           {exporting ? 'Exportiere…' : 'Exportieren'}
         </button>
         <button

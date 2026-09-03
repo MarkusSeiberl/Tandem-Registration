@@ -497,3 +497,75 @@ test('a missing contract file does not fail the save', async () => {
   expect(res.json().voucher_number).toBe('GS-9')
   await app.close()
 })
+
+// The guest holds the voucher while filling the tablet in; typing it there is
+// the same transcription the operator would otherwise do at the desk.
+test('a guest who brings a voucher arrives on the voucher payment method', async () => {
+  const { app } = testServer()
+  await app.inject({
+    method: 'POST', url: '/api/registrations',
+    payload: { ...validBody(), voucher_number: 'GS-2026-0042' },
+  })
+  const row = (await app.inject({ method: 'GET', url: '/api/registrations' })).json()[0]
+
+  expect(row.voucher_number).toBe('GS-2026-0042')
+  expect(row.payment_method).toBe('voucher')
+  // The covered service is still the operator's decision, so nothing is taken
+  // off the bill yet: the row starts at the plain jump price.
+  expect(row.voucher_service).toBeNull()
+  expect(row.price).toBe(270)
+  await app.close()
+})
+
+test('a guest without a voucher leaves both columns empty', async () => {
+  const { app } = testServer()
+  await app.inject({ method: 'POST', url: '/api/registrations', payload: validBody() })
+  const row = (await app.inject({ method: 'GET', url: '/api/registrations' })).json()[0]
+
+  expect(row.voucher_number).toBeNull()
+  expect(row.payment_method).toBeNull()
+  await app.close()
+})
+
+// Required, not a nicety: the PATCH restamp only fires when the number
+// *changes*, so an operator saving the guest's number unchanged would leave the
+// contract blank forever.
+test('the number the guest typed is on the contract before anyone opens the row', async () => {
+  const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-guest-stamp-'))
+  const { app } = testServer({ exportDir })
+  await app.inject({
+    method: 'POST', url: '/api/registrations',
+    payload: { ...validBody(), voucher_number: 'GS-2026-0042' },
+  })
+  const filename = (await app.inject({ method: 'GET', url: '/api/registrations' }))
+    .json()[0].contract_pdf_filename
+
+  expect(await pdfContains(path.join(exportDir, 'vertaege', filename), 'GS-2026-0042'))
+    .toBe(true)
+  await app.close()
+})
+
+// The stamp is re-drawn as a whole from the row, so assigning a master later
+// must not push the guest's own number off the page.
+test('a later tandem master keeps the guest voucher number on the contract', async () => {
+  const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tandem-guest-restamp-'))
+  const { app, db } = testServer({ exportDir })
+  const { id } = (await app.inject({
+    method: 'POST', url: '/api/registrations',
+    payload: { ...validBody(), voucher_number: 'GS-2026-0042' },
+  })).json()
+  const filename = (await app.inject({ method: 'GET', url: '/api/registrations' }))
+    .json()[0].contract_pdf_filename
+  const masterId = db.prepare("INSERT INTO tandem_masters (name, active) VALUES ('Eva Berger', 1)")
+    .run().lastInsertRowid
+
+  await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { tandem_master_id: masterId },
+  })
+
+  const pdfPath = path.join(exportDir, 'vertaege', filename)
+  expect(await pdfContains(pdfPath, 'GS-2026-0042')).toBe(true)
+  expect(await pdfContains(pdfPath, 'Eva Berger')).toBe(true)
+  await app.close()
+})

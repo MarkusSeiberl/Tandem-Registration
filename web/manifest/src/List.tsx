@@ -246,9 +246,12 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   }, [refresh])
 
   // Cleared when the day changes so the banner cannot describe the day before;
-  // refetched after every refresh so it reflects a reprice straight away.
+  // refetched after every refresh so it reflects a reprice straight away. The
+  // export warning goes the same way: its counts were taken on the day being
+  // left, and standing over another day's list they would simply be wrong.
   useEffect(() => {
     setDay(null)
+    setExportWarning(null)
   }, [date])
 
   useEffect(() => {

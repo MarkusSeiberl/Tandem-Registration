@@ -743,5 +743,26 @@ describe('List', () => {
       expect(screen.queryByRole('button', { name: 'Alle kassieren und exportieren' }))
         .not.toBeInTheDocument()
     })
+
+    // Counts belong to the day they were taken on. Left standing across a date
+    // change, the panel would describe yesterday over today's list.
+    it('drops the warning when the operator switches days', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({ id: 1, payment_method: 'cash', price: 270 }),
+      ])
+      const { rerender } = render(
+        <List onSelect={() => {}} date="2026-07-09" onDateChange={() => {}} />
+      )
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+      expect(await screen.findByText(/noch nicht kassiert/)).toBeInTheDocument()
+
+      rerender(<List onSelect={() => {}} date="2026-07-10" onDateChange={() => {}} />)
+
+      await waitFor(() =>
+        expect(screen.queryByText(/noch nicht kassiert/)).not.toBeInTheDocument())
+    })
   })
 })

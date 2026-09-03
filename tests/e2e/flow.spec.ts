@@ -18,6 +18,7 @@ const GUEST = {
   city: 'Freistadt',
   email: 'max@example.at',
   phone: '0660123456',
+  voucherNumber: 'GS-2026-0042',
 }
 
 test('guest registration flows through to manifest and xlsx export', async ({ page }) => {
@@ -40,6 +41,7 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   await page.getByLabel('Wohnort').fill(GUEST.city)
   await page.getByLabel('E-Mail').fill(GUEST.email)
   await page.getByLabel('Telefon').fill(GUEST.phone)
+  await page.getByLabel('Gutschein-Nr. (optional)').fill(GUEST.voucherNumber)
 
   const formWeiter = page.getByRole('button', { name: 'Weiter' })
   await expect(formWeiter).toBeEnabled()
@@ -112,15 +114,14 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
 
   await page.getByLabel('Load-Nr.').fill('5')
 
-  // Gutschein-Nr. and the covered service exist only while Gutschein is the
-  // chosen payment method.
+  // The guest brought the number, so the row opens on Gutschein with the field
+  // already filled — the operator only picks the covered service and the till.
   const voucherField = page.getByLabel('Gutschein-Nr.')
   const voucherService = page.getByLabel('Gutschein-Leistung')
   const voucherTill = page.getByLabel('Zuzahlung bezahlt mit')
-  await expect(voucherField).toBeHidden()
-  await expect(voucherService).toBeHidden()
-  await page.getByLabel('Zahlungsart').selectOption('voucher')
+  await expect(page.getByLabel('Zahlungsart')).toHaveValue('voucher')
   await expect(voucherField).toBeVisible()
+  await expect(voucherField).toHaveValue(GUEST.voucherNumber)
   await expect(voucherService).toBeVisible()
 
   // A voucher used exactly as issued costs nothing, so the till is locked and
@@ -188,7 +189,7 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
     page.waitForResponse(
       (r) => r.url().includes('/api/export') && r.request().method() === 'POST'
     ),
-    page.getByRole('button', { name: /Exportieren/ }).click(),
+    page.getByRole('button', { name: 'Tagesabschluss' }).click(),
   ])
   expect(exportResponse.status()).toBe(200)
   const exportJson = (await exportResponse.json()) as { path: string; count: number }
@@ -245,7 +246,7 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
 })
 
 // The tablet handed to the guest has no Tab key, so the Enter key has to carry
-// the cursor through all eleven fields on its own. Real browser, real focus —
+// the cursor through all twelve fields on its own. Real browser, real focus —
 // jsdom cannot prove that Enter does not submit the form out from under us.
 test('guest fills the whole form using only the Enter key', async ({ page }) => {
   await page.goto('/guest/')
@@ -273,9 +274,15 @@ test('guest fills the whole form using only the Enter key', async ({ page }) => 
     await page.keyboard.press('Enter')
   }
 
-  // Last field: Enter submits rather than moving on.
+  // Telefon is no longer the end of the chain: Enter carries on into the one
+  // optional field instead of submitting from here.
   await expect(page.getByLabel('Telefon')).toBeFocused()
   await page.keyboard.type(GUEST.phone)
+  await page.keyboard.press('Enter')
+
+  // Last field: Enter submits rather than moving on — and it submits whether or
+  // not the guest typed anything into it.
+  await expect(page.getByLabel('Gutschein-Nr. (optional)')).toBeFocused()
   await page.keyboard.press('Enter')
 
   await expect(page.getByRole('heading', { name: 'Teilnahmebedingungen' })).toBeVisible()
@@ -299,7 +306,7 @@ test('the arrow buttons walk the cursor and stop at both ends', async ({ page })
   await back.click()
   await expect(page.getByLabel('Vorname')).toBeFocused()
 
-  await page.getByLabel('Telefon').click()
+  await page.getByLabel('Gutschein-Nr. (optional)').click()
   await expect(forward).toBeDisabled()
   await expect(back).toBeEnabled()
 })

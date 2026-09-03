@@ -240,7 +240,10 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   const payoutLines: [unknown, unknown, unknown][] = []
   ws.eachRow((r) => payoutLines.push([r.getCell(1).value, r.getCell(2).value, r.getCell(3).value]))
   expect(payoutLines).toContainEqual(['Vergütung Tandemmaster', null, null])
-  expect(payoutLines).toContainEqual(['ohne Tandemmaster', '1 × 45,00 €', 45])
+  // This guest flies with the over_90 surcharge, and that surcharge reaches the
+  // master who flies it — so the line is the jump rate plus the bonus, not the
+  // jump rate alone.
+  expect(payoutLines).toContainEqual(['ohne Tandemmaster', '1 × 45,00 € + 1 × 15,00 €', 60])
   expect(payoutLines).toContainEqual(['Vergütung Kameraflieger', null, null])
   expect(payoutLines).toContainEqual(['ohne Kameraflieger', '1 × 80,00 €', 80])
 })

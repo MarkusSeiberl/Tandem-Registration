@@ -149,6 +149,57 @@ function RegistrationTable({
   )
 }
 
+/**
+ * What one press of Exportieren found wrong with the day. Counted at the moment
+ * of the press and held, so the panel keeps saying what the operator was asked
+ * about even if another tablet adds a row while it stands.
+ */
+interface ExportWarning {
+  open: number
+  openVoucher: number
+  noPayment: number
+}
+
+/** The panel's first line: what the day still has open, in words. */
+function warningCounts(w: ExportWarning): string {
+  const parts: string[] = []
+  if (w.open > 0) {
+    const open = w.open === 1
+      ? '1 Tandem ist noch nicht kassiert'
+      : `${w.open} Tandems sind noch nicht kassiert`
+    const voucher = w.openVoucher === 0
+      ? ''
+      : w.openVoucher === 1
+        ? ', davon 1 mit Gutschein'
+        : `, davon ${w.openVoucher} mit Gutschein`
+    parts.push(`${open}${voucher}.`)
+  }
+  if (w.noPayment > 0) {
+    parts.push(w.noPayment === 1
+      ? '1 Tandem hat keine Zahlungsart.'
+      : `${w.noPayment} Tandems haben keine Zahlungsart.`)
+  }
+  return parts.join(' ')
+}
+
+/**
+ * Why those counts matter, in terms of the two files the export writes. The
+ * "nachgetragen" promise is not reassurance: the export's redemption sweep is
+ * deliberately not scoped to the exported date, so a later export does pick up
+ * whatever was collected in the meantime.
+ */
+function warningExplanation(w: ExportWarning): string {
+  const parts: string[] = []
+  if (w.open > 0) {
+    parts.push('Nur kassierte Tandems mit Gutschein werden in die Gutscheinliste ' +
+      'eingetragen. Offene bleiben stehen und werden beim nächsten Export nachgetragen.')
+  }
+  if (w.noPayment > 0) {
+    parts.push('Tandems ohne Zahlungsart zählt der Export unter „Summe ohne Zahlungsart“.')
+  }
+  return parts.join(' ')
+}
+
 export default function List({ onSelect, date, onDateChange }: ListProps) {
   const [rows, setRows] = useState<Registration[]>([])
   const [masterNames, setMasterNames] = useState<Map<number, string>>(new Map())
@@ -156,6 +207,9 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   const [error, setError] = useState<string | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  // Set by Exportieren when the day is not ready to be written; null while there
+  // is nothing to ask about.
+  const [exportWarning, setExportWarning] = useState<ExportWarning | null>(null)
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
   const [deleting, setDeleting] = useState(false)
   const [pendingId, setPendingId] = useState<number | null>(null)
@@ -274,6 +328,18 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // the collected one is the archive of the day.
   const openRows = sortedRows.filter((r) => r.paid_at == null)
   const paidRows = sortedRows.filter((r) => r.paid_at != null)
+  // A voucher row reaches the club's Gutscheinliste only once it is collected —
+  // collecting is what stamps voucher_redeemed_at (see routes/registrations.ts),
+  // and the export sweep writes exactly the rows that carry it. So an open one
+  // misses the list without saying a word.
+  const openVoucherRows = openRows.filter((r) => r.payment_method === 'voucher')
+  // The predicate the export's "Summe ohne Zahlungsart" line uses, so the
+  // warning and the sheet cannot disagree — collected rows included, because a
+  // collected row without a method is exactly what that line flags. The price
+  // guard is there because a fully covered voucher moves no money and needs no
+  // method: it adds 0 € to that line, so counting it here would send the
+  // operator hunting for a field that has to stay empty.
+  const noPaymentRows = rows.filter((r) => collectedVia(r) === null && (r.price ?? 0) > 0)
   const sumOf = (items: Registration[]) => items.reduce((sum, r) => sum + (r.price ?? 0), 0)
   const paidVia = (via: 'cash' | 'card') =>
     sumOf(paidRows.filter((r) => collectedVia(r) === via))
@@ -319,7 +385,8 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     }
   }
 
-  async function handleExport() {
+  async function runExport() {
+    setExportWarning(null)
     setExportMessage(null)
     // Clicking the button blurs the field, but the blur save is only started —
     // the sheet has to carry what stands in the field, not the name from before
@@ -350,6 +417,22 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     } finally {
       setExporting(false)
     }
+  }
+
+  // Nothing is written until the operator has seen what the day is missing.
+  // That includes the Betriebsleiter save inside runExport: a press that ends in
+  // Abbrechen must leave the day exactly as it was.
+  function handleExport() {
+    if (openRows.length === 0 && noPaymentRows.length === 0) {
+      void runExport()
+      return
+    }
+    setExportMessage(null)
+    setExportWarning({
+      open: openRows.length,
+      openVoucher: openVoucherRows.length,
+      noPayment: noPaymentRows.length,
+    })
   }
 
   async function handleDelete() {
@@ -467,6 +550,31 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
           <span className="list-total">Kassiert Karte: {formatEuro(paidVia('card'))}</span>
         </div>
       </div>
+
+      {exportWarning && (
+        <div className="export-warning">
+          <p>{warningCounts(exportWarning)}</p>
+          <p>{warningExplanation(exportWarning)}</p>
+          <div className="export-warning-actions">
+            <button
+              type="button"
+              className="btn secondary small"
+              onClick={() => { void runExport() }}
+              disabled={exporting}
+            >
+              Trotzdem exportieren
+            </button>
+            <button
+              type="button"
+              className="btn secondary small"
+              onClick={() => setExportWarning(null)}
+              disabled={exporting}
+            >
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      )}
 
       {exportMessage && <p className="hint">{exportMessage}</p>}
       {error && <p className="error">{error}</p>}

@@ -802,6 +802,30 @@ h2 {
   line-height: 1.45;
 }
 
+/* Raised by Exportieren when the day is not ready to be written. Same ember
+   frame as .day-outdated, which is what "there is something here for you to
+   press" looks like on this screen; the buttons sit on their own row because one
+   of them changes every open tandem on the list. */
+.export-warning {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--ember);
+  border-radius: 8px;
+  background: rgba(255, 106, 61, 0.08);
+}
+
+.export-warning p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.export-warning-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .price-override-toggle {
   display: flex;
   align-items: center;

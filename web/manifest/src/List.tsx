@@ -210,6 +210,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // Set by Exportieren when the day is not ready to be written; null while there
   // is nothing to ask about.
   const [exportWarning, setExportWarning] = useState<ExportWarning | null>(null)
+  const [collecting, setCollecting] = useState(false)
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
   const [deleting, setDeleting] = useState(false)
   const [pendingId, setPendingId] = useState<number | null>(null)
@@ -419,6 +420,30 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     }
   }
 
+  // Collects every still-open row through the row button's own PATCH, then
+  // exports. Sequential on purpose: the rows are few, and a failure has to stop
+  // the run rather than leave the rest in flight.
+  async function handleCollectAllAndExport() {
+    setCollecting(true)
+    setError(null)
+    try {
+      for (const row of openRows) {
+        await patch(row.id, { paid: true })
+      }
+    } catch (err) {
+      // A half-collected day must not reach the club's sheet — it would look
+      // finished while some of the money is still shown as outstanding.
+      setError(err instanceof Error ? err.message : 'Kassieren fehlgeschlagen')
+      return
+    } finally {
+      setCollecting(false)
+    }
+    await runExport()
+    // The rows were collected on the server; this is what moves them into the
+    // Kassiert table on screen.
+    refresh()
+  }
+
   // Nothing is written until the operator has seen what the day is missing.
   // That includes the Betriebsleiter save inside runExport: a press that ends in
   // Abbrechen must leave the day exactly as it was.
@@ -556,11 +581,23 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
           <p>{warningCounts(exportWarning)}</p>
           <p>{warningExplanation(exportWarning)}</p>
           <div className="export-warning-actions">
+            {/* Only when there is something to collect — a button that would do
+                nothing promises an action the day does not have. */}
+            {exportWarning.open > 0 && (
+              <button
+                type="button"
+                className="btn small"
+                onClick={() => { void handleCollectAllAndExport() }}
+                disabled={collecting || exporting}
+              >
+                {collecting ? 'Wird kassiert…' : 'Alle kassieren und exportieren'}
+              </button>
+            )}
             <button
               type="button"
               className="btn secondary small"
               onClick={() => { void runExport() }}
-              disabled={exporting}
+              disabled={collecting || exporting}
             >
               Trotzdem exportieren
             </button>
@@ -568,7 +605,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
               type="button"
               className="btn secondary small"
               onClick={() => setExportWarning(null)}
-              disabled={exporting}
+              disabled={collecting || exporting}
             >
               Abbrechen
             </button>

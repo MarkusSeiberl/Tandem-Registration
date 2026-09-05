@@ -836,6 +836,63 @@ h2 {
   flex-wrap: wrap;
 }
 
+/* Kassieren dialog: one payment method applied to every selected tandem at
+   once (Task 1-3). Panel tone matches .export-warning so it reads as the same
+   collect flow, not a foreign browser control. */
+.collect-dialog {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  /* showModal() puts this in the top layer, outside the page's own cascade;
+     without an explicit color it keeps the UA's near-black dialog text, which
+     is unreadable on --panel-bg once dark mode is on. */
+  color: var(--text);
+  padding: 20px 24px;
+  min-width: 320px;
+  max-width: 420px;
+}
+
+/* Custom properties are historically unreliable inside ::backdrop, so this is
+   --ink spelled out as rgba rather than var(--ink) — the one literal colour
+   this file allows outside of an existing token's own rgba() shade. */
+.collect-dialog::backdrop {
+  background: rgba(11, 18, 32, 0.5);
+}
+
+/* Same size as .export-warning p: both are the small print under a dialog
+   heading, not body copy. */
+.collect-dialog p {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.collect-dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+/* The <label> wraps its text and the <select> directly (no separate span), so
+   stacking the label itself is what puts the caption above the field. */
+.collect-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Matches the toolbar fields' height so the dialog doesn't introduce a second
+   control size for the same kind of input. */
+.collect-dialog select {
+  font: inherit;
+  height: 40px;
+  padding: 8px 10px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text);
+}
+
 .price-override-toggle {
   display: flex;
   align-items: center;

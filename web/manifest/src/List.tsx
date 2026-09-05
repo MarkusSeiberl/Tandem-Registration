@@ -37,15 +37,19 @@ interface TableProps {
   checkedIds: Set<number>
   onToggleChecked: (id: number) => void
   onSelect: (registration: Registration) => void
+  /** Opens the collect dialog for this one row. Only the open table uses it. */
+  onCollect: (registration: Registration) => void
   onSetPaid: (registration: Registration, paid: boolean) => void
   pendingId: number | null
+  /** A bulk run is in flight — the row actions would race it. */
+  busy: boolean
   /** 'open' still owes money, 'paid' has been collected. */
   variant: 'open' | 'paid'
 }
 
 function RegistrationTable({
-  caption, rows, emptyText, masterNames, checkedIds, onToggleChecked, onSelect, onSetPaid,
-  pendingId, variant,
+  caption, rows, emptyText, masterNames, checkedIds, onToggleChecked, onSelect, onCollect,
+  onSetPaid, pendingId, busy, variant,
 }: TableProps) {
   return (
     <table className={`manifest-table manifest-table-${variant}`}>
@@ -120,8 +124,8 @@ function RegistrationTable({
                 <button
                   type="button"
                   className="btn small collect"
-                  onClick={() => onSetPaid(row, true)}
-                  disabled={pendingId === row.id}
+                  onClick={() => onCollect(row)}
+                  disabled={busy || pendingId === row.id}
                 >
                   ✓ Kassiert
                 </button>
@@ -130,7 +134,7 @@ function RegistrationTable({
                   type="button"
                   className="btn small ghost"
                   onClick={() => onSetPaid(row, false)}
-                  disabled={pendingId === row.id}
+                  disabled={busy || pendingId === row.id}
                   aria-label="Als offen markieren"
                   title="Als offen markieren"
                 >
@@ -268,7 +272,10 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   const [exportWarning, setExportWarning] = useState<ExportWarning | null>(null)
   const [collecting, setCollecting] = useState(false)
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
-  const [collectOpen, setCollectOpen] = useState(false)
+  // What the open dialog is about to collect: the checked rows ('selection'),
+  // or the single row whose ✓ Kassiert button was pressed (its id). null while
+  // the dialog is closed.
+  const [collectTarget, setCollectTarget] = useState<'selection' | number | null>(null)
   const [collectError, setCollectError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [pendingId, setPendingId] = useState<number | null>(null)
@@ -406,6 +413,14 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // passing over them in silence.
   const selectedOpenRows = openRows.filter((r) => checkedIds.has(r.id))
   const selectedPaidCount = paidRows.filter((r) => checkedIds.has(r.id)).length
+  // A row's own ✓ Kassiert is the same action on one row: same dialog, same
+  // write rule, so a single tandem's Zahlungsart is asked for instead of
+  // guessed. Read out of `openRows` rather than held as a snapshot, so a row
+  // collected on another tablet while the dialog stands drops out of the run.
+  const collectRows = collectTarget === 'selection'
+    ? selectedOpenRows
+    : openRows.filter((r) => r.id === collectTarget)
+  const collectSkippedCount = collectTarget === 'selection' ? selectedPaidCount : 0
   // A voucher row reaches the club's Gutscheinliste only once it is collected —
   // collecting is what stamps voucher_redeemed_at (see routes/registrations.ts),
   // and the export sweep writes exactly the rows that carry it. So an open one
@@ -505,7 +520,8 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // already collected have left the open table, and `checkedIds` still holds, so
   // pressing Kassieren again runs over exactly what is left.
   async function handleCollectSelected(method: CollectedVia) {
-    if (selectedOpenRows.length === 0) {
+    const target = collectTarget
+    if (collectRows.length === 0) {
       // A `changed` echo can still land between confirm and here, or a retry can
       // be pressed after the failed run's rows already got picked up some other
       // way — either leaves nothing to patch. Falling through to the success
@@ -517,7 +533,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     setCollecting(true)
     setCollectError(null)
     try {
-      for (const row of selectedOpenRows) {
+      for (const row of collectRows) {
         const fields: ManifestPatch = { paid: true }
         // The payment method is a statement about money that changed hands, so it
         // is only written where money is owed. A fully covered voucher moves none
@@ -537,10 +553,17 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     } finally {
       setCollecting(false)
     }
-    setCollectOpen(false)
+    setCollectTarget(null)
     // The rows have moved to the other table; staying checked would arm the
-    // delete button on tandems that were just collected.
-    setCheckedIds(new Set())
+    // delete button on tandems that were just collected. A single row's button
+    // says nothing about the rest of the selection, so only that row leaves it.
+    if (target === 'selection') setCheckedIds(new Set())
+    else setCheckedIds((prev) => {
+      if (!prev.has(target as number)) return prev
+      const next = new Set(prev)
+      next.delete(target as number)
+      return next
+    })
   }
 
   // Collects every still-open row through the row button's own PATCH, then
@@ -706,7 +729,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         <button
           type="button"
           className="btn secondary"
-          onClick={() => { setCollectError(null); setCollectOpen(true) }}
+          onClick={() => { setCollectError(null); setCollectTarget('selection') }}
           disabled={selectedOpenRows.length === 0 || collecting || exporting || deleting}
         >
           Kassieren
@@ -721,10 +744,9 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         >
           <TrashIcon />
         </button>
-        <span className="list-count">
-          {rows.length} {rows.length === 1 ? 'Eintrag' : 'Einträge'}
-        </span>
-        {/* What is still to be collected, and what already went into the till. */}
+        {/* What is still to be collected, and what already went into the till.
+            The row count lives in each table's caption, so the toolbar does not
+            repeat it. */}
         <span className="list-total list-total-open">Offen: {formatEuro(sumOf(openRows))}</span>
         {/* The two tills stack rather than sitting side by side: at closing they
             are counted one after the other, and as a column the amounts line up
@@ -772,14 +794,14 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         </div>
       )}
 
-      {collectOpen && (
+      {collectTarget !== null && (
         <CollectDialog
-          rows={selectedOpenRows}
-          skippedCount={selectedPaidCount}
+          rows={collectRows}
+          skippedCount={collectSkippedCount}
           busy={collecting}
           error={collectError}
           onConfirm={(method) => { void handleCollectSelected(method) }}
-          onCancel={() => setCollectOpen(false)}
+          onCancel={() => setCollectTarget(null)}
         />
       )}
 
@@ -800,8 +822,10 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
             checkedIds={checkedIds}
             onToggleChecked={toggleChecked}
             onSelect={onSelect}
+            onCollect={(row) => { setCollectError(null); setCollectTarget(row.id) }}
             onSetPaid={handleSetPaid}
             pendingId={pendingId}
+            busy={collecting || exporting || deleting}
             variant="open"
           />
           <RegistrationTable
@@ -812,8 +836,10 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
             checkedIds={checkedIds}
             onToggleChecked={toggleChecked}
             onSelect={onSelect}
+            onCollect={(row) => { setCollectError(null); setCollectTarget(row.id) }}
             onSetPaid={handleSetPaid}
             pendingId={pendingId}
+            busy={collecting || exporting || deleting}
             variant="paid"
           />
         </>

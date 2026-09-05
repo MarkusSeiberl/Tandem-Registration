@@ -365,17 +365,8 @@ h2 {
   color: var(--border);
 }
 
-/* Pushes the entry count to the far right of the toolbar row. */
-.list-count {
-  margin-left: auto;
-  font-size: 14px;
-  color: var(--text);
-  opacity: 0.7;
-  align-self: center;
-}
-
-/* The day's takings, next to the entry count — same number the export's
-   "Gesamt" row carries, so it can be read off without exporting. */
+/* The day's takings — the same numbers the export's "Gesamt" row carries,
+   so they can be read off without exporting. */
 .list-total {
   font-size: 14px;
   font-weight: 700;
@@ -385,8 +376,10 @@ h2 {
 }
 
 /* What is still to be collected is the number the manifest works against, so it
-   gets the ember accent; the collected sum beside it stays neutral. */
+   gets the ember accent; the collected sum beside it stays neutral. It is the
+   first item after the buttons, so it also carries the push to the far right. */
 .list-total-open {
+  margin-left: auto;
   color: var(--ember);
 }
 

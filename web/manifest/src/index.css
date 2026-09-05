@@ -235,7 +235,7 @@ h2 {
 }
 
 /* Keep the toolbar controls one uniform height so the date field, the
-   Exportieren button and the delete icon line up (the button's default line
+   Tagesabschluss button and the delete icon line up (the button's default line
    height otherwise makes it a few px taller than the input/icon). */
 .list-toolbar .date-field input,
 .list-toolbar .manager-field input,
@@ -812,7 +812,7 @@ h2 {
   line-height: 1.45;
 }
 
-/* Raised by Exportieren when the day is not ready to be written. Same ember
+/* Raised by Tagesabschluss when the day is not ready to be written. Same ember
    frame as .day-outdated, which is what "there is something here for you to
    press" looks like on this screen; the buttons sit on their own row because one
    of them changes every open tandem on the list. */

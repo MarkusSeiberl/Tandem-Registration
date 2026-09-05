@@ -150,7 +150,7 @@ function RegistrationTable({
 }
 
 /**
- * What one press of Exportieren found wrong with the day. Counted at the moment
+ * What one press of Tagesabschluss found wrong with the day. Counted at the moment
  * of the press and held, so the panel keeps saying what the operator was asked
  * about even if another tablet adds a row while it stands.
  */
@@ -262,7 +262,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   const [error, setError] = useState<string | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
-  // Set by Exportieren when the day is not ready to be written; null while there
+  // Set by Tagesabschluss when the day is not ready to be written; null while there
   // is nothing to ask about.
   const [exportWarning, setExportWarning] = useState<ExportWarning | null>(null)
   const [collecting, setCollecting] = useState(false)
@@ -638,7 +638,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
           onClick={handleExport}
           disabled={collecting || exporting}
         >
-          {exporting ? 'Exportiere…' : 'Exportieren'}
+          {exporting ? 'Tagesabschluss…' : 'Tagesabschluss'}
         </button>
         <button
           type="button"

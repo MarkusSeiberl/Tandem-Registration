@@ -147,7 +147,7 @@ describe('List', () => {
       expect(api.saveDayManager).not.toHaveBeenCalled()
     })
 
-    // Clicking Exportieren blurs the field, and the sheet has to carry what is
+    // Clicking Tagesabschluss blurs the field, and the sheet has to carry what is
     // standing in it — not the name from before the last keystroke.
     it('writes a pending name before the export runs', async () => {
       const user = userEvent.setup()
@@ -168,7 +168,7 @@ describe('List', () => {
       await waitFor(() => expect(field()).toHaveValue(''))
 
       await user.type(field(), 'Max Muster')
-      await user.click(screen.getByRole('button', { name: 'Exportieren' }))
+      await user.click(screen.getByRole('button', { name: 'Tagesabschluss' }))
 
       await screen.findByText(/Export erstellt/)
       expect(calls).toEqual(['save', 'export'])
@@ -184,7 +184,7 @@ describe('List', () => {
       await waitFor(() => expect(field()).toHaveValue(''))
 
       await user.type(field(), 'Max Muster')
-      await user.click(screen.getByRole('button', { name: 'Exportieren' }))
+      await user.click(screen.getByRole('button', { name: 'Tagesabschluss' }))
 
       expect(await screen.findByText('Betriebsleiter speichern fehlgeschlagen')).toBeInTheDocument()
       expect(api.exportDay).not.toHaveBeenCalled()
@@ -420,7 +420,7 @@ describe('List', () => {
     renderList()
     await screen.findByText('Keine Registrierungen für dieses Datum.')
 
-    await user.click(screen.getByRole('button', { name: 'Exportieren' }))
+    await user.click(screen.getByRole('button', { name: 'Tagesabschluss' }))
 
     // The banner right above gets the singular right; this line has to agree,
     // or one number reads as two.
@@ -510,7 +510,7 @@ describe('List', () => {
   // "Summe ohne Zahlungsart" line. The panel says so before the sheet is
   // written.
   describe('Export-Warnung', () => {
-    const exportButton = () => screen.getByRole('button', { name: 'Exportieren' })
+    const exportButton = () => screen.getByRole('button', { name: 'Tagesabschluss' })
 
     beforeEach(() => {
       vi.clearAllMocks()

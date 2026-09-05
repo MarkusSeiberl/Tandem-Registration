@@ -8,12 +8,20 @@ zahlt aber oft eine Gruppe zusammen — vier Sprünge, einmal Karte. Für diesen
 Fall gibt es nur „Alle kassieren und exportieren“, und das nimmt den ganzen Tag
 und schreibt gar keine Zahlungsart.
 
+Dasselbe Loch hat der Zeilen-Button auch für sich allein: er stempelt `paid`
+und sonst nichts, also landet ein Tandem, dessen Zahlungsart nie im Detail
+gesetzt wurde, kassiert und trotzdem unter „Summe ohne Zahlungsart“ im Export.
+
 ## Lösung
 
 Die Checkboxen, die es in beiden Tabellen schon gibt, bekommen eine zweite
 Aktion neben dem Löschen: „Kassieren“. Ein Dialog nennt den offenen Betrag der
 Auswahl und fragt nach genau einer Zahlungsart, die dann auf alle ausgewählten
 offenen Zeilen geschrieben wird.
+
+Der Zeilen-Button „✓ Kassiert“ macht ab jetzt dasselbe für genau ein Tandem: er
+öffnet denselben Dialog mit dieser einen Zeile. Eine Aktion, eine Schreibregel,
+zwei Mengen — die Zahlungsart wird überall gefragt statt geraten.
 
 ## Auswahl
 
@@ -31,6 +39,49 @@ es dazu, statt sie stumm zu übergehen.
 Der Toolbar-Button steht neben dem Löschen-Button und ist gesperrt, solange
 `selectedOpenRows` leer ist oder eine andere Massenaktion läuft
 (`collecting` / `exporting` / `deleting`).
+
+## Der Zeilen-Button
+
+Welche Menge der offene Dialog kassiert, sagt ein einziger Zustand in `List`:
+
+```ts
+const [collectTarget, setCollectTarget] = useState<'selection' | number | null>(null)
+
+const collectRows = collectTarget === 'selection'
+  ? selectedOpenRows
+  : openRows.filter(r => r.id === collectTarget)
+const collectSkippedCount = collectTarget === 'selection' ? selectedPaidCount : 0
+```
+
+`null` heißt geschlossen, `'selection'` ist der Toolbar-Weg, eine Id der
+Zeilen-Weg. Beide Wege laufen danach durch dieselbe Schleife
+(`handleCollectSelected`), also gelten Schreibregel, Fehlerverhalten und
+Reihenfolge unverändert für eine Zeile wie für zwölf.
+
+Zwei Unterschiede, und beide folgen daraus, dass ein Zeilen-Button nichts über
+die Auswahl aussagt:
+
+- `skippedCount` ist 0. Der Dialog erwähnt angehakte kassierte Zeilen nicht, weil
+  er sie gar nicht kassieren wollte.
+- Nach dem Lauf wird nur diese eine Id aus `checkedIds` entfernt statt der
+  ganzen Auswahl. Wer eine Gruppe zusammengeklickt hat und zwischendurch einen
+  Einzelnen kassiert, findet den Rest der Gruppe noch angehakt vor.
+
+`collectRows` wird aus `openRows` gelesen und nicht als Schnappschuss gehalten:
+kassiert ein anderes Tablet die Zeile, während der Dialog offen steht, fällt sie
+aus dem Lauf, und der leere Lauf bricht oben ab, statt Erfolg für nichts zu
+melden.
+
+Beide Zeilen-Aktionen (`✓ Kassiert` und `↩`) sind gesperrt, solange eine
+Massenaktion läuft — sie würden ihr in die Schleife fahren.
+
+## Zeilenzahl in der Toolbar
+
+Die Toolbar zeigte bis hierher `N Einträge` für den ganzen Tag. Die Zahl steht
+in beiden Tabellen-Captions schon genauer da (`Offen (n)` / `Kassiert (n)`), und
+eine dritte Zahl daneben lädt nur dazu ein, die beiden von Hand zu addieren. Sie
+fällt weg; `margin-left: auto` wandert von `.list-count` auf `.list-total-open`,
+damit die Beträge weiter rechts stehen.
 
 ## Schreibregel
 
@@ -155,3 +206,17 @@ if (!HTMLDialogElement.prototype.showModal) {
   `payment_method`
 - Zeile mit Betrag 0 bekommt nur `paid`
 - Fehler mitten im Lauf lässt den Dialog stehen und zeigt ihn an
+
+Für den Zeilen-Weg (`describe('Zeilen-Kassieren')`)
+
+- „✓ Kassiert“ öffnet den Dialog mit `1 Tandem kassieren` und patcht erst nach
+  der gewählten Zahlungsart
+- eine angehakte Gruppe bleibt angehakt, nur die kassierte Zeile fällt heraus
+- angehakte kassierte Zeilen werden nicht erwähnt
+- Gutschein-Zeile bekommt auch hier `voucher_payment_method`
+- ein Fehlschlag lässt den Dialog mit der Meldung stehen
+- `↩` fragt nach wie vor nichts und patcht direkt `{ paid: false }`
+- die Toolbar zeigt keine Tageszahl `N Einträge` mehr
+
+`flow.spec.ts` (e2e) wählt im Dialog Karte, damit die Zeile mit der Zahlungsart
+im Export ankommt, mit der sie bezahlt wurde.

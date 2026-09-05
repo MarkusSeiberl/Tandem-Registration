@@ -248,17 +248,27 @@ describe('List', () => {
   })
 
   it('moves a row down when it is marked as collected', async () => {
-    const row = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster' })
+    const user = userEvent.setup()
+    const row = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270 })
     vi.mocked(api.list).mockResolvedValue([row])
-    vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: '2026-07-09T12:00:00.000Z' })
+    vi.mocked(api.patch).mockResolvedValue({
+      ...row, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash',
+    })
 
     renderList()
     await screen.findByText('Anna Muster')
 
-    await userEvent.click(within(openTable()).getByRole('button', { name: /kassiert/i }))
+    // The row button asks the same question the toolbar's Kassieren asks, for
+    // one row: a Zahlungsart, before any money is booked.
+    await user.click(within(openTable()).getByRole('button', { name: /kassiert/i }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('1 Tandem kassieren')).toBeInTheDocument()
+    await user.selectOptions(within(dialog).getByLabelText('Zahlungsart'), 'cash')
+    await user.click(within(dialog).getByRole('button', { name: 'Kassieren' }))
 
-    expect(api.patch).toHaveBeenCalledWith(1, { paid: true })
+    expect(api.patch).toHaveBeenCalledWith(1, { paid: true, payment_method: 'cash' })
     await waitFor(() => expect(within(paidTable()).getByText('Anna Muster')).toBeInTheDocument())
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('moves a row back up when the collection is undone', async () => {
@@ -287,6 +297,21 @@ describe('List', () => {
     await userEvent.click(within(openTable()).getByRole('button', { name: /kassiert/i }))
 
     expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  // The count each table already carries in its caption is the honest one —
+  // a day total in the toolbar only invited adding the two up by hand.
+  it('does not repeat the row count in the toolbar', async () => {
+    vi.mocked(api.list).mockResolvedValue([
+      makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster' }),
+      makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel' }),
+    ])
+
+    renderList()
+    await screen.findByText('Anna Muster')
+
+    expect(screen.queryByText(/^\d+ Einträge$/)).not.toBeInTheDocument()
+    expect(screen.getByText('Offen (2)')).toBeInTheDocument()
   })
 
   it('tells each table apart when one side is empty', async () => {
@@ -1187,6 +1212,129 @@ describe('List', () => {
         expect(checkbox('Anna Muster')).toBeChecked()
         expect(api.patch).not.toHaveBeenCalled()
       })
+    })
+  })
+
+  // The row's own ✓ Kassiert is the bulk action for exactly one tandem: same
+  // dialog, same write rule, and it says nothing about whatever else is checked.
+  describe('Zeilen-Kassieren', () => {
+    const checkbox = (name: string) => screen.getByLabelText(`${name} auswählen`)
+    const dialog = () => screen.getByRole('dialog')
+    const rowCollectButton = (name: string) =>
+      within(screen.getByText(name).closest('tr')!).getByRole('button', { name: /kassiert/i })
+
+    beforeEach(() => {
+      vi.clearAllMocks()
+      vi.mocked(api.masters).mockResolvedValue([])
+      vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 0 })
+      vi.mocked(api.dayTables).mockResolvedValue({
+        prices: PRICES, payouts: PAYOUTS, frozen: true,
+        current: { prices: PRICES, payouts: PAYOUTS },
+      })
+      vi.mocked(api.dayManager).mockResolvedValue({ name: '' })
+      vi.mocked(api.saveDayManager).mockImplementation(async (_d, name) => ({ name: name.trim() }))
+    })
+
+    it('collects only its own row and leaves the rest of the selection checked', async () => {
+      const user = userEvent.setup()
+      const anna = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270 })
+      const bruno = makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', price: 270 })
+      vi.mocked(api.list).mockResolvedValue([anna, bruno])
+      vi.mocked(api.patch).mockResolvedValue({
+        ...anna, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'card',
+      })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      // Both are checked for a group payment that has not happened yet — Anna
+      // pays for herself in between.
+      await user.click(checkbox('Anna Muster'))
+      await user.click(checkbox('Bruno Beispiel'))
+      await user.click(rowCollectButton('Anna Muster'))
+
+      expect(within(dialog()).getByRole('heading', { name: '1 Tandem kassieren' }))
+        .toBeInTheDocument()
+      await user.selectOptions(within(dialog()).getByLabelText('Zahlungsart'), 'card')
+      await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
+
+      await waitFor(() => expect(api.patch).toHaveBeenCalledTimes(1))
+      expect(api.patch).toHaveBeenCalledWith(1, { paid: true, payment_method: 'card' })
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      // Bruno is still owed and still selected; only the collected row left the
+      // selection, so the delete button is not armed on it.
+      expect(checkbox('Bruno Beispiel')).toBeChecked()
+      expect(checkbox('Anna Muster')).not.toBeChecked()
+    })
+
+    it('says nothing about checked collected rows — it is not collecting them', async () => {
+      const user = userEvent.setup()
+      const anna = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270 })
+      const paid = makeRow({
+        id: 2, first_name: 'Bruno', last_name: 'Beispiel', price: 100,
+        payment_method: 'card', paid_at: '2026-07-09T12:00:00.000Z',
+      })
+      vi.mocked(api.list).mockResolvedValue([anna, paid])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(checkbox('Bruno Beispiel'))
+      await user.click(rowCollectButton('Anna Muster'))
+
+      expect(within(dialog()).queryByText(/bereits kassierte/)).not.toBeInTheDocument()
+      expect(within(dialog()).getByText('Offener Betrag:').parentElement)
+        .toHaveTextContent('270 €')
+    })
+
+    it('writes a voucher top-up to voucher_payment_method', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({
+        id: 1, first_name: 'Anna', last_name: 'Muster', price: 40, payment_method: 'voucher',
+      })
+      vi.mocked(api.list).mockResolvedValue([row])
+      vi.mocked(api.patch).mockResolvedValue({
+        ...row, paid_at: '2026-07-09T12:00:00.000Z', voucher_payment_method: 'cash',
+      })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(rowCollectButton('Anna Muster'))
+      await user.selectOptions(within(dialog()).getByLabelText('Zahlungsart'), 'cash')
+      await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
+
+      await waitFor(() =>
+        expect(api.patch).toHaveBeenCalledWith(1, { paid: true, voucher_payment_method: 'cash' }))
+    })
+
+    it('keeps the dialog open with the message when the PATCH fails', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270 })
+      vi.mocked(api.list).mockResolvedValue([row])
+      vi.mocked(api.patch).mockRejectedValue(new Error('Kassieren fehlgeschlagen'))
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(rowCollectButton('Anna Muster'))
+      await user.selectOptions(within(dialog()).getByLabelText('Zahlungsart'), 'cash')
+      await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
+
+      expect(await within(dialog()).findByText('Kassieren fehlgeschlagen')).toBeInTheDocument()
+    })
+
+    it('sends a row back to open without asking for a Zahlungsart', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({
+        id: 1, first_name: 'Anna', last_name: 'Muster', price: 270,
+        payment_method: 'cash', paid_at: '2026-07-09T12:00:00.000Z',
+      })
+      vi.mocked(api.list).mockResolvedValue([row])
+      vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: null })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(within(paidTable()).getByRole('button', { name: 'Als offen markieren' }))
+
+      expect(api.patch).toHaveBeenCalledWith(1, { paid: false })
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
   })
 })

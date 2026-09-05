@@ -17,3 +17,15 @@ if (typeof globalThis.EventSource === 'undefined') {
   // @ts-expect-error - minimal test stub, not a full EventSource implementation
   globalThis.EventSource = FakeEventSource
 }
+
+// jsdom implements <dialog> as an element but not its modal methods, so any
+// component that opens one throws on mount. The stub keeps `open` truthful —
+// that is what the tests assert on — without pretending to be a top layer.
+if (!HTMLDialogElement.prototype.showModal) {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true
+  }
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false
+  }
+}

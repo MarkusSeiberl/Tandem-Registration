@@ -77,9 +77,19 @@ h2 {
   flex-direction: row;
 }
 
+/* Pinned to the viewport rather than laid out with the page: without this the
+   sidebar is as tall as whatever the list renders, and `Programm beenden` —
+   held at its foot by `margin-top: auto` — ends up at the bottom of a
+   thousand-row table instead of on screen. `align-self: flex-start` stops the
+   flex row from stretching it back to the full page height, which would leave
+   nothing for `position: sticky` to do. */
 .sidebar {
   flex: none;
   width: 216px;
+  align-self: flex-start;
+  position: sticky;
+  top: 0;
+  height: 100svh;
   display: flex;
   flex-direction: column;
   gap: 4px;

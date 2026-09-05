@@ -172,6 +172,21 @@ describe('CollectDialog', () => {
     expect(onCancel).toHaveBeenCalled()
   })
 
+  it('schluckt Escape während busy, statt onCancel aufzurufen', () => {
+    // This is the guard that makes the sequential collect loop safe: while a
+    // PATCH is in flight, tearing the dialog down would strand the loop with
+    // no dialog left to show its error in. preventDefault() is what stops the
+    // native <dialog> from closing itself on the cancel event regardless of
+    // what the handler does.
+    const onCancel = vi.fn()
+    const { container } = renderDialog({ onCancel, busy: true })
+    const dialog = container.querySelector('dialog')!
+    const event = new Event('cancel', { cancelable: true })
+    fireEvent(dialog, event)
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(true)
+  })
+
   it('sperrt bei busy Auswahl und beide Buttons, und beschriftet Kassieren um', () => {
     renderDialog({ busy: true })
     expect(screen.getByLabelText('Zahlungsart')).toBeDisabled()

@@ -6,6 +6,7 @@ import List from './List'
 import * as api from './api'
 import type { Registration } from './api'
 import { today } from './date'
+import { fireChangedEvent } from './setupTests'
 
 vi.mock('./api', () => ({
   list: vi.fn(),
@@ -959,7 +960,7 @@ describe('List', () => {
       await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
 
       await waitFor(() => expect(api.patch).toHaveBeenCalledTimes(1))
-      expect(api.patch).toHaveBeenCalledWith(1, expect.anything())
+      expect(api.patch).toHaveBeenCalledWith(1, { paid: true, payment_method: 'cash' })
     })
 
     it('overwrites an existing payment method on a priced row', async () => {
@@ -1064,6 +1065,128 @@ describe('List', () => {
       expect(await within(dialog()).findByText('Kassieren fehlgeschlagen')).toBeInTheDocument()
       expect(screen.getByRole('dialog')).toBeInTheDocument()
       await waitFor(() => expect(within(paidTable()).getByText('Anna Muster')).toBeInTheDocument())
+    })
+
+    // The server echoes every PATCH back to the client that sent it (no sender
+    // exclusion in SseHub.broadcast), so a bulk-collect loop's own writes trigger
+    // the very `changed` event that refresh() listens for — on itself, mid-run.
+    describe('das eigene SSE-Echo mitten im Kassieren', () => {
+      it('leert den Dialog nicht und verkürzt den Lauf nicht', async () => {
+        const user = userEvent.setup()
+        const a = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270, payment_method: 'cash' })
+        const b = makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', price: 270, payment_method: 'cash' })
+        let currentRows: Registration[] = [a, b]
+        vi.mocked(api.list).mockImplementation(async () => currentRows)
+
+        let resolveSecondPatch!: (r: Registration) => void
+        const secondPatch = new Promise<Registration>((resolve) => { resolveSecondPatch = resolve })
+        vi.mocked(api.patch).mockImplementationOnce(async () => ({ ...a, paid_at: '2026-07-09T12:00:00.000Z' }))
+        vi.mocked(api.patch).mockImplementationOnce(() => secondPatch)
+
+        renderList({ date: '2026-07-09' })
+        await screen.findByText('Anna Muster')
+
+        await user.click(checkbox('Anna Muster'))
+        await user.click(checkbox('Bruno Beispiel'))
+        await user.click(collectToolbarButton())
+        await user.selectOptions(within(dialog()).getByLabelText('Zahlungsart'), 'cash')
+        await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
+
+        // Anna's PATCH has landed and moved her to the paid table; Bruno's is
+        // still in flight. The dialog should now describe exactly Bruno.
+        await waitFor(() =>
+          expect(within(dialog()).getByRole('heading', { name: '1 Tandem kassieren' }))
+            .toBeInTheDocument())
+
+        // Anna's own PATCH broadcasts back to this client before Bruno's resolves.
+        currentRows = [{ ...a, paid_at: '2026-07-09T12:00:00.000Z' }, b]
+        fireChangedEvent()
+        await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2))
+
+        // The echo's refresh must not have emptied the dialog while Bruno's PATCH
+        // is still outstanding.
+        expect(within(dialog()).getByRole('heading', { name: '1 Tandem kassieren' }))
+          .toBeInTheDocument()
+
+        resolveSecondPatch({ ...b, paid_at: '2026-07-09T12:00:01.000Z' })
+
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+        // Both rows got patched despite the echo — the run was not cut short.
+        expect(api.patch).toHaveBeenCalledTimes(2)
+      })
+
+      it('lässt eine zweite Vorlage nur noch die nach einem Fehlschlag offene Zeile kassieren und schließt bei erneutem Fehlschlag nicht', async () => {
+        const user = userEvent.setup()
+        const a = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270, payment_method: 'cash' })
+        const b = makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', price: 270, payment_method: 'cash' })
+        let currentRows: Registration[] = [a, b]
+        vi.mocked(api.list).mockImplementation(async () => currentRows)
+        // Anna always succeeds, Bruno always fails — on both the first attempt
+        // and the retry, so the retry's own failure has to leave the dialog open.
+        vi.mocked(api.patch).mockImplementation(async (id) => {
+          if (id === 1) return { ...a, paid_at: '2026-07-09T12:00:00.000Z' }
+          throw new Error('Kassieren fehlgeschlagen')
+        })
+
+        renderList({ date: '2026-07-09' })
+        await screen.findByText('Anna Muster')
+
+        await user.click(checkbox('Anna Muster'))
+        await user.click(checkbox('Bruno Beispiel'))
+        await user.click(collectToolbarButton())
+        await user.selectOptions(within(dialog()).getByLabelText('Zahlungsart'), 'cash')
+        await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
+
+        // Anna's PATCH lands and broadcasts back to this client while Bruno's is
+        // still failing — the same self-echo as the finding describes.
+        await waitFor(() => expect(api.patch).toHaveBeenCalledWith(1, expect.anything()))
+        currentRows = [{ ...a, paid_at: '2026-07-09T12:00:00.000Z' }, b]
+        fireChangedEvent()
+
+        expect(await within(dialog()).findByText('Kassieren fehlgeschlagen')).toBeInTheDocument()
+        expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+        vi.mocked(api.patch).mockClear()
+
+        // Second press: only Bruno should be asked for again.
+        await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
+
+        await waitFor(() => expect(api.patch).toHaveBeenCalledTimes(1))
+        expect(api.patch).toHaveBeenCalledWith(2, expect.anything())
+
+        // Bruno's PATCH still throws on the retry — a silent success here would
+        // close the dialog over a guest who is still unpaid.
+        expect(screen.getByRole('dialog')).toBeInTheDocument()
+      })
+
+      it('lässt die Auswahl unangetastet, wenn vor der Bestätigung ein fremder Changed-Event eintrifft', async () => {
+        const user = userEvent.setup()
+        const a = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270, payment_method: 'cash' })
+        const c = makeRow({ id: 3, first_name: 'Clara', last_name: 'Neu', price: 270, payment_method: 'cash' })
+        let currentRows: Registration[] = [a]
+        vi.mocked(api.list).mockImplementation(async () => currentRows)
+
+        renderList({ date: '2026-07-09' })
+        await screen.findByText('Anna Muster')
+
+        await user.click(checkbox('Anna Muster'))
+        await user.click(collectToolbarButton())
+
+        expect(within(dialog()).getByRole('heading', { name: '1 Tandem kassieren' }))
+          .toBeInTheDocument()
+
+        // A guest registers on the tablet while the operator is still choosing a
+        // Zahlungsart — an unrelated row, carried by the same broadcast this
+        // manifest's own PATCH would trigger.
+        currentRows = [a, c]
+        fireChangedEvent()
+        await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2))
+
+        expect(within(dialog()).getByRole('heading', { name: '1 Tandem kassieren' }))
+          .toBeInTheDocument()
+        expect(checkbox('Anna Muster')).toBeChecked()
+        expect(api.patch).not.toHaveBeenCalled()
+      })
     })
   })
 })

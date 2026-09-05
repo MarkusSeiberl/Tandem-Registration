@@ -292,8 +292,19 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         setRows(items)
         // Rows change identity across a refresh (deletes, a new registration) —
         // any stale checked ids from before would silently keep the delete
-        // button enabled for rows that no longer exist.
-        setCheckedIds(new Set())
+        // button enabled for rows that no longer exist. But the server echoes
+        // every PATCH back to the client that sent it (SseHub.broadcast has no
+        // sender exclusion), so this refresh also runs mid-collect, on the
+        // manifest's own write. Dropping the whole set there would empty a
+        // bulk-collect loop's selection while it is still working, so only the
+        // ids that no longer exist are dropped — a row that merely changed
+        // table (open to paid) stays checked.
+        setCheckedIds((prev) => {
+          const alive = new Set(items.map((r) => r.id))
+          const next = new Set<number>()
+          for (const id of prev) if (alive.has(id)) next.add(id)
+          return next
+        })
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Fehler beim Laden'))
       .finally(() => setLoading(false))
@@ -494,6 +505,15 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // already collected have left the open table, and `checkedIds` still holds, so
   // pressing Kassieren again runs over exactly what is left.
   async function handleCollectSelected(method: CollectedVia) {
+    if (selectedOpenRows.length === 0) {
+      // A `changed` echo can still land between confirm and here, or a retry can
+      // be pressed after the failed run's rows already got picked up some other
+      // way — either leaves nothing to patch. Falling through to the success
+      // tail below with an empty loop would close the dialog as if it had just
+      // finished collecting, which would be success reported for work that
+      // never ran.
+      return
+    }
     setCollecting(true)
     setCollectError(null)
     try {

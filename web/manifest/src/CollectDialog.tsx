@@ -96,7 +96,7 @@ export default function CollectDialog({
           type="button"
           className="btn primary"
           onClick={() => method && onConfirm(method)}
-          disabled={busy || method === ''}
+          disabled={busy || method === '' || rows.length === 0}
         >
           {busy ? 'Wird kassiert…' : 'Kassieren'}
         </button>

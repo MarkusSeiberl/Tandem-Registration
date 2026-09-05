@@ -74,7 +74,19 @@ describe('CollectDialog', () => {
   })
 
   it('zeigt die übersprungenen Zeilen nur, wenn es welche gibt', () => {
-    const { rerender } = renderDialog({ skippedCount: 2 })
+    const { rerender } = renderDialog({ skippedCount: 1 })
+    expect(screen.getByText('1 bereits kassierte Zeile bleibt unverändert.')).toBeInTheDocument()
+
+    rerender(
+      <CollectDialog
+        rows={[makeRow({ price: 100 })]}
+        skippedCount={2}
+        busy={false}
+        error={null}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
+    )
     expect(screen.getByText('2 bereits kassierte Zeilen bleiben unverändert.')).toBeInTheDocument()
 
     rerender(
@@ -96,6 +108,24 @@ describe('CollectDialog', () => {
     })
     expect(
       screen.getByText('1 Tandem ohne Restbetrag behält seine Zahlungsart.')
+    ).toBeInTheDocument()
+
+    rerender(
+      <CollectDialog
+        rows={[
+          makeRow({ id: 1, price: 0 }),
+          makeRow({ id: 2, price: 0 }),
+          makeRow({ id: 3, price: 100 }),
+        ]}
+        skippedCount={0}
+        busy={false}
+        error={null}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />
+    )
+    expect(
+      screen.getByText('2 Tandems ohne Restbetrag behalten ihre Zahlungsart.')
     ).toBeInTheDocument()
 
     rerender(

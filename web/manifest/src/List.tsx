@@ -3,12 +3,13 @@ import {
   dayManager, dayTables, exportDay, list, masters as fetchMasters, patch, pendingRedemptions,
   remove, repriceDay, saveDayManager,
 } from './api'
-import type { DayTables, Registration } from './api'
+import type { CollectedVia, DayTables, ManifestPatch, Registration } from './api'
 import { useEvents } from './useEvents'
 import { extraBookingLabel, paymentLabel, weightSurchargeLabel } from './labels'
 import { collectedVia, formatEuro } from './pricing'
 import { today } from './date'
 import TrashIcon from './TrashIcon'
+import CollectDialog from './CollectDialog'
 
 export interface ListProps {
   onSelect: (registration: Registration) => void
@@ -267,6 +268,8 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   const [exportWarning, setExportWarning] = useState<ExportWarning | null>(null)
   const [collecting, setCollecting] = useState(false)
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
+  const [collectOpen, setCollectOpen] = useState(false)
+  const [collectError, setCollectError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [pendingId, setPendingId] = useState<number | null>(null)
   const [pending, setPending] = useState(0)
@@ -387,6 +390,11 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // the collected one is the archive of the day.
   const openRows = sortedRows.filter((r) => r.paid_at == null)
   const paidRows = sortedRows.filter((r) => r.paid_at != null)
+  // The bulk action works on the checked rows that are still open. Checked rows
+  // in the collected table stay untouched — the dialog says so rather than
+  // passing over them in silence.
+  const selectedOpenRows = openRows.filter((r) => checkedIds.has(r.id))
+  const selectedPaidCount = paidRows.filter((r) => checkedIds.has(r.id)).length
   // A voucher row reaches the club's Gutscheinliste only once it is collected —
   // collecting is what stamps voucher_redeemed_at (see routes/registrations.ts),
   // and the export sweep writes exactly the rows that carry it. So an open one
@@ -478,6 +486,41 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     } finally {
       setExporting(false)
     }
+  }
+
+  // Sequential, and each answer folded in with the functional setRows the row
+  // button uses, so a refresh() landing mid-loop cannot be clobbered by the next
+  // iteration. On a failure the dialog stays open with the message: the rows
+  // already collected have left the open table, and `checkedIds` still holds, so
+  // pressing Kassieren again runs over exactly what is left.
+  async function handleCollectSelected(method: CollectedVia) {
+    setCollecting(true)
+    setCollectError(null)
+    try {
+      for (const row of selectedOpenRows) {
+        const fields: ManifestPatch = { paid: true }
+        // The payment method is a statement about money that changed hands, so it
+        // is only written where money is owed. A fully covered voucher moves none
+        // and keeps whatever it already carries.
+        if ((row.price ?? 0) > 0) {
+          // payment_method says what the jump was paid with; for a voucher row
+          // that is already answered, and only the top-up has a till.
+          if (row.payment_method === 'voucher') fields.voucher_payment_method = method
+          else fields.payment_method = method
+        }
+        const updated = await patch(row.id, fields)
+        setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+      }
+    } catch (err) {
+      setCollectError(err instanceof Error ? err.message : 'Kassieren fehlgeschlagen')
+      return
+    } finally {
+      setCollecting(false)
+    }
+    setCollectOpen(false)
+    // The rows have moved to the other table; staying checked would arm the
+    // delete button on tandems that were just collected.
+    setCheckedIds(new Set())
   }
 
   // Collects every still-open row through the row button's own PATCH, then
@@ -642,6 +685,14 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         </button>
         <button
           type="button"
+          className="btn secondary"
+          onClick={() => { setCollectError(null); setCollectOpen(true) }}
+          disabled={selectedOpenRows.length === 0 || collecting || exporting || deleting}
+        >
+          Kassieren
+        </button>
+        <button
+          type="button"
           className="btn secondary btn-icon"
           onClick={handleDelete}
           disabled={checkedIds.size === 0 || deleting}
@@ -699,6 +750,17 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
             </button>
           </div>
         </div>
+      )}
+
+      {collectOpen && (
+        <CollectDialog
+          rows={selectedOpenRows}
+          skippedCount={selectedPaidCount}
+          busy={collecting}
+          error={collectError}
+          onConfirm={(method) => { void handleCollectSelected(method) }}
+          onCancel={() => setCollectOpen(false)}
+        />
       )}
 
       {exportMessage && <p className="hint">{exportMessage}</p>}

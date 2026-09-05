@@ -882,4 +882,188 @@ describe('List', () => {
         expect(screen.queryByText(/noch nicht kassiert/)).not.toBeInTheDocument())
     })
   })
+
+  // The toolbar button collects the checked rows from both tables in one
+  // payment method through CollectDialog, using the same PATCH the row
+  // button and "Alle kassieren und exportieren" already go through.
+  describe('Sammel-Kassieren', () => {
+    const checkbox = (name: string) => screen.getByLabelText(`${name} auswählen`)
+    const collectToolbarButton = () => screen.getByRole('button', { name: 'Kassieren' })
+    const dialog = () => screen.getByRole('dialog')
+
+    beforeEach(() => {
+      vi.clearAllMocks()
+      vi.mocked(api.masters).mockResolvedValue([])
+      vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 0 })
+      vi.mocked(api.dayTables).mockResolvedValue({
+        prices: PRICES, payouts: PAYOUTS, frozen: true,
+        current: { prices: PRICES, payouts: PAYOUTS },
+      })
+      vi.mocked(api.dayManager).mockResolvedValue({ name: '' })
+      vi.mocked(api.saveDayManager).mockImplementation(async (_d, name) => ({ name: name.trim() }))
+    })
+
+    it('is disabled without a selection and enables once an open row is checked', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270 }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      expect(collectToolbarButton()).toBeDisabled()
+
+      await user.click(checkbox('Anna Muster'))
+
+      expect(collectToolbarButton()).toBeEnabled()
+    })
+
+    it('stays disabled when only an already-collected row is checked', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({
+          id: 1, first_name: 'Anna', last_name: 'Muster', price: 270,
+          payment_method: 'cash', paid_at: '2026-07-09T12:00:00.000Z',
+        }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(checkbox('Anna Muster'))
+
+      expect(collectToolbarButton()).toBeDisabled()
+    })
+
+    it('names the checked-but-collected row and patches only the open one', async () => {
+      const user = userEvent.setup()
+      const open = makeRow({
+        id: 1, first_name: 'Anna', last_name: 'Muster', price: 270, payment_method: 'cash',
+      })
+      const paid = makeRow({
+        id: 2, first_name: 'Bruno', last_name: 'Beispiel', price: 100,
+        payment_method: 'card', paid_at: '2026-07-09T12:00:00.000Z',
+      })
+      vi.mocked(api.list).mockResolvedValue([open, paid])
+      vi.mocked(api.patch).mockResolvedValue({ ...open, paid_at: '2026-07-09T12:00:00.000Z' })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(checkbox('Anna Muster'))
+      await user.click(checkbox('Bruno Beispiel'))
+      await user.click(collectToolbarButton())
+
+      expect(within(dialog()).getByText('1 bereits kassierte Zeile bleibt unverändert.'))
+        .toBeInTheDocument()
+
+      await user.selectOptions(within(dialog()).getByLabelText('Zahlungsart'), 'cash')
+      await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
+
+      await waitFor(() => expect(api.patch).toHaveBeenCalledTimes(1))
+      expect(api.patch).toHaveBeenCalledWith(1, expect.anything())
+    })
+
+    it('overwrites an existing payment method on a priced row', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({
+        id: 1, first_name: 'Anna', last_name: 'Muster', price: 230, payment_method: 'cash',
+      })
+      vi.mocked(api.list).mockResolvedValue([row])
+      vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'card' })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(checkbox('Anna Muster'))
+      await user.click(collectToolbarButton())
+      await user.selectOptions(within(dialog()).getByLabelText('Zahlungsart'), 'card')
+      await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
+
+      await waitFor(() =>
+        expect(api.patch).toHaveBeenCalledWith(1, { paid: true, payment_method: 'card' }))
+    })
+
+    it('writes a voucher top-up to voucher_payment_method, not payment_method', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({
+        id: 1, first_name: 'Anna', last_name: 'Muster', price: 40, payment_method: 'voucher',
+      })
+      vi.mocked(api.list).mockResolvedValue([row])
+      vi.mocked(api.patch).mockResolvedValue({
+        ...row, paid_at: '2026-07-09T12:00:00.000Z', voucher_payment_method: 'card',
+      })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(checkbox('Anna Muster'))
+      await user.click(collectToolbarButton())
+      await user.selectOptions(within(dialog()).getByLabelText('Zahlungsart'), 'card')
+      await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
+
+      await waitFor(() =>
+        expect(api.patch).toHaveBeenCalledWith(1, { paid: true, voucher_payment_method: 'card' }))
+    })
+
+    it('writes no payment method for a fully covered voucher', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({
+        id: 1, first_name: 'Anna', last_name: 'Muster', price: 0, payment_method: 'voucher',
+      })
+      vi.mocked(api.list).mockResolvedValue([row])
+      vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: '2026-07-09T12:00:00.000Z' })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(checkbox('Anna Muster'))
+      await user.click(collectToolbarButton())
+      await user.selectOptions(within(dialog()).getByLabelText('Zahlungsart'), 'cash')
+      await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
+
+      await waitFor(() => expect(api.patch).toHaveBeenCalledWith(1, { paid: true }))
+    })
+
+    it('closes the dialog and clears the selection after a successful run', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270 })
+      vi.mocked(api.list).mockResolvedValue([row])
+      vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: '2026-07-09T12:00:00.000Z' })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(checkbox('Anna Muster'))
+      await user.click(collectToolbarButton())
+      await user.selectOptions(within(dialog()).getByLabelText('Zahlungsart'), 'cash')
+      await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      // The row moved to the collected table, so the checkbox that carried the
+      // selection is gone with it — the delete button is the observable proxy
+      // for "checkedIds is empty" now that nothing is left checked.
+      expect(screen.getByRole('button', { name: 'Ausgewählte löschen' })).toBeDisabled()
+    })
+
+    // Retrying has to run over exactly what is left: the row already collected
+    // must not be asked for again, so checkedIds staying put after a failure
+    // is what makes that possible.
+    it('keeps the dialog open with the error and the selection on a failure', async () => {
+      const user = userEvent.setup()
+      const a = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270, payment_method: 'cash' })
+      const b = makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', price: 270, payment_method: 'card' })
+      vi.mocked(api.list).mockResolvedValue([a, b])
+      vi.mocked(api.patch).mockImplementation(async (id) => {
+        if (id === 1) return { ...a, paid_at: '2026-07-09T12:00:00.000Z' }
+        throw new Error('Kassieren fehlgeschlagen')
+      })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(checkbox('Anna Muster'))
+      await user.click(checkbox('Bruno Beispiel'))
+      await user.click(collectToolbarButton())
+      await user.selectOptions(within(dialog()).getByLabelText('Zahlungsart'), 'cash')
+      await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
+
+      expect(await within(dialog()).findByText('Kassieren fehlgeschlagen')).toBeInTheDocument()
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      await waitFor(() => expect(within(paidTable()).getByText('Anna Muster')).toBeInTheDocument())
+    })
+  })
 })

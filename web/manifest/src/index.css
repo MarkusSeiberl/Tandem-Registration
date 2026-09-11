@@ -399,6 +399,65 @@ h2 {
   align-self: stretch;
 }
 
+/* The actions that work on the checked rows, kept off the day toolbar above:
+   everything up there (Datum, Heute, Betriebsleiter, Tagesabschluss) acts on the
+   whole day, and while Kassieren and Löschen sat in that same grey row only
+   their disabled state told the two ranges apart.
+
+   The height stands whether or not anything is checked — ticking the first box
+   must not push the rows down and move the next checkbox out from under the
+   operator's finger. 56px is the row height: a 40px control, 8px of padding
+   above and below, and the 1px frame. The summary shrinks rather than wrapping
+   so a narrow window cannot turn that one row into two. */
+.selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  margin-bottom: 12px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  /* Empty it is pure reserved space: nothing to see, and nothing to catch a tap
+     meant for the table underneath. */
+  pointer-events: none;
+}
+
+/* Opaque on purpose — it is sticky, and rows scroll underneath it. The ember
+   edge is what "there is something here to press" looks like elsewhere on this
+   screen (.day-outdated, .export-warning) and the colour the open total already
+   carries, so the bar reads as part of that language instead of a new one. */
+.selection-bar-active {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ember);
+  pointer-events: auto;
+}
+
+.selection-bar .btn {
+  height: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.selection-bar-summary {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-h);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Away from the two actions: it undoes the selection rather than spending it. */
+.selection-bar-clear {
+  margin-left: auto;
+}
+
 .col-checkbox {
   width: 1%;
   white-space: nowrap;
@@ -432,6 +491,12 @@ h2 {
   border-bottom: 1px solid var(--border);
 }
 
+/* `sticky` here pins against the table, not against the page: the
+   `overflow: hidden` above (it clips the rows into the rounded corners) makes
+   .manifest-table the scrollport for its own cells, and that box never scrolls.
+   So this header row sits where it is laid out and cannot collide with the
+   selection bar — offsetting it by the bar's height would push it 56px *down
+   inside the table* and leave a gap over the first row. */
 .manifest-table th {
   position: sticky;
   top: 0;

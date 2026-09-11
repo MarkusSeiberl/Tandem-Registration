@@ -909,12 +909,14 @@ describe('List', () => {
     })
   })
 
-  // The toolbar button collects the checked rows from both tables in one
+  // The selection bar's button collects the checked rows from both tables in one
   // payment method through CollectDialog, using the same PATCH the row
   // button and "Alle kassieren und exportieren" already go through.
   describe('Sammel-Kassieren', () => {
     const checkbox = (name: string) => screen.getByLabelText(`${name} auswählen`)
-    const collectToolbarButton = () => screen.getByRole('button', { name: 'Kassieren' })
+    // Carries the open count — `Kassieren (3)` — which also keeps it apart from
+    // the dialog's own plain `Kassieren` once that is open.
+    const collectToolbarButton = () => screen.getByRole('button', { name: /^Kassieren \(/ })
     const dialog = () => screen.getByRole('dialog')
 
     beforeEach(() => {
@@ -929,7 +931,9 @@ describe('List', () => {
       vi.mocked(api.saveDayManager).mockImplementation(async (_d, name) => ({ name: name.trim() }))
     })
 
-    it('is disabled without a selection and enables once an open row is checked', async () => {
+    // It is not offered at all without a selection to spend it on, rather than
+    // offered and greyed out beside the day's own controls.
+    it('appears only once an open row is checked', async () => {
       const user = userEvent.setup()
       vi.mocked(api.list).mockResolvedValue([
         makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270 }),
@@ -937,14 +941,15 @@ describe('List', () => {
       renderList({ date: '2026-07-09' })
       await screen.findByText('Anna Muster')
 
-      expect(collectToolbarButton()).toBeDisabled()
+      expect(screen.queryByRole('button', { name: /^Kassieren \(/ })).not.toBeInTheDocument()
 
       await user.click(checkbox('Anna Muster'))
 
       expect(collectToolbarButton()).toBeEnabled()
+      expect(screen.getByText('1 ausgewählt · 1 offen')).toBeInTheDocument()
     })
 
-    it('stays disabled when only an already-collected row is checked', async () => {
+    it('stays away when only an already-collected row is checked, but Löschen does not', async () => {
       const user = userEvent.setup()
       vi.mocked(api.list).mockResolvedValue([
         makeRow({
@@ -957,7 +962,52 @@ describe('List', () => {
 
       await user.click(checkbox('Anna Muster'))
 
-      expect(collectToolbarButton()).toBeDisabled()
+      expect(screen.queryByRole('button', { name: /^Kassieren \(/ })).not.toBeInTheDocument()
+      expect(screen.getByText('1 ausgewählt · keine offen')).toBeInTheDocument()
+      // Deleting a collected row is still allowed — the two actions of the bar
+      // work on different sets.
+      expect(screen.getByRole('button', { name: 'Ausgewählte löschen (1)' })).toBeEnabled()
+    })
+
+    it('counts Kassieren on the open rows and Löschen on every checked row', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270 }),
+        makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', price: 100 }),
+        makeRow({
+          id: 3, first_name: 'Carla', last_name: 'Muster', price: 100,
+          payment_method: 'card', paid_at: '2026-07-09T12:00:00.000Z',
+        }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(checkbox('Anna Muster'))
+      await user.click(checkbox('Bruno Beispiel'))
+      await user.click(checkbox('Carla Muster'))
+
+      expect(screen.getByText('3 ausgewählt · 2 offen')).toBeInTheDocument()
+      expect(collectToolbarButton()).toHaveAccessibleName('Kassieren (2)')
+      expect(screen.getByRole('button', { name: 'Ausgewählte löschen (3)' })).toBeInTheDocument()
+    })
+
+    it('lets the whole selection go at once', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270 }),
+        makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', price: 100 }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(checkbox('Anna Muster'))
+      await user.click(checkbox('Bruno Beispiel'))
+      expect(screen.getByText('2 ausgewählt · 2 offen')).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Auswahl leeren' }))
+
+      expect(screen.queryByText(/ausgewählt/)).not.toBeInTheDocument()
+      expect(checkbox('Anna Muster')).not.toBeChecked()
     })
 
     it('names the checked-but-collected row and patches only the open one', async () => {
@@ -1061,9 +1111,10 @@ describe('List', () => {
 
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
       // The row moved to the collected table, so the checkbox that carried the
-      // selection is gone with it — the delete button is the observable proxy
-      // for "checkedIds is empty" now that nothing is left checked.
-      expect(screen.getByRole('button', { name: 'Ausgewählte löschen' })).toBeDisabled()
+      // selection is gone with it — an empty selection bar is the observable
+      // proxy for "checkedIds is empty" now that nothing is left checked.
+      expect(screen.queryByRole('button', { name: /^Ausgewählte löschen/ }))
+        .not.toBeInTheDocument()
     })
 
     // Retrying has to run over exactly what is left: the row already collected

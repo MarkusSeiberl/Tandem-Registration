@@ -91,31 +91,36 @@ nie aussehen.
 
 ## Sticky-Mechanik
 
-`.manifest-table th` ist bereits `position: sticky; top: 0`. Eine Leiste bei
-`top: 0` würde die angepinnten Spaltenköpfe überdecken. Ohne JS-Messung gelöst:
-
 ```css
-.manifest-table th     { top: var(--thead-top, 0); z-index: 1; }
-.list-screen.has-selection { --thead-top: 52px; }
-.selection-bar         { position: sticky; top: 0; z-index: 3; }
+.selection-bar-active { position: sticky; top: 0; z-index: 3; }
 ```
+
+Die Spaltenköpfe brauchen **keinen** Versatz, obwohl `.manifest-table th` schon
+`position: sticky; top: 0` trägt: `.manifest-table` hat `overflow: hidden`
+(es beschneidet die Zeilen auf die runden Ecken), und damit ist die Tabelle
+selbst der Scrollport ihrer Zellen — eine Box, die nie scrollt. Die Kopfzeile
+klebt also an gar nichts und kann von der Leiste nicht verdeckt werden.
+
+Ein Versatz wäre sogar schädlich, und das ist zuerst so gebaut worden: ein
+`top: 56px` auf `th` wird gegen die Tabellenoberkante gerechnet, nicht gegen den
+Viewport, und schiebt die Kopfzeile 56px **in die Tabelle hinein** — gemessen
+`tableRect 180 / thRect 236`, sichtbar als leeres Band über der ersten Zeile.
 
 ## Kein Layout-Sprung
 
-Die Leiste liegt im Fluss, also würde das erste Anhaken die Tabellen ~52px nach
+Die Leiste liegt im Fluss, also würde das erste Anhaken die Tabellen 56px nach
 unten schieben — auf dem Tablet wandert damit die *nächste* Checkbox unter dem
 Finger weg, genau während mehrere Häkchen gesetzt werden.
 
 Deshalb ist die Höhe **immer reserviert**: ohne Auswahl steht ein leerer
 Platzhalter derselben Höhe. Nur der Inhalt der Leiste erscheint und verschwindet,
-die Tabellen bewegen sich nie. Kostet 52px auf einer unberührten Liste.
+die Tabellen bewegen sich nie. Kostet 56px auf einer unberührten Liste.
 
 Der Platzhalter ist dieselbe Box wie die Leiste, nur leer. Sie hält immer ihre
-Höhe, **klebt aber nur bei Auswahl** (`.has-selection`) — leer hat sie nichts zu
-zeigen, das oben bleiben müsste, und ein unsichtbarer Streifen am Viewport-Rand
-würde bloß die Spaltenköpfe verdecken. Deshalb hängt auch `--thead-top` an
-`.has-selection`: ohne Auswahl steht `th` bei `top: 0` wie heute. Die leere Box
-bekommt `pointer-events: none`, damit sie nichts abfängt.
+Höhe (56px), **klebt aber nur bei Auswahl** (`.selection-bar-active`) — leer hat
+sie nichts zu zeigen, das oben bleiben müsste. Sie bekommt dann auch
+`pointer-events: none`, damit sie keinen Griff abfängt, der der Tabelle
+darunter galt.
 
 ## Komponenten
 
@@ -138,7 +143,7 @@ Bei `selectedCount === 0` rendert sie nur den Platzhalter.
 `handleDelete`, der Dialog, die SSE-Logik) — unverändert. Neu dort nur:
 
 - `handleClearSelection` → `setCheckedIds(new Set())`
-- `has-selection` auf `.list-screen`, wenn `checkedIds.size > 0`
+- die Leiste bekommt `selectedCount`, `openCount` und `busy`
 - die beiden Buttons verlassen `.list-toolbar`
 
 `busy` behält seine Bedeutung: `collecting || exporting || deleting`.
@@ -176,8 +181,8 @@ Neu:
 | --- | --- |
 | `web/manifest/src/SelectionBar.tsx` | neu |
 | `web/manifest/src/SelectionBar.test.tsx` | neu |
-| `web/manifest/src/List.tsx` | Toolbar behält den Tag; Leiste rendern; `handleClearSelection`; `has-selection` |
-| `web/manifest/src/index.css` | `.selection-bar`, Platzhalter, `--thead-top` |
+| `web/manifest/src/List.tsx` | Toolbar behält den Tag; Leiste rendern; `handleClearSelection` |
+| `web/manifest/src/index.css` | `.selection-bar`, Platzhalter, Kommentar am `th`-Sticky |
 | `web/manifest/src/List.test.tsx` | 2 Selektoren, 4 neue Fälle |
 
 ## Nicht Teil davon

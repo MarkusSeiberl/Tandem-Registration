@@ -8,8 +8,8 @@ import { useEvents } from './useEvents'
 import { extraBookingLabel, paymentLabel, weightSurchargeLabel } from './labels'
 import { collectedVia, formatEuro } from './pricing'
 import { today } from './date'
-import TrashIcon from './TrashIcon'
 import CollectDialog from './CollectDialog'
+import SelectionBar from './SelectionBar'
 
 export interface ListProps {
   onSelect: (registration: Registration) => void
@@ -448,6 +448,12 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     })
   }
 
+  // Unticking a long selection box by box is work; the bar that acts on it
+  // offers the way out of it.
+  function handleClearSelection() {
+    setCheckedIds(new Set())
+  }
+
   async function handleSetPaid(row: Registration, paid: boolean) {
     setPendingId(row.id)
     setError(null)
@@ -726,24 +732,9 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         >
           {exporting ? 'Tagesabschluss…' : 'Tagesabschluss'}
         </button>
-        <button
-          type="button"
-          className="btn secondary"
-          onClick={() => { setCollectError(null); setCollectTarget('selection') }}
-          disabled={selectedOpenRows.length === 0 || collecting || exporting || deleting}
-        >
-          Kassieren
-        </button>
-        <button
-          type="button"
-          className="btn secondary btn-icon"
-          onClick={handleDelete}
-          disabled={checkedIds.size === 0 || deleting}
-          aria-label="Ausgewählte löschen"
-          title="Ausgewählte löschen"
-        >
-          <TrashIcon />
-        </button>
+        {/* Kassieren and the delete action used to stand here. They act on the
+            checked rows, not on the day, and in a row of identical grey buttons
+            only their disabled state said so — they live in SelectionBar now. */}
         {/* What is still to be collected, and what already went into the till.
             The row count lives in each table's caption, so the toolbar does not
             repeat it. */}
@@ -814,6 +805,16 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         <p>Keine Registrierungen für dieses Datum.</p>
       ) : (
         <>
+          {/* Directly above the rows it acts on, and sticky from here to the end
+              of the screen so it stays reachable in the collected table too. */}
+          <SelectionBar
+            selectedCount={checkedIds.size}
+            openCount={selectedOpenRows.length}
+            busy={collecting || exporting || deleting}
+            onCollect={() => { setCollectError(null); setCollectTarget('selection') }}
+            onDelete={() => { void handleDelete() }}
+            onClear={handleClearSelection}
+          />
           <RegistrationTable
             caption={`Offen (${openRows.length})`}
             rows={openRows}

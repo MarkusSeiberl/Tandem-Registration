@@ -178,7 +178,7 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   await updatedRow.getByRole('button', { name: /Kassiert/ }).click()
 
   // The row button asks for the Zahlungsart the money actually came in as,
-  // through the same dialog the toolbar's Kassieren uses.
+  // through the same dialog the selection bar's Kassieren uses.
   const collectDialog = page.getByRole('dialog')
   await expect(collectDialog.getByRole('heading', { name: '1 Tandem kassieren' })).toBeVisible()
   // Karte, the way this guest paid at the desk — the sheet below reads it back.

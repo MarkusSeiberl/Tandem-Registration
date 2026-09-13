@@ -522,29 +522,24 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
 
   // Sequential, and each answer folded in with the functional setRows the row
   // button uses, so a refresh() landing mid-loop cannot be clobbered by the next
-  // iteration. On a failure the dialog stays open with the message: the rows
-  // already collected have left the open table, and `checkedIds` still holds, so
-  // pressing Kassieren again runs over exactly what is left.
-  async function handleCollectSelected(method: CollectedVia) {
-    const target = collectTarget
-    if (collectRows.length === 0) {
-      // A `changed` echo can still land between confirm and here, or a retry can
-      // be pressed after the failed run's rows already got picked up some other
-      // way — either leaves nothing to patch. Falling through to the success
-      // tail below with an empty loop would close the dialog as if it had just
-      // finished collecting, which would be success reported for work that
-      // never ran.
-      return
-    }
+  // iteration. Answers with the failure message rather than showing it itself:
+  // only the caller knows whether there is a dialog to put it in. On a failure
+  // the rows already collected have left the open table and `checkedIds` still
+  // holds, so pressing Kassieren again runs over exactly what is left.
+  //
+  // `method` is null when nothing in the run is owed — see startCollect().
+  async function runCollect(
+    method: CollectedVia | null,
+    rowsToCollect: Registration[],
+  ): Promise<string | null> {
     setCollecting(true)
-    setCollectError(null)
     try {
-      for (const row of collectRows) {
+      for (const row of rowsToCollect) {
         const fields: ManifestPatch = { paid: true }
         // The payment method is a statement about money that changed hands, so it
         // is only written where money is owed. A fully covered voucher moves none
         // and keeps whatever it already carries.
-        if ((row.price ?? 0) > 0) {
+        if (method !== null && (row.price ?? 0) > 0) {
           // payment_method says what the jump was paid with; for a voucher row
           // that is already answered, and only the top-up has a till.
           if (row.payment_method === 'voucher') fields.voucher_payment_method = method
@@ -554,22 +549,75 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
       }
     } catch (err) {
-      setCollectError(err instanceof Error ? err.message : 'Kassieren fehlgeschlagen')
-      return
+      return err instanceof Error ? err.message : 'Kassieren fehlgeschlagen'
     } finally {
       setCollecting(false)
     }
-    setCollectTarget(null)
-    // The rows have moved to the other table; staying checked would arm the
-    // delete button on tandems that were just collected. A single row's button
-    // says nothing about the rest of the selection, so only that row leaves it.
+    return null
+  }
+
+  // The rows have moved to the other table; staying checked would arm the
+  // delete button on tandems that were just collected. A single row's button
+  // says nothing about the rest of the selection, so only that row leaves it.
+  function clearCollected(target: 'selection' | number) {
     if (target === 'selection') setCheckedIds(new Set())
     else setCheckedIds((prev) => {
-      if (!prev.has(target as number)) return prev
+      if (!prev.has(target)) return prev
       const next = new Set(prev)
-      next.delete(target as number)
+      next.delete(target)
       return next
     })
+  }
+
+  // Both Kassieren buttons come through here. The dialog exists to ask one
+  // question — which till the money went into — so a run where no row owes
+  // anything has nothing to ask and skips it: the operator would otherwise have
+  // to name a Zahlungsart that runCollect() then refuses to write, which reads
+  // as if the fully covered voucher still wanted paying.
+  function startCollect(target: 'selection' | number) {
+    setCollectError(null)
+    const targetRows = target === 'selection'
+      ? selectedOpenRows
+      : openRows.filter((r) => r.id === target)
+    if (targetRows.length > 0 && targetRows.every((r) => (r.price ?? 0) <= 0)) {
+      void collectSilently(target, targetRows)
+      return
+    }
+    setCollectTarget(target)
+  }
+
+  // No dialog stands over this run, so its failure goes to the page's own error
+  // line instead of the dialog's.
+  async function collectSilently(target: 'selection' | number, targetRows: Registration[]) {
+    setError(null)
+    const message = await runCollect(null, targetRows)
+    if (message !== null) {
+      setError(message)
+      return
+    }
+    clearCollected(target)
+  }
+
+  async function handleCollectSelected(method: CollectedVia) {
+    const target = collectTarget
+    if (target === null || collectRows.length === 0) {
+      // A `changed` echo can still land between confirm and here, or a retry can
+      // be pressed after the failed run's rows already got picked up some other
+      // way — either leaves nothing to patch. Falling through to the success
+      // tail below with an empty loop would close the dialog as if it had just
+      // finished collecting, which would be success reported for work that
+      // never ran.
+      return
+    }
+    setCollectError(null)
+    const message = await runCollect(method, collectRows)
+    if (message !== null) {
+      // The dialog stays open and carries the message.
+      setCollectError(message)
+      return
+    }
+    setCollectTarget(null)
+    clearCollected(target)
   }
 
   // Collects every still-open row through the row button's own PATCH, then
@@ -811,7 +859,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
             selectedCount={checkedIds.size}
             openCount={selectedOpenRows.length}
             busy={collecting || exporting || deleting}
-            onCollect={() => { setCollectError(null); setCollectTarget('selection') }}
+            onCollect={() => startCollect('selection')}
             onDelete={() => { void handleDelete() }}
             onClear={handleClearSelection}
           />
@@ -823,7 +871,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
             checkedIds={checkedIds}
             onToggleChecked={toggleChecked}
             onSelect={onSelect}
-            onCollect={(row) => { setCollectError(null); setCollectTarget(row.id) }}
+            onCollect={(row) => startCollect(row.id)}
             onSetPaid={handleSetPaid}
             pendingId={pendingId}
             busy={collecting || exporting || deleting}
@@ -837,7 +885,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
             checkedIds={checkedIds}
             onToggleChecked={toggleChecked}
             onSelect={onSelect}
-            onCollect={(row) => { setCollectError(null); setCollectTarget(row.id) }}
+            onCollect={(row) => startCollect(row.id)}
             onSetPaid={handleSetPaid}
             pendingId={pendingId}
             busy={collecting || exporting || deleting}

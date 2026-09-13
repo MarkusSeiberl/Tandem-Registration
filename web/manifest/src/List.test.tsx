@@ -438,6 +438,9 @@ describe('List', () => {
 
   it('counts a single written redemption the way the banner counts one', async () => {
     const user = userEvent.setup()
+    // A clean day with nobody named as Betriebsleiter would open the warning
+    // panel instead — not what this test is checking.
+    vi.mocked(api.dayManager).mockResolvedValue({ name: 'Max Muster' })
     vi.mocked(api.list).mockResolvedValue([])
     vi.mocked(api.exportDay).mockResolvedValue({
       path: 'C:/export/Tandem_2026-07-09.xlsx', count: 1,
@@ -556,6 +559,9 @@ describe('List', () => {
 
     it('exports straight away when the day is collected and paid for', async () => {
       const user = userEvent.setup()
+      // A clean day still needs its Betriebsleiter — without one, this test's
+      // own point (straight-away export) would not hold any more.
+      vi.mocked(api.dayManager).mockResolvedValue({ name: 'Max Muster' })
       vi.mocked(api.list).mockResolvedValue([
         makeRow({
           id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
@@ -568,6 +574,28 @@ describe('List', () => {
 
       expect(await screen.findByText(/Export erstellt/)).toBeInTheDocument()
       expect(screen.queryByText(/noch nicht kassiert/)).not.toBeInTheDocument()
+      expect(screen.queryByText(/Kein Betriebsleiter/)).not.toBeInTheDocument()
+    })
+
+    // The third reason the panel opens: a clean, fully paid day with nobody
+    // named as Betriebsleiter still must not export silently, because the
+    // sheet's BL line would come out blank.
+    it('warns instead of exporting when the day has no Betriebsleiter', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({
+          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
+        }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+
+      expect(await screen.findByText(
+        'Kein Betriebsleiter eingetragen. Die BL-Zeile im Blatt bliebe leer.'
+      )).toBeInTheDocument()
+      expect(api.exportDay).not.toHaveBeenCalled()
     })
 
     it('warns instead of exporting while tandems are still open', async () => {
@@ -693,6 +721,9 @@ describe('List', () => {
     // export's own total ignores it for the same reason.
     it('leaves a fully covered voucher alone', async () => {
       const user = userEvent.setup()
+      // Otherwise the missing Betriebsleiter would open the panel this test is
+      // not about.
+      vi.mocked(api.dayManager).mockResolvedValue({ name: 'Max Muster' })
       vi.mocked(api.list).mockResolvedValue([
         makeRow({
           id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'voucher',
@@ -722,6 +753,43 @@ describe('List', () => {
       expect(await screen.findByText(/Export erstellt/)).toBeInTheDocument()
       expect(api.exportDay).toHaveBeenCalledWith('2026-07-09')
       expect(screen.queryByText(/noch nicht kassiert/)).not.toBeInTheDocument()
+    })
+
+    // The label reads the live field, not the snapshot the panel opened on —
+    // a name typed while it stands has to be able to turn "Trotzdem
+    // exportieren" back into a plain "Exportieren".
+    it('drops the "Trotzdem" from the export button once a Betriebsleiter is set', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.dayManager).mockResolvedValue({ name: 'Max Muster' })
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({ id: 1, payment_method: 'cash', price: 270 }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+
+      expect(await screen.findByRole('button', { name: 'Exportieren' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Trotzdem exportieren' })).not.toBeInTheDocument()
+    })
+
+    // The panel opened only because the name was missing — the override still
+    // has to write the sheet once the operator says so anyway.
+    it('exports anyway from a panel opened only for the missing Betriebsleiter', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({
+          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
+        }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+      await user.click(await screen.findByRole('button', { name: 'Trotzdem exportieren' }))
+
+      expect(await screen.findByText(/Export erstellt/)).toBeInTheDocument()
+      expect(api.exportDay).toHaveBeenCalledWith('2026-07-09')
     })
 
     it('writes nothing when the operator cancels', async () => {

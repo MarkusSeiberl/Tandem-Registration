@@ -170,6 +170,13 @@ interface ExportWarning {
    * honest sentence instead of reading as twice the problem.
    */
   noPaymentOpen: number
+  /**
+   * Whether the day had no Betriebsleiter when the button was pressed. Only
+   * decides that the panel carries the name field — the warning sentence and
+   * the button's label read the live value, because the operator fixes this
+   * one inside the panel.
+   */
+  noManager: boolean
 }
 
 /** The panel's first line: what the day still has open, in words. */
@@ -249,7 +256,7 @@ function warningExplanation(w: ExportWarning): string {
  * bulk-collect loop's `freshRows`) can describe exactly that snapshot without
  * waiting for it to land back in `rows`.
  */
-function computeExportWarning(source: Registration[]): ExportWarning {
+function computeExportWarning(source: Registration[], noManager: boolean): ExportWarning {
   const open = source.filter((r) => r.paid_at == null)
   const noPayment = source.filter((r) => collectedVia(r) === null && (r.price ?? 0) > 0)
   return {
@@ -257,6 +264,7 @@ function computeExportWarning(source: Registration[]): ExportWarning {
     openVoucher: open.filter((r) => r.payment_method === 'voucher').length,
     noPayment: noPayment.length,
     noPaymentOpen: noPayment.filter((r) => r.paid_at == null).length,
+    noManager,
   }
 }
 
@@ -649,7 +657,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
       // The panel below is still open (it is what "Alle kassieren und
       // exportieren" hangs off) and must describe what the table now shows,
       // not the pre-collect count the operator originally pressed on.
-      setExportWarning(computeExportWarning(freshRows))
+      setExportWarning(computeExportWarning(freshRows, manager.trim() === ''))
       return
     } finally {
       setCollecting(false)
@@ -658,7 +666,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     // problem the panel warned about can still stand after "collect all". Ask
     // again rather than writing a sheet with the day's revenue parked under
     // "Summe ohne Zahlungsart".
-    const afterCollect = computeExportWarning(freshRows)
+    const afterCollect = computeExportWarning(freshRows, manager.trim() === '')
     if (afterCollect.noPayment > 0) {
       setExportWarning(afterCollect)
       return
@@ -670,7 +678,8 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // That includes the Betriebsleiter save inside runExport: a press that ends in
   // Abbrechen must leave the day exactly as it was.
   function handleExport() {
-    if (openRows.length === 0 && noPaymentRows.length === 0) {
+    const noManager = manager.trim() === ''
+    if (openRows.length === 0 && noPaymentRows.length === 0 && !noManager) {
       void runExport()
       return
     }
@@ -680,6 +689,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
       openVoucher: openVoucherRows.length,
       noPayment: noPaymentRows.length,
       noPaymentOpen: noPaymentOpenRows.length,
+      noManager,
     })
   }
 
@@ -704,6 +714,12 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
       setDeleting(false)
     }
   }
+
+  // Evaluated once so the panel below can decide whether to render each
+  // paragraph from the text itself, instead of asking warningCounts() /
+  // warningExplanation() twice and risking the two calls drifting apart.
+  const warningCountsText = exportWarning ? warningCounts(exportWarning) : ''
+  const warningExplanationText = exportWarning ? warningExplanation(exportWarning) : ''
 
   return (
     <div className="list-screen">
@@ -798,8 +814,16 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
 
       {exportWarning && (
         <div className="export-warning">
-          <p>{warningCounts(exportWarning)}</p>
-          <p>{warningExplanation(exportWarning)}</p>
+          {/* Lives on the live name, not the snapshot: the operator fixes this
+              one right here in the panel, so the sentence has to disappear the
+              moment the field does, not only on the next Tagesabschluss press. */}
+          {manager.trim() === '' && (
+            <p>Kein Betriebsleiter eingetragen. Die BL-Zeile im Blatt bliebe leer.</p>
+          )}
+          {/* On a clean day both of these are empty strings — rendering them
+              unconditionally would put two blank lines in the panel. */}
+          {warningCountsText && <p>{warningCountsText}</p>}
+          {warningExplanationText && <p>{warningExplanationText}</p>}
           <div className="export-warning-actions">
             {/* Only when there is something to collect — a button that would do
                 nothing promises an action the day does not have. */}
@@ -819,7 +843,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
               onClick={() => { void runExport() }}
               disabled={collecting || exporting}
             >
-              Trotzdem exportieren
+              {manager.trim() === '' ? 'Trotzdem exportieren' : 'Exportieren'}
             </button>
             <button
               type="button"

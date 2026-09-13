@@ -411,6 +411,13 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     }
   }
 
+  // Whether the day currently has nobody named as Betriebsleiter. Read fresh on
+  // every render, so the warning sentence, the button label and the re-checks
+  // after a bulk collect all agree with whatever stands in the field right
+  // now — only the snapshot in ExportWarning.noManager is meant to hold still
+  // once the panel is open.
+  const noManager = manager.trim() === ''
+
   const sortedRows = [...rows].sort((a, b) => (b.load_number ?? -1) - (a.load_number ?? -1))
   // Payment happens after the jump, so the open table is the working list and
   // the collected one is the archive of the day.
@@ -657,7 +664,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
       // The panel below is still open (it is what "Alle kassieren und
       // exportieren" hangs off) and must describe what the table now shows,
       // not the pre-collect count the operator originally pressed on.
-      setExportWarning(computeExportWarning(freshRows, manager.trim() === ''))
+      setExportWarning(computeExportWarning(freshRows, noManager))
       return
     } finally {
       setCollecting(false)
@@ -665,8 +672,11 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     // The bulk PATCH only stamps paid_at, never a Zahlungsart — so the second
     // problem the panel warned about can still stand after "collect all". Ask
     // again rather than writing a sheet with the day's revenue parked under
-    // "Summe ohne Zahlungsart".
-    const afterCollect = computeExportWarning(freshRows, manager.trim() === '')
+    // "Summe ohne Zahlungsart". The Betriebsleiter is deliberately left out of
+    // this re-check: collecting rows cannot have changed it, and the operator
+    // already saw the name warning and the field before pressing this button —
+    // going ahead without a name here is exactly the override the design grants.
+    const afterCollect = computeExportWarning(freshRows, noManager)
     if (afterCollect.noPayment > 0) {
       setExportWarning(afterCollect)
       return
@@ -678,7 +688,6 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // That includes the Betriebsleiter save inside runExport: a press that ends in
   // Abbrechen must leave the day exactly as it was.
   function handleExport() {
-    const noManager = manager.trim() === ''
     if (openRows.length === 0 && noPaymentRows.length === 0 && !noManager) {
       void runExport()
       return
@@ -715,9 +724,10 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     }
   }
 
-  // Evaluated once so the panel below can decide whether to render each
-  // paragraph from the text itself, instead of asking warningCounts() /
-  // warningExplanation() twice and risking the two calls drifting apart.
+  // Evaluated once so the JSX below can use the exact same value both to
+  // decide whether to render a paragraph and to fill it in — the condition and
+  // the text it guards have to be one value, not two separate calls to
+  // warningCounts() / warningExplanation() that happen to agree.
   const warningCountsText = exportWarning ? warningCounts(exportWarning) : ''
   const warningExplanationText = exportWarning ? warningExplanation(exportWarning) : ''
 
@@ -817,7 +827,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
           {/* Lives on the live name, not the snapshot: the operator fixes this
               one right here in the panel, so the sentence has to disappear the
               moment the field does, not only on the next Tagesabschluss press. */}
-          {manager.trim() === '' && (
+          {noManager && (
             <p>Kein Betriebsleiter eingetragen. Die BL-Zeile im Blatt bliebe leer.</p>
           )}
           {/* On a clean day both of these are empty strings — rendering them
@@ -860,7 +870,11 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
               onClick={() => { void runExport() }}
               disabled={collecting || exporting}
             >
-              {manager.trim() === '' ? 'Trotzdem exportieren' : 'Exportieren'}
+              {/* "Trotzdem" belongs on the button as long as anything the panel
+                  said is still true — a missing name, or a warning sentence
+                  still standing (open tandems, a missing Zahlungsart). Only
+                  once both are gone does the press stop being an override. */}
+              {(noManager || warningCountsText) ? 'Trotzdem exportieren' : 'Exportieren'}
             </button>
             <button
               type="button"

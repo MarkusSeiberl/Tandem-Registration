@@ -761,9 +761,32 @@ describe('List', () => {
     })
 
     // The label reads the live field, not the snapshot the panel opened on —
-    // a name typed while it stands has to be able to turn "Trotzdem
-    // exportieren" back into a plain "Exportieren".
-    it('drops the "Trotzdem" from the export button once a Betriebsleiter is set', async () => {
+    // typing a name while the panel stands turns "Trotzdem exportieren" back
+    // into a plain "Exportieren".
+    it('drops the "Trotzdem" from the export button once a name is typed into the panel', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({
+          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
+        }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+      expect(await screen.findByRole('button', { name: 'Trotzdem exportieren' })).toBeInTheDocument()
+
+      await user.type(within(panel()).getByLabelText('Betriebsleiter'), 'Max Muster')
+
+      expect(await screen.findByRole('button', { name: 'Exportieren' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Trotzdem exportieren' })).not.toBeInTheDocument()
+    })
+
+    // A name in the toolbar does not make the day clean — with a tandem still
+    // open, "Trotzdem exportieren" is the one cue that the click skips
+    // something, and that must not disappear just because the Betriebsleiter
+    // field happens to be filled in.
+    it('keeps saying "Trotzdem exportieren" for an open tandem even with a Betriebsleiter set', async () => {
       const user = userEvent.setup()
       vi.mocked(api.dayManager).mockResolvedValue({ name: 'Max Muster' })
       vi.mocked(api.list).mockResolvedValue([
@@ -774,8 +797,8 @@ describe('List', () => {
 
       await user.click(exportButton())
 
-      expect(await screen.findByRole('button', { name: 'Exportieren' })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Trotzdem exportieren' })).not.toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: 'Trotzdem exportieren' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Exportieren' })).not.toBeInTheDocument()
     })
 
     // The panel opened only because the name was missing — the override still

@@ -824,6 +824,23 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
               unconditionally would put two blank lines in the panel. */}
           {warningCountsText && <p>{warningCountsText}</p>}
           {warningExplanationText && <p>{warningExplanationText}</p>}
+          {/* Bound to the snapshot, not the live check above: the field must
+              not disappear out from under the operator's fingers the moment
+              the first letter clears the live warning sentence. It shares the
+              toolbar's manager state, so a letter typed here already stands
+              there too, and runExport() picks it up via the existing
+              saveManager() call — no save of its own. */}
+          {exportWarning.noManager && (
+            <label className="manager-field">
+              Betriebsleiter
+              <input
+                type="text"
+                value={manager}
+                onChange={(e) => setManager(e.target.value)}
+                disabled={collecting || exporting}
+              />
+            </label>
+          )}
           <div className="export-warning-actions">
             {/* Only when there is something to collect — a button that would do
                 nothing promises an action the day does not have. */}

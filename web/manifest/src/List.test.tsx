@@ -540,6 +540,11 @@ describe('List', () => {
   // written.
   describe('Export-Warnung', () => {
     const exportButton = () => screen.getByRole('button', { name: 'Tagesabschluss' })
+    // The panel's own Betriebsleiter field carries the same label as the one in
+    // the toolbar, so tests that need one or the other scope the query to its
+    // container instead of adding a test-only hook to the markup.
+    const panel = () => document.querySelector('.export-warning') as HTMLElement
+    const toolbar = () => document.querySelector('.list-toolbar') as HTMLElement
 
     beforeEach(() => {
       vi.clearAllMocks()
@@ -974,6 +979,90 @@ describe('List', () => {
 
       await waitFor(() =>
         expect(screen.queryByText(/noch nicht kassiert/)).not.toBeInTheDocument())
+    })
+
+    // The panel's field is bound to the same manager state as the toolbar, not
+    // a copy of its own — so a letter typed in one has to show up in the other
+    // immediately, without any save round-trip in between.
+    it('shows the typed name in the toolbar field too', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({
+          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
+        }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+      await user.type(within(panel()).getByLabelText('Betriebsleiter'), 'Max Muster')
+
+      expect(within(toolbar()).getByLabelText('Betriebsleiter')).toHaveValue('Max Muster')
+    })
+
+    // Pressing the panel's export button has to carry the name the operator
+    // just typed there — runExport() saves through the same saveManager() the
+    // toolbar's onBlur uses, so there is nothing left to write on top of it.
+    it('saves the name typed in the panel before exporting', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({
+          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
+        }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+      await user.type(within(panel()).getByLabelText('Betriebsleiter'), 'Max Muster')
+      await user.click(within(panel()).getByRole('button', { name: 'Exportieren' }))
+
+      await waitFor(() =>
+        expect(api.saveDayManager).toHaveBeenCalledWith('2026-07-09', 'Max Muster'))
+      expect(await screen.findByText(/Export erstellt/)).toBeInTheDocument()
+      expect(
+        vi.mocked(api.saveDayManager).mock.invocationCallOrder[0]
+      ).toBeLessThan(vi.mocked(api.exportDay).mock.invocationCallOrder[0])
+    })
+
+    // A panel that opened only because tandems are still open already has a
+    // Betriebsleiter — offering a second field there would ask again for
+    // nothing.
+    it('adds no Betriebsleiter field when the panel opened only for open tandems', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.dayManager).mockResolvedValue({ name: 'Max Muster' })
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({ id: 1, payment_method: 'cash', price: 270 }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+      await screen.findByText(/noch nicht kassiert/)
+
+      expect(within(panel()).queryAllByLabelText('Betriebsleiter')).toHaveLength(0)
+    })
+
+    // The field's presence is pinned to the snapshot the panel opened with, not
+    // the live value — otherwise it would vanish under the operator's fingers
+    // as soon as the warning sentence above it does.
+    it('keeps the field once the warning sentence is gone', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({
+          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
+        }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+      await user.type(within(panel()).getByLabelText('Betriebsleiter'), 'Max Muster')
+
+      expect(screen.queryByText(
+        'Kein Betriebsleiter eingetragen. Die BL-Zeile im Blatt bliebe leer.'
+      )).not.toBeInTheDocument()
+      expect(within(panel()).getByLabelText('Betriebsleiter')).toBeInTheDocument()
     })
   })
 

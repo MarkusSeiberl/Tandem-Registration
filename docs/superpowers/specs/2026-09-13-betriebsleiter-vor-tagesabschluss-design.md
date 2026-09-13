@@ -75,13 +75,19 @@ nicht beim ersten Buchstaben weg und nimmt dem Finger das Ziel. Der Warnsatz
 verschwindet dagegen, sobald etwas im Feld steht; er wäre sonst nachweislich
 falsch.
 
-Ebenso die Beschriftung des Export-Buttons:
+Ebenso die Beschriftung des Export-Buttons — aber nicht am Namen allein. Vor
+diesem Feature ging das Panel nur wegen der Zeilen auf, und der Button hieß
+darum immer `Trotzdem exportieren`. Hinge die Beschriftung jetzt nur am Namen,
+verlöre der gefährlichste Knopf des Bildschirms seinen Warnton, sobald ein
+Betriebsleiter eingetragen ist — neben dem Satz „2 Tandems sind noch nicht
+kassiert." stünde dann ein harmloses `Exportieren`. Also:
 
-- `manager.trim() === ''` → `Trotzdem exportieren` (wie heute)
-- sonst → `Exportieren`
+- irgendeine Warnung steht (kein Name **oder** ein Zeilen-Warntext) →
+  `Trotzdem exportieren`
+- nichts mehr zu warnen (Name getippt, keine Zeilen-Warnung) → `Exportieren`
 
-Ein Druck auf einen Button, der „trotzdem" sagt, während oben ein Name steht,
-würde eine Warnung behaupten, die es nicht mehr gibt.
+Ein Druck auf einen Button, der „trotzdem" sagt, während nichts mehr offen ist,
+würde eine Warnung behaupten, die es nicht mehr gibt — und umgekehrt.
 
 ## Was sich sonst nicht ändert
 
@@ -107,7 +113,8 @@ würde eine Warnung behaupten, die es nicht mehr gibt.
 4. Export aus dem Panel ruft `saveDayManager` mit dem getippten Namen und
    danach `exportDay`.
 5. Button heißt `Trotzdem exportieren`, solange das Feld leer ist, und
-   `Exportieren`, sobald etwas darin steht.
+   `Exportieren`, sobald etwas darin steht — aber weiter `Trotzdem
+   exportieren`, wenn noch ein Zeilen-Warntext danebensteht.
 6. Leer gelassen exportiert weiter (Override bleibt).
 
 Die bestehenden Tests des Blocks mocken `api.dayManager` mit `{ name: '' }`;

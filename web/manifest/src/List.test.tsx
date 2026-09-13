@@ -1078,22 +1078,74 @@ describe('List', () => {
         expect(api.patch).toHaveBeenCalledWith(1, { paid: true, voucher_payment_method: 'card' }))
     })
 
-    it('writes no payment method for a fully covered voucher', async () => {
+    // Nothing is owed, so there is no till to name: the dialog would only ask for
+    // a Zahlungsart that the loop then refuses to write. It is skipped entirely.
+    it('collects fully covered vouchers without asking for a Zahlungsart', async () => {
+      const user = userEvent.setup()
+      const anna = makeRow({
+        id: 1, first_name: 'Anna', last_name: 'Muster', price: 0, payment_method: 'voucher',
+      })
+      const bruno = makeRow({
+        id: 2, first_name: 'Bruno', last_name: 'Beispiel', price: 0, payment_method: 'voucher',
+      })
+      vi.mocked(api.list).mockResolvedValue([anna, bruno])
+      vi.mocked(api.patch).mockImplementation(async (id) => ({
+        ...(id === 1 ? anna : bruno), paid_at: '2026-07-09T12:00:00.000Z',
+      }))
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(checkbox('Anna Muster'))
+      await user.click(checkbox('Bruno Beispiel'))
+      await user.click(collectToolbarButton())
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      await waitFor(() => expect(api.patch).toHaveBeenCalledTimes(2))
+      expect(api.patch).toHaveBeenCalledWith(1, { paid: true })
+      expect(api.patch).toHaveBeenCalledWith(2, { paid: true })
+      await waitFor(() =>
+        expect(within(paidTable()).getByText('Anna Muster')).toBeInTheDocument())
+      // Both rows left the open table and the selection with it.
+      expect(screen.queryByRole('button', { name: /^Ausgewählte löschen/ }))
+        .not.toBeInTheDocument()
+    })
+
+    it('still asks when one of the checked rows owes something', async () => {
+      const user = userEvent.setup()
+      const anna = makeRow({
+        id: 1, first_name: 'Anna', last_name: 'Muster', price: 0, payment_method: 'voucher',
+      })
+      const bruno = makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', price: 270 })
+      vi.mocked(api.list).mockResolvedValue([anna, bruno])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(checkbox('Anna Muster'))
+      await user.click(checkbox('Bruno Beispiel'))
+      await user.click(collectToolbarButton())
+
+      expect(within(dialog()).getByLabelText('Zahlungsart')).toBeInTheDocument()
+      expect(api.patch).not.toHaveBeenCalled()
+    })
+
+    // No dialog is open to carry the message, so it has to land on the page.
+    it('reports a failed silent collect on the page', async () => {
       const user = userEvent.setup()
       const row = makeRow({
         id: 1, first_name: 'Anna', last_name: 'Muster', price: 0, payment_method: 'voucher',
       })
       vi.mocked(api.list).mockResolvedValue([row])
-      vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: '2026-07-09T12:00:00.000Z' })
+      vi.mocked(api.patch).mockRejectedValue(new Error('Kassieren fehlgeschlagen'))
       renderList({ date: '2026-07-09' })
       await screen.findByText('Anna Muster')
 
       await user.click(checkbox('Anna Muster'))
       await user.click(collectToolbarButton())
-      await user.selectOptions(within(dialog()).getByLabelText('Zahlungsart'), 'cash')
-      await user.click(within(dialog()).getByRole('button', { name: 'Kassieren' }))
 
-      await waitFor(() => expect(api.patch).toHaveBeenCalledWith(1, { paid: true }))
+      expect(await screen.findByText('Kassieren fehlgeschlagen')).toBeInTheDocument()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      // The row is still open and still checked, so a retry runs over it again.
+      expect(checkbox('Anna Muster')).toBeChecked()
     })
 
     it('closes the dialog and clears the selection after a successful run', async () => {
@@ -1354,6 +1406,28 @@ describe('List', () => {
 
       await waitFor(() =>
         expect(api.patch).toHaveBeenCalledWith(1, { paid: true, voucher_payment_method: 'cash' }))
+    })
+
+    it('collects a fully covered row without asking for a Zahlungsart', async () => {
+      const user = userEvent.setup()
+      const anna = makeRow({
+        id: 1, first_name: 'Anna', last_name: 'Muster', price: 0, payment_method: 'voucher',
+      })
+      const bruno = makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', price: 270 })
+      vi.mocked(api.list).mockResolvedValue([anna, bruno])
+      vi.mocked(api.patch).mockResolvedValue({ ...anna, paid_at: '2026-07-09T12:00:00.000Z' })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(checkbox('Anna Muster'))
+      await user.click(checkbox('Bruno Beispiel'))
+      await user.click(rowCollectButton('Anna Muster'))
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      await waitFor(() => expect(api.patch).toHaveBeenCalledTimes(1))
+      expect(api.patch).toHaveBeenCalledWith(1, { paid: true })
+      // Bruno still owes and stays checked; only the collected row left.
+      expect(checkbox('Bruno Beispiel')).toBeChecked()
     })
 
     it('keeps the dialog open with the message when the PATCH fails', async () => {

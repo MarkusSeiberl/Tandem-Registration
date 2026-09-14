@@ -888,6 +888,13 @@ h2 {
   line-height: 1.45;
 }
 
+/* The panel's own Betriebsleiter field has no paragraph around it to carry
+   .export-warning p's margin-bottom, so without this it would butt straight
+   into the button row below. */
+.export-warning .manager-field {
+  margin-bottom: 8px;
+}
+
 .export-warning-actions {
   display: flex;
   gap: 8px;

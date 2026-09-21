@@ -595,7 +595,7 @@ export async function fetchLatestRelease(fetcher?: Fetcher): Promise<Release | n
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateGithub.test.ts`
-Expected: PASS, 14 tests.
+Expected: PASS, 13 tests.
 
 - [ ] **Step 5: Commit**
 

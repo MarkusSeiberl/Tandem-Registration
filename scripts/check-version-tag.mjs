@@ -5,7 +5,7 @@
 import { execFileSync } from 'child_process'
 import { readFileSync } from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -33,7 +33,11 @@ export function currentTag() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`.replace(/\\/g, '/')) {
+// Manual file:// string-building breaks on Windows: import.meta.url gets a
+// third slash after the scheme (file:///C:/...) that a naive template
+// literal never adds, so the comparison was always false and the guard
+// silently never ran. pathToFileURL normalizes both sides the same way.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
   const problem = versionMismatch(pkg.version, currentTag())
   if (problem) {

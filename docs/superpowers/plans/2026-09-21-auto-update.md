@@ -301,6 +301,7 @@ git commit -m "feat(update): das Programm kennt seine eigene Version"
 - Consumes: `APP_VERSION` (Task 1).
 - Produces:
   ```ts
+  /** GitHub's /releases/latest, or process.env.TANDEM_RELEASE_URL when set. */
   export const RELEASE_URL: string
   export const EXE_NAME = 'tandem.exe'
   export const NATIVE_NAME = 'better_sqlite3.node'
@@ -398,6 +399,24 @@ describe('parseRelease', () => {
   })
 })
 
+describe('RELEASE_URL', () => {
+  it('is GitHub by default', () => {
+    expect(RELEASE_URL).toContain('api.github.com')
+  })
+
+  // The manual staging test (build.md) points a real packaged exe at a fake
+  // release on 127.0.0.1. Without this it would have to edit the source and
+  // remember to change it back before the next build.
+  it('can be pointed elsewhere for the staging test', async () => {
+    vi.stubEnv('TANDEM_RELEASE_URL', 'http://127.0.0.1:8099/latest')
+    vi.resetModules()
+    const fresh = await import('../src/server/update/github')
+    expect(fresh.RELEASE_URL).toBe('http://127.0.0.1:8099/latest')
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
+})
+
 describe('fetchLatestRelease', () => {
   it('asks GitHub for the latest release', async () => {
     const fetcher = vi.fn().mockResolvedValue({
@@ -431,8 +450,13 @@ Expected: FAIL — `Failed to resolve import "../src/server/update/github"`
 - [ ] **Step 3: Write `src/server/update/github.ts`**
 
 ```ts
-export const RELEASE_URL =
+const GITHUB_LATEST =
   'https://api.github.com/repos/MarkusSeiberl/Tandem-Registration/releases/latest'
+
+// Overridable so the manual staging test (build.md) can point a real packaged
+// exe at a fake release on 127.0.0.1 — without editing this file and having to
+// remember to change it back before a build goes out. Unset in every normal run.
+export const RELEASE_URL = process.env.TANDEM_RELEASE_URL || GITHUB_LATEST
 
 // The two files a release must carry. Exactly these names — copy-native-binary
 // and build-exe produce them, and install.ts renames them in place.
@@ -540,7 +564,7 @@ export async function fetchLatestRelease(fetcher?: Fetcher): Promise<Release | n
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateGithub.test.ts`
-Expected: PASS, 12 tests.
+Expected: PASS, 14 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1406,6 +1430,7 @@ git commit -m "feat(update): beide Dateien laden und die Pruefsumme pruefen"
     spawnDetached: (exePath: string) => { kill: () => void }
     waitForHealth: (timeoutMs: number) => Promise<boolean>
     exit: (code: number) => void
+    /** Default 90 s — an unsigned 114 MB exe can sit in a Defender scan first. */
     healthTimeoutMs?: number
   }
   export function installUpdate(deps: InstallDeps): Promise<void>
@@ -1683,7 +1708,10 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
   }
 
   const child = deps.spawnDetached(exePath)
-  const healthy = await deps.waitForHealth(deps.healthTimeoutMs ?? 30_000)
+  // 90 s, not 30: Windows Defender can scan a freshly written, unsigned 114 MB
+  // binary before it is allowed to run. A genuinely broken exe fails in seconds
+  // anyway, so the long wait only ever costs us in the rare real failure.
+  const healthy = await deps.waitForHealth(deps.healthTimeoutMs ?? 90_000)
 
   if (healthy) {
     for (const [, old] of PAIRS) fs.rmSync(path.join(dir, old), { force: true })
@@ -2125,6 +2153,7 @@ git commit -m "feat(update): Release-Notes als React-Elemente rendern"
   export function installUpdate(): Promise<void>
   export function markUpdatePromptSeen(): Promise<void>
   export function serverAlive(): Promise<boolean>
+  export function reloadPage(): void
   // useEvents.ts
   export function useUpdateEvents(enabled: boolean, onStatus: (s: UpdateStatus) => void): void
   // setupTests.ts
@@ -2260,6 +2289,13 @@ export async function serverAlive(): Promise<boolean> {
     return false
   }
 }
+
+// A seam, not a wrapper for its own sake: jsdom makes window.location
+// non-configurable, so a test cannot spy on it. Going through here lets the
+// update screen's restart path be tested like any other api call.
+export function reloadPage(): void {
+  window.location.reload()
+}
 ```
 
 - [ ] **Step 4: Verify types and the existing suite**
@@ -2316,6 +2352,7 @@ vi.mock('./api', () => ({
   startUpdateDownload: vi.fn(),
   installUpdate: vi.fn(),
   serverAlive: vi.fn(),
+  reloadPage: vi.fn(),
 }))
 
 const status = (over: Partial<UpdateStatus> = {}): UpdateStatus => ({
@@ -2379,13 +2416,20 @@ describe('Update', () => {
     confirmSpy.mockRestore()
   })
 
+  // jsdom makes window.location non-configurable, so the reload goes through
+  // api.reloadPage — a seam that can be mocked like every other call here.
   it('waits for the restarted server and then reloads', async () => {
     vi.mocked(api.serverAlive).mockResolvedValueOnce(false).mockResolvedValue(true)
-    const reload = vi.fn()
-    vi.spyOn(window, 'location', 'get').mockReturnValue({ reload } as unknown as Location)
     render(<Update status={status({ phase: 'installing' })} onRefresh={vi.fn()} />)
     expect(screen.getByText(/startet neu/)).toBeInTheDocument()
-    await waitFor(() => expect(reload).toHaveBeenCalled(), { timeout: 5000 })
+    await waitFor(() => expect(api.reloadPage).toHaveBeenCalled(), { timeout: 5000 })
+  })
+
+  it('keeps waiting while the new server is still down', async () => {
+    vi.mocked(api.serverAlive).mockResolvedValue(false)
+    render(<Update status={status({ phase: 'installing' })} onRefresh={vi.fn()} />)
+    await waitFor(() => expect(api.serverAlive).toHaveBeenCalled())
+    expect(api.reloadPage).not.toHaveBeenCalled()
   })
 
   it('shows a failed download with a way to try again', async () => {
@@ -2416,7 +2460,7 @@ Expected: FAIL — `Failed to resolve import "./Update"`
 
 ```tsx
 import { useEffect, useState } from 'react'
-import { installUpdate, serverAlive, startUpdateDownload } from './api'
+import { installUpdate, reloadPage, serverAlive, startUpdateDownload } from './api'
 import type { UpdateStatus } from './api'
 import { Markdown } from './markdown'
 
@@ -2440,7 +2484,7 @@ export default function Update({ status, onRefresh }: UpdateProps) {
     const poll = async () => {
       if (stopped) return
       if (await serverAlive()) {
-        window.location.reload()
+        reloadPage()
         return
       }
       window.setTimeout(poll, 1000)
@@ -2590,7 +2634,7 @@ die `.sidebar-bottom` schon befolgt:
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npm --prefix web/manifest test -- Update`
-Expected: PASS, 8 tests.
+Expected: PASS, 9 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -2974,9 +3018,13 @@ cp dist/tandem.exe dist/better_sqlite3.node /c/Temp/tandem-updatetest/
 Bump `package.json` to `1.1.1`, run `npm run build:server && npm run build:exe`
 again, and copy that second pair somewhere else — it becomes the "release".
 Serve it, together with a release JSON that carries the real sha256 of both
-files, from a local static server. Point the exe at it by temporarily changing
-`RELEASE_URL` in `src/server/update/github.ts` to `http://127.0.0.1:8099/latest`
-and rebuilding the staged 1.1.0 exe. **Revert that line before committing.**
+files, from a local static server. Point the exe at it through the environment
+— no source edit, nothing to revert:
+
+```
+set TANDEM_RELEASE_URL=http://127.0.0.1:8099/latest
+C:\Temp\tandem-updatetest\tandem.exe
+```
 
 The sha256 of each file:
 
@@ -3045,16 +3093,23 @@ Version aus `package.json` als `__APP_VERSION__` in das Bundle.
 Die Release-Notes werden im Manifest angezeigt. Unterstützt sind `##`/`###`,
 `**fett**`, `` `code` `` und `-`-Listen — alles andere erscheint als Text.
 
+**Gegen ein echtes Release testen, ohne eines zu veröffentlichen:**
+`TANDEM_RELEASE_URL` auf eine lokal ausgelieferte Kopie der GitHub-Antwort
+setzen. Ohne die Variable fragt das Programm immer GitHub.
+
 **Was das Programm beim Start aufräumt:** `tandem.old.exe`,
 `better_sqlite3.old.node` (Rückroll-Kopien eines geglückten Updates),
 `*.new` (abgebrochene Downloads) und `update-failed.json` (der Grund eines
 gescheiterten Versuchs, wird einmal angezeigt).
 ````
 
-- [ ] **Step 6: Make sure the staging edit is gone**
+- [ ] **Step 6: Make sure nothing from the staging run is left**
 
-Run: `git diff src/server/update/github.ts`
-Expected: empty — `RELEASE_URL` points at GitHub again.
+Run: `git status --porcelain src/ scripts/`
+Expected: empty — the staging test ran entirely through
+`TANDEM_RELEASE_URL` and a temp folder, so no source file was touched. Also
+unset the variable in that shell (`set TANDEM_RELEASE_URL=`) before doing
+anything else with a packaged exe.
 
 - [ ] **Step 7: Full suite, both halves, one last time**
 
@@ -3075,7 +3130,7 @@ git commit -m "docs(update): Selbstupdate und Release-Checkliste in build.md"
 Diese bleiben nach dem Plan bestehen und sind bewusst nicht gelöst:
 
 - **Das Exe ist nicht signiert.** Defender kann ein frisch geschriebenes
-  114-MB-Binary erst scannen, bevor es startet. Die 30 s in `waitForHealth`
+  114-MB-Binary erst scannen, bevor es startet. Die 90 s in `waitForHealth`
   sind darauf ausgelegt; ein sehr langsamer Rechner kann sie trotzdem reißen und
   einen unnötigen Rückroll auslösen. Falls das in der Praxis passiert, ist die
   Zahl der erste Hebel, eine Code-Signatur der zweite.

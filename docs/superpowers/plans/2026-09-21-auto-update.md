@@ -148,6 +148,26 @@ describe('check-version-tag', () => {
 })
 ```
 
+**Der reine Vergleich reicht nicht.** Die Zeile, die tatsächlich entscheidet,
+ob der Build abbricht, ist der Main-Module-Guard am Ende des Skripts — und
+genau dort saß in der ersten Fassung dieses Plans ein Fehler, den kein Test
+gesehen hat, weil keiner das Skript als Prozess gestartet hat. Also zusätzlich
+ein Test, der `check-version-tag.mjs` per `execFileSync` in einem frisch
+angelegten Git-Repo unter `os.tmpdir()` laufen lässt und den **Exit-Code**
+prüft:
+
+- Version passt zum Tag auf HEAD → Exit 0
+- Version passt nicht → Exit ≠ 0, und stderr nennt beide Zahlen
+- HEAD trägt gar keinen Tag → Exit 0
+
+Die Fixture-Commits brauchen `git -c user.email=… -c user.name=…`, damit der
+Test nicht von der globalen Git-Konfiguration abhängt.
+
+Dazu `tests/version.test.ts` für `src/server/version.ts`: `fromPackageJson`
+liest aus `process.cwd()` — ein Verzeichniswechsel im Test treibt beide Fälle,
+die lesbare `package.json` und den Rückfall auf `'0.0.0'` bei fehlender oder
+kaputter Datei.
+
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/checkVersionTag.test.ts`
@@ -163,7 +183,7 @@ Expected: FAIL — `Cannot find module '../scripts/check-version-tag.mjs'`
 import { execFileSync } from 'child_process'
 import { readFileSync } from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -191,7 +211,11 @@ export function currentTag() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`.replace(/\\/g, '/')) {
+// pathToFileURL, not a hand-built `file://` + slash swap: on Windows the latter
+// produces `file://C:/…` where import.meta.url is `file:///C:/…`, so the guard
+// never fires, the check never runs, and build:exe exits 0 through any
+// mismatch — silently. Measured on Windows 11 / Node 24 before this was fixed.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
   const problem = versionMismatch(pkg.version, currentTag())
   if (problem) {
@@ -272,10 +296,17 @@ console.log(`[tandem] dist/server.cjs gebaut, Version ${pkg.version}`)
 "build:exe": "node scripts/check-version-tag.mjs && node scripts/check-native-binary.mjs && node scripts/build-exe.mjs && node scripts/patch-subsystem.mjs && node scripts/patch-version-info.mjs && node scripts/copy-native-binary.mjs",
 ```
 
-- [ ] **Step 8: Verify the bundle still builds and carries the version**
+- [ ] **Step 8: Verify the bundle still builds**
 
-Run: `npm run build:server && node -e "const s=require('fs').readFileSync('dist/server.cjs','utf8'); console.log(s.includes('\"1.1.0\"') ? 'VERSION IN BUNDLE' : 'MISSING')"`
-Expected: `[tandem] dist/server.cjs gebaut, Version 1.1.0` then `VERSION IN BUNDLE`
+Run: `npm run build:server`
+Expected: `[tandem] dist/server.cjs gebaut, Version 1.1.0`, and `dist/server.cjs`
+is written.
+
+Dass die Zahl auch *im* Bundle landet, lässt sich hier noch nicht prüfen:
+esbuild liest nur Dateien, die vom Einstiegspunkt aus erreichbar sind, und
+`version.ts` importiert bis Task 4 niemand. Der `define` hat also noch nichts
+zu ersetzen. Die Prüfung steht in Task 4, Step 7 — dort importiert
+`routes/update.ts` als erster `APP_VERSION`.
 
 - [ ] **Step 9: Run the whole server suite and the type check**
 
@@ -1131,12 +1162,21 @@ with `import type { UpdateControls } from '../../src/server/routes/update'` at t
 Run: `npx vitest run tests/update-route.test.ts`
 Expected: PASS, 7 tests.
 
-- [ ] **Step 7: Run the whole suite — nothing else may move**
+- [ ] **Step 7: Verify the version really lands in the bundle**
+
+`routes/update.ts` ist der erste Importeur von `APP_VERSION`, also erreicht
+esbuild `version.ts` ab jetzt und der `define` aus Task 1 hat etwas zu
+ersetzen. Das ist die Prüfung, die in Task 1 noch nicht möglich war.
+
+Run: `npm run build:server && node -e "const s=require('fs').readFileSync('dist/server.cjs','utf8'); console.log(s.includes('__APP_VERSION__') ? 'FAIL: define not substituted' : s.includes('1.1.0') ? 'VERSION IN BUNDLE' : 'FAIL: version missing')"`
+Expected: `[tandem] dist/server.cjs gebaut, Version 1.1.0` then `VERSION IN BUNDLE`
+
+- [ ] **Step 8: Run the whole suite — nothing else may move**
 
 Run: `npm test && npx tsc -b`
 Expected: all green.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add src/server/routes/update.ts src/server/index.ts tests/update-route.test.ts tests/helpers/testServer.ts

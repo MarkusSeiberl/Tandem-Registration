@@ -37,6 +37,26 @@ describe('compareVersions', () => {
   it('treats a missing part as zero', () => {
     expect(compareVersions('1.2', '1.2.0')).toBe(0)
   })
+
+  // These four are all measured bugs in the naive `Number(n) || 0` version:
+  // every one of them used to come back 0 (equal), which for the update
+  // checker means "no update available" -- silently, and for the wrong
+  // reason each time.
+  it('refuses a pre-release suffix instead of treating it as equal', () => {
+    expect(() => compareVersions('1.2.0-beta', '1.2.0')).toThrow()
+  })
+
+  it('refuses a pre-release suffix on either operand', () => {
+    expect(() => compareVersions('1.2.0', '1.2.0-beta')).toThrow()
+  })
+
+  it('does not silently drop a fourth version segment', () => {
+    expect(compareVersions('1.2.0.5', '1.2.0')).toBeGreaterThan(0)
+  })
+
+  it('refuses a non-numeric segment instead of treating it as equal', () => {
+    expect(() => compareVersions('1.2.x', '1.2.0')).toThrow()
+  })
 })
 
 describe('parseRelease', () => {
@@ -58,8 +78,29 @@ describe('parseRelease', () => {
     expect(parseRelease(payload({ assets }))).toBeNull()
   })
 
-  it('refuses an asset without a sha256 digest', () => {
-    const assets = payload().assets.map((a) => ({ ...a, digest: null }))
+  // Split by asset rather than blanking both digests at once: `.map(asAsset)`
+  // validates each asset uniformly today, but a test that breaks both assets
+  // together would not notice a bug that checked only one of them.
+  it('refuses a release whose exe asset has no sha256 digest', () => {
+    const assets = payload().assets.map((a) => (
+      a.name === 'tandem.exe' ? { ...a, digest: null } : a
+    ))
+    expect(parseRelease(payload({ assets }))).toBeNull()
+  })
+
+  it('refuses a release whose native asset has no sha256 digest', () => {
+    const assets = payload().assets.map((a) => (
+      a.name === 'better_sqlite3.node' ? { ...a, digest: null } : a
+    ))
+    expect(parseRelease(payload({ assets }))).toBeNull()
+  })
+
+  it('refuses an asset whose download URL is not https', () => {
+    const assets = payload().assets.map((a) => (
+      a.name === 'tandem.exe'
+        ? { ...a, browser_download_url: 'http://example.invalid/tandem.exe' }
+        : a
+    ))
     expect(parseRelease(payload({ assets }))).toBeNull()
   })
 
@@ -112,5 +153,34 @@ describe('fetchLatestRelease', () => {
       ok: false, status: 403, json: async () => ({}),
     })
     await expect(fetchLatestRelease(fetcher)).resolves.toBeNull()
+  })
+
+  // A payload whose `assets` getter throws stands in for a future bug inside
+  // parseRelease: something in our own code breaking while reading the
+  // response, as opposed to the network never answering at all. Both must
+  // resolve to null (an update-checker must never crash the caller), but the
+  // log line must say which one happened -- "no internet" must not be the
+  // cover story for a parsing bug.
+  it('reports a parsing failure differently from a transport failure', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const brokenPayload = {
+      tag_name: 'v1.2.0',
+      body: '',
+      get assets(): unknown[] {
+        throw new Error('boom: parseRelease bug')
+      },
+    }
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => brokenPayload,
+    })
+
+    await expect(fetchLatestRelease(fetcher)).resolves.toBeNull()
+
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    const [message] = errorSpy.mock.calls[0]
+    expect(message).toContain('Programmfehler')
+    expect(message).not.toContain('Update-Abfrage fehlgeschlagen')
+
+    errorSpy.mockRestore()
   })
 })

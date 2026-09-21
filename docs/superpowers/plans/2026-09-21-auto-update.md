@@ -755,6 +755,19 @@ describe('UpdateState', () => {
     const state = new UpdateState('1.1.0', 'disabled')
     expect(state.get().phase).toBe('disabled')
   })
+
+  // compareVersions throws on a version part it cannot parse, and APP_VERSION
+  // comes out of package.json unvalidated. A build mistake must not take the
+  // jump day down, and must not leave the state stuck in 'checking' — the
+  // sidebar entry and the dialog both wait on a resolved phase.
+  it('survives an unparsable local version', () => {
+    const state = new UpdateState('1.2.0-beta')
+    state.beginCheck()
+    expect(() => state.foundRelease(release('1.3.0'), true)).not.toThrow()
+    expect(state.get().phase).toBe('check-failed')
+    expect(state.promptPending).toBe(false)
+    expect(state.release).toBeNull()
+  })
 })
 ```
 
@@ -832,7 +845,22 @@ export class UpdateState {
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
-    if (compareVersions(release.version, this.status.currentVersion) <= 0) {
+    // compareVersions throws on a version part it cannot parse. The release
+    // tag is already gated by parseRelease's regex; the other operand is
+    // APP_VERSION out of package.json and is not. A malformed local version is
+    // a build mistake, not something the operator can fix at the landing site,
+    // so it must never take the jump day down or strand the state in
+    // 'checking' — it becomes an ordinary failed check, loud in the log.
+    let newer: number
+    try {
+      newer = compareVersions(release.version, this.status.currentVersion)
+    } catch (err) {
+      console.error('[tandem] Versionsvergleich fehlgeschlagen:', err)
+      this.release = null
+      this.patch({ phase: 'check-failed', checkedAt, error: null })
+      return
+    }
+    if (newer <= 0) {
       this.release = null
       this.patch({ phase: 'up-to-date', latestVersion: release.version, checkedAt })
       return
@@ -858,7 +886,7 @@ export class UpdateState {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateState.test.ts`
-Expected: PASS, 10 tests.
+Expected: PASS, 11 tests.
 
 - [ ] **Step 5: Commit**
 

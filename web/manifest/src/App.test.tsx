@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import App from './App'
 import * as api from './api'
 import { today } from './date'
+import { fireUpdateEvent } from './setupTests'
 
 // The whole app tree is mounted here, so the module is kept and only the calls
 // this test drives are replaced — a hand-written list of exports would need a
@@ -15,6 +16,11 @@ vi.mock('./api', async (importOriginal) => ({
   pendingRedemptions: vi.fn(),
   shutdownAllowed: vi.fn(),
   shutdownApp: vi.fn(),
+  getUpdateStatus: vi.fn(),
+  checkForUpdate: vi.fn(),
+  startUpdateDownload: vi.fn(),
+  installUpdate: vi.fn(),
+  markUpdatePromptSeen: vi.fn(),
 }))
 
 const dateInput = () => screen.getByLabelText('Datum') as HTMLInputElement
@@ -26,6 +32,10 @@ beforeEach(() => {
   vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 0 })
   vi.mocked(api.shutdownAllowed).mockResolvedValue({ allowed: true })
   vi.mocked(api.shutdownApp).mockResolvedValue(undefined)
+  // Default: an older server with no update routes. App's own describe block
+  // below overrides this per test; every other test here should behave as if
+  // updates do not exist — no entry, no dialog, nothing to await.
+  vi.mocked(api.getUpdateStatus).mockRejectedValue(new Error('not found'))
   vi.spyOn(window, 'confirm').mockReturnValue(false)
 })
 
@@ -132,5 +142,80 @@ describe('App', () => {
 
     expect(dateInput().value).toBe(today())
     expect(screen.getByRole('button', { name: 'Heute' })).toBeDisabled()
+  })
+})
+
+const updateStatus = (over = {}) => ({
+  phase: 'available', currentVersion: '1.1.0', latestVersion: '1.2.0',
+  notes: null, downloadedBytes: 0, totalBytes: 0, error: null,
+  checkedAt: null, allowed: true, promptPending: false, openToday: 0,
+  ...over,
+})
+
+describe('App und das Update', () => {
+  beforeEach(() => {
+    // clearAllMocks resets call history only (implementations set by the
+    // outer beforeEach, e.g. api.list, survive it) — without this, a later
+    // test's toHaveBeenCalledTimes(1) would also count an earlier test's call.
+    vi.clearAllMocks()
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(updateStatus())
+    vi.mocked(api.markUpdatePromptSeen).mockResolvedValue()
+    vi.mocked(api.startUpdateDownload).mockResolvedValue()
+  })
+
+  it('shows the sidebar entry once an update is available', async () => {
+    render(<App />)
+    expect(await screen.findByRole('button', { name: /Update/ })).toBeInTheDocument()
+  })
+
+  // The manifest runs on every tablet in the club WLAN; only the machine the
+  // server runs on can do anything about an update.
+  it('hides the entry from a device that may not act', async () => {
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(updateStatus({ allowed: false }))
+    render(<App />)
+    await screen.findByRole('button', { name: 'Manifest' })
+    expect(screen.queryByRole('button', { name: /Update/ })).toBeNull()
+  })
+
+  it('shows no entry while everything is up to date', async () => {
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(
+      updateStatus({ phase: 'up-to-date', latestVersion: '1.1.0' }),
+    )
+    render(<App />)
+    await screen.findByRole('button', { name: 'Manifest' })
+    expect(screen.queryByRole('button', { name: /Update/ })).toBeNull()
+  })
+
+  it('opens the dialog exactly when the server says it is pending', async () => {
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(updateStatus({ promptPending: true }))
+    render(<App />)
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('starts the download and opens the screen on yes', async () => {
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(updateStatus({ promptPending: true }))
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Jetzt aktualisieren' }))
+    expect(api.markUpdatePromptSeen).toHaveBeenCalledTimes(1)
+    expect(api.startUpdateDownload).toHaveBeenCalledTimes(1)
+    expect(await screen.findByRole('heading', { name: 'Update' })).toBeInTheDocument()
+  })
+
+  it('only marks the dialog seen on later', async () => {
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(updateStatus({ promptPending: true }))
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Später' }))
+    expect(api.markUpdatePromptSeen).toHaveBeenCalledTimes(1)
+    expect(api.startUpdateDownload).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  // Progress must not cost one request per percent.
+  it('redraws from the pushed status', async () => {
+    render(<App />)
+    await screen.findByRole('button', { name: /Update/ })
+    fireUpdateEvent({ ...updateStatus({ phase: 'downloading', downloadedBytes: 5, totalBytes: 10 }) })
+    await userEvent.click(screen.getByRole('button', { name: /Update/ }))
+    expect(await screen.findByRole('progressbar')).toBeInTheDocument()
   })
 })

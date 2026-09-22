@@ -3,13 +3,18 @@ import List from './List'
 import Detail from './Detail'
 import Stammdaten from './Stammdaten'
 import Settings from './Settings'
+import Update from './Update'
+import UpdateDialog from './UpdateDialog'
 import BrandMark from './BrandMark'
 import Urkunde from './Urkunde'
 import type { Registration } from './api'
 import { shutdownAllowed, shutdownApp } from './api'
+import { getUpdateStatus, markUpdatePromptSeen, startUpdateDownload } from './api'
+import type { UpdatePhase, UpdateStatus } from './api'
+import { useUpdateEvents } from './useEvents'
 import { rememberDate, storedDate } from './date'
 
-type View = 'list' | 'detail' | 'stammdaten' | 'settings'
+type View = 'list' | 'detail' | 'stammdaten' | 'settings' | 'update'
 
 function App() {
   const [view, setView] = useState<View>('list')
@@ -31,6 +36,50 @@ function App() {
         // offering an action that cannot work.
       })
   }, [])
+
+  // The update status is fetched once and then pushed: a 114 MB download would
+  // otherwise cost one request per percent, from every open manifest.
+  const [update, setUpdate] = useState<UpdateStatus | null>(null)
+
+  useEffect(() => {
+    getUpdateStatus()
+      .then(setUpdate)
+      .catch(() => {
+        // An older server without the update routes. No entry, no dialog —
+        // exactly what a server that cannot update itself should show.
+      })
+  }, [])
+
+  useUpdateEvents(update?.allowed === true, (status) =>
+    // The pushed frame carries the server's view of the state; `allowed`,
+    // `promptPending` and `openToday` are per-client and stay as fetched.
+    setUpdate((prev) => (prev ? { ...prev, ...status, allowed: prev.allowed } : prev)),
+  )
+
+  const refreshUpdate = () => { void getUpdateStatus().then(setUpdate).catch(() => {}) }
+
+  // Only while something is actually pending — and only where it can be acted on.
+  const PENDING: UpdatePhase[] = [
+    'available', 'downloading', 'verifying', 'ready', 'download-failed', 'install-failed',
+  ]
+  const showUpdateTab = update?.allowed === true && PENDING.includes(update.phase)
+
+  const [promptDismissed, setPromptDismissed] = useState(false)
+  const showPrompt =
+    update?.allowed === true && update.promptPending && !promptDismissed &&
+    update.latestVersion !== null
+
+  function acceptUpdate() {
+    setPromptDismissed(true)
+    void markUpdatePromptSeen()
+    void startUpdateDownload().then(refreshUpdate).catch(() => {})
+    setView('update')
+  }
+
+  function postponeUpdate() {
+    setPromptDismissed(true)
+    void markUpdatePromptSeen()
+  }
 
   async function handleShutdown() {
     const confirmed = window.confirm(
@@ -121,6 +170,16 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
           >
             Einstellungen
           </button>
+          {showUpdateTab && (
+            <button
+              type="button"
+              className={view === 'update' ? 'tab active' : 'tab'}
+              onClick={() => setView('update')}
+            >
+              Update
+              <span className="update-dot" aria-hidden="true" />
+            </button>
+          )}
 
           {/* Bottom of the sidebar, away from the tabs: it is not a place to go,
               and it ends the day for the guest tablets too. */}
@@ -152,8 +211,20 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
           )}
           {view === 'stammdaten' && <Stammdaten />}
           {view === 'settings' && <Settings />}
+          {view === 'update' && update && (
+            <Update status={update} onRefresh={refreshUpdate} />
+          )}
         </main>
       </div>
+
+      {showPrompt && update && (
+        <UpdateDialog
+          currentVersion={update.currentVersion}
+          latestVersion={update.latestVersion!}
+          onAccept={acceptUpdate}
+          onLater={postponeUpdate}
+        />
+      )}
     </>
   )
 }

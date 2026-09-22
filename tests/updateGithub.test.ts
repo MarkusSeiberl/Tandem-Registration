@@ -58,6 +58,23 @@ describe('compareVersions', () => {
   it('refuses a non-numeric segment instead of treating it as equal', () => {
     expect(compareVersions('1.2.x', '1.2.0')).toBeNull()
   })
+
+  // Regression: compareVersions used to return on the first numeric
+  // difference without ever looking at a malformed part sitting after it,
+  // so a difference earlier in the string could mask an unrankable operand.
+  // All parts of both operands must now be validated before anything is
+  // compared, regardless of where they sit.
+  it('refuses a malformed part even when an earlier part already differs', () => {
+    expect(compareVersions('1.3.0', '1.2.0-beta')).toBeNull()
+  })
+
+  it('still refuses when the malformed part comes first', () => {
+    expect(compareVersions('1.2.0', '1.2.0-beta')).toBeNull()
+  })
+
+  it('refuses a malformed part on the other operand even when an earlier part already differs', () => {
+    expect(compareVersions('2.0.0', '1.x.0')).toBeNull()
+  })
 })
 
 describe('parseRelease', () => {

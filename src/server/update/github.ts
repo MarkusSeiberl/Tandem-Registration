@@ -51,25 +51,36 @@ function toPart(part: string | undefined): number | null {
  * compared out to the length of the longer operand, so a stray extra segment
  * (e.g. "1.2.0.5") is never silently dropped.
  *
- * Returns `null`, never throws, when either version has a part this function
- * cannot rank (a pre-release suffix, a non-numeric segment, ...). `null`
- * here means the same thing it does everywhere else in this module --
- * "nothing here I would dare compare" -- and putting it in the return type
- * instead of a thrown error means the compiler, not a comment, forces every
- * caller to deal with it. That matters because a future caller compares this
- * against APP_VERSION, which is unvalidated input straight out of
- * package.json, and must treat an unparseable version as a failed check
+ * Returns `null`, never throws, when either version has ANY part this
+ * function cannot rank (a pre-release suffix, a non-numeric segment, ...) --
+ * every part of both operands is validated up front, before any comparison
+ * happens, so a malformed part is never missed just because a difference
+ * turned up earlier in the string (e.g. compareVersions('1.3.0',
+ * '1.2.0-beta') is null, not 1, even though '3' already differs from '2' at
+ * index 1). `null` here means the same thing it does everywhere else in this
+ * module -- "nothing here I would dare compare" -- and putting it in the
+ * return type instead of a thrown error means the compiler, not a comment,
+ * forces every caller to deal with it. That matters because a future caller
+ * compares this against APP_VERSION, which is unvalidated input straight out
+ * of package.json, and must treat an unparseable version as a failed check
  * rather than something that happens to compare as equal.
  */
 export function compareVersions(a: string, b: string): number | null {
   const pa = a.split('.')
   const pb = b.split('.')
   const len = Math.max(pa.length, pb.length)
+  const na: (number | null)[] = []
+  const nb: (number | null)[] = []
   for (let i = 0; i < len; i++) {
-    const na = toPart(pa[i])
-    const nb = toPart(pb[i])
-    if (na === null || nb === null) return null
-    const diff = na - nb
+    na.push(toPart(pa[i]))
+    nb.push(toPart(pb[i]))
+  }
+  // Validate every part of both operands before comparing anything -- a
+  // malformed part after the first difference must still refuse the whole
+  // comparison, not get skipped because the loop below already returned.
+  if (na.some((n) => n === null) || nb.some((n) => n === null)) return null
+  for (let i = 0; i < len; i++) {
+    const diff = (na[i] as number) - (nb[i] as number)
     if (diff !== 0) return diff
   }
   return 0

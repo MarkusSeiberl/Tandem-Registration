@@ -18,22 +18,6 @@ export interface UpdateStatus {
   checkedAt: string | null
 }
 
-// Check if a version string is valid: all parts must be numeric.
-// '1.2.3' is valid; '1.2.0-beta' is not.
-//
-// This duplicates what compareVersions checks internally, but it cannot be
-// deleted in favor of relying solely on compareVersions returning null:
-// compareVersions compares part by part and returns as soon as it finds a
-// numeric difference, *before* it ever reaches a later malformed part (e.g.
-// compareVersions('1.3.0', '1.2.0-beta') returns 1, not null, because '3'
-// already differs from '2' at index 1). This guard is the only thing that
-// reliably catches a malformed currentVersion regardless of where the two
-// versions first diverge.
-function isValidVersion(version: string): boolean {
-  const parts = version.split('.')
-  return parts.length > 0 && parts.every(part => /^\d+$/.test(part))
-}
-
 export class UpdateState {
   private status: UpdateStatus
   private listeners: ((s: UpdateStatus) => void)[] = []
@@ -91,15 +75,6 @@ export class UpdateState {
     // a build mistake, not something the operator can fix at the landing site,
     // so it must never take the jump day down or strand the state in
     // 'checking' — it becomes an ordinary failed check, loud in the log.
-    if (!isValidVersion(this.status.currentVersion)) {
-      console.error(
-        `[tandem] Versionsvergleich nicht möglich: "${release.version}" gegen ` +
-          `"${this.status.currentVersion}".`,
-      )
-      this._release = null
-      this.patch({ phase: 'check-failed', checkedAt, error: null })
-      return
-    }
     const newer = compareVersions(release.version, this.status.currentVersion)
     if (newer === null) {
       console.error(

@@ -441,25 +441,26 @@ app.listen({ port, host: '0.0.0.0' }).then(afterListen).catch(async (err: NodeJS
   // Retry instead of deferring — deferring would end with nobody serving.
   if (err.code === 'EADDRINUSE' && process.env.TANDEM_RESTART === '1') {
     const deadline = Date.now() + 60_000
-    // Tracks why the loop stopped retrying: still EADDRINUSE when the
-    // deadline hit, some other errno from listen() itself, or undefined once
-    // the bind actually succeeds. Only the bind outcome belongs in this try —
-    // afterListen() is called below it, so a failure there (extractWeb,
-    // bonjour.publish — real synchronous I/O) is never mistaken for the port
-    // still being occupied.
+    // Explicit flag to distinguish "never attempted to bind" from "bind failed".
+    // The two states must not share a representation on the one path whose job
+    // is to guarantee something is listening. Only the bind outcome belongs in
+    // this try — afterListen() is called below it, so a failure there
+    // (extractWeb, bonjour.publish — real synchronous I/O) is never mistaken
+    // for the port still being occupied.
+    let bound = false
     let lastErr: NodeJS.ErrnoException | undefined
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 500))
       try {
         await app.listen({ port, host: '0.0.0.0' })
-        lastErr = undefined
+        bound = true
         break
       } catch (retryErr) {
         lastErr = retryErr as NodeJS.ErrnoException
         if (lastErr.code !== 'EADDRINUSE') break
       }
     }
-    if (!lastErr) {
+    if (bound) {
       // Bound after all — carry on as a normal start. Caught separately, not
       // folded into the retry's try above, so a throw here reports its own
       // message instead of the misleading "Port blieb belegt".
@@ -470,14 +471,20 @@ app.listen({ port, host: '0.0.0.0' }).then(afterListen).catch(async (err: NodeJS
       }
       return
     }
-    if (lastErr.code === 'EADDRINUSE') {
+    if (lastErr?.code === 'EADDRINUSE') {
       fatal(
         `[tandem] Neustart nach dem Update fehlgeschlagen: Port ${port} blieb belegt.\n` +
           `Die vorherige Version läuft möglicherweise noch. Tandem bitte von Hand starten.`,
       )
     }
+    if (lastErr) {
+      fatal(
+        `[tandem] Neustart nach dem Update fehlgeschlagen: ${lastErr.message}\n` +
+          `Tandem bitte von Hand starten.`,
+      )
+    }
     fatal(
-      `[tandem] Neustart nach dem Update fehlgeschlagen: ${lastErr.message}\n` +
+      `[tandem] Neustart nach dem Update fehlgeschlagen: Port ${port} wurde nicht frei.\n` +
         `Tandem bitte von Hand starten.`,
     )
   }

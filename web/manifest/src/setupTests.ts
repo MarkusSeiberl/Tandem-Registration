@@ -13,19 +13,19 @@ afterEach(() => {
 // the one whose own PATCH caused it — that self-echo is what List.tsx has to survive.
 class FakeEventSource {
   private static instances = new Set<FakeEventSource>()
-  private listeners = new Map<string, Set<() => void>>()
+  private listeners = new Map<string, Set<(event: MessageEvent) => void>>()
 
   constructor() {
     FakeEventSource.instances.add(this)
   }
 
-  addEventListener(type: string, listener: () => void) {
+  addEventListener(type: string, listener: (event: MessageEvent) => void) {
     const set = this.listeners.get(type) ?? new Set()
     set.add(listener)
     this.listeners.set(type, set)
   }
 
-  removeEventListener(type: string, listener: () => void) {
+  removeEventListener(type: string, listener: (event: MessageEvent) => void) {
     this.listeners.get(type)?.delete(listener)
   }
 
@@ -33,9 +33,11 @@ class FakeEventSource {
     FakeEventSource.instances.delete(this)
   }
 
-  static dispatch(type: string) {
+  static dispatch(type: string, data?: unknown) {
     for (const instance of FakeEventSource.instances) {
-      for (const listener of instance.listeners.get(type) ?? []) listener()
+      for (const listener of instance.listeners.get(type) ?? []) {
+        listener({ data: JSON.stringify(data ?? null) } as MessageEvent)
+      }
     }
   }
 }
@@ -48,6 +50,11 @@ if (typeof globalThis.EventSource === 'undefined') {
 /** Simulates the server broadcasting a `changed` event to every connected client. */
 export function fireChangedEvent() {
   FakeEventSource.dispatch('changed')
+}
+
+/** Simulates the server broadcasting an `update` event with its status payload. */
+export function fireUpdateEvent(status: unknown) {
+  FakeEventSource.dispatch('update', status)
 }
 
 // jsdom implements <dialog> as an element but not its modal methods, so any

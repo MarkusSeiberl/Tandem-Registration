@@ -369,3 +369,59 @@ export async function repriceDay(date: string): Promise<{ updated: number }> {
   if (!res.ok) throw new Error(await errorMessage(res, 'Preise übernehmen fehlgeschlagen'))
   return asJson<{ updated: number }>(res)
 }
+
+export type UpdatePhase =
+  | 'disabled' | 'idle' | 'checking' | 'up-to-date' | 'check-failed'
+  | 'available' | 'downloading' | 'verifying' | 'ready'
+  | 'download-failed' | 'installing' | 'install-failed'
+
+export interface UpdateStatus {
+  phase: UpdatePhase
+  currentVersion: string
+  latestVersion: string | null
+  notes: string | null
+  downloadedBytes: number
+  totalBytes: number
+  error: string | null
+  checkedAt: string | null
+  /** Whether THIS client may act — true only on the machine the server runs on. */
+  allowed: boolean
+  promptPending: boolean
+  openToday: number
+}
+
+export async function getUpdateStatus(): Promise<UpdateStatus> {
+  const res = await fetch(apiUrl('/api/update/status'))
+  if (!res.ok) throw new Error('Update-Status nicht abrufbar')
+  return res.json() as Promise<UpdateStatus>
+}
+
+async function updateAction(rootPath: string): Promise<void> {
+  const res = await fetch(apiUrl(rootPath), { method: 'POST' })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new Error(body.error ?? 'Aktion fehlgeschlagen')
+  }
+}
+
+export const checkForUpdate = () => updateAction('/api/update/check')
+export const startUpdateDownload = () => updateAction('/api/update/download')
+export const installUpdate = () => updateAction('/api/update/install')
+export const markUpdatePromptSeen = () => updateAction('/api/update/prompt-seen')
+
+/** Used while waiting for the restarted server to come back. */
+export async function serverAlive(): Promise<boolean> {
+  try {
+    const res = await fetch(apiUrl('/api/health'), { cache: 'no-store' })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+// A seam, not a wrapper for its own sake: jsdom makes window.location
+// non-configurable, so a test cannot spy on it. Going through here lets the
+// update screen's restart path be tested like any other api call.
+export function reloadPage(): void {
+  window.location.reload()
+}

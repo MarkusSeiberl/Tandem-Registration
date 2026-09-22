@@ -20,8 +20,26 @@ export interface DownloadDeps {
 }
 
 function defaultFreeBytes(dir: string): number {
-  const st = fs.statfsSync(dir)
-  return Number(st.bsize) * Number(st.bavail)
+  // statfsSync throws (ENOENT if `dir` is missing, or some other native error
+  // on a filesystem that does not implement statfs at all) rather than
+  // returning a sentinel. Left uncaught, that is a raw English Node error on
+  // an operator's screen -- exactly what this module exists to prevent.
+  //
+  // Failing closed here, rather than treating "unknown" as "space is fine":
+  // `dir` is where the running exe already lives, so the probe failing means
+  // something is wrong with that directory itself (deleted out from under
+  // the program, unreadable, an exotic filesystem), and that same problem
+  // would very likely also break the write that follows. Starting a
+  // multi-hundred-megabyte download over a landing site's often-slow link
+  // only to fail later for the same underlying reason wastes the operator's
+  // time and bandwidth for nothing; refusing immediately, in German, with
+  // the directory named, at least tells them where to look.
+  try {
+    const st = fs.statfsSync(dir)
+    return Number(st.bsize) * Number(st.bavail)
+  } catch {
+    throw new Error(`Freier Speicherplatz von „${dir}“ konnte nicht ermittelt werden.`)
+  }
 }
 
 export async function defaultFetchStream(url: string): Promise<NodeJS.ReadableStream> {
@@ -94,6 +112,15 @@ async function fetchAsset(
  */
 export async function downloadRelease(release: Release, deps: DownloadDeps): Promise<void> {
   const total = release.exe.size + release.native.size
+
+  // Sweep before probing free space, not after: a prior run that was killed
+  // mid-download (process killed, so the catch below never ran) can leave
+  // .new files behind, and those must not survive into this attempt either
+  // way. Doing it first also makes the check below more accurate -- stale
+  // .new files are occupying exactly the space it is about to measure, so
+  // removing them first means the check sees the space they were wasting.
+  removePartials(deps.dir)
+
   const free = (deps.freeBytes ?? defaultFreeBytes)(deps.dir)
   // Twice over: the new files sit beside the old ones until the swap is done.
   if (free < total * 2) {
@@ -103,7 +130,6 @@ export async function downloadRelease(release: Release, deps: DownloadDeps): Pro
     )
   }
 
-  removePartials(deps.dir)
   try {
     const afterExe = await fetchAsset(release.exe, deps, 0, total)
     await fetchAsset(release.native, deps, afterExe, total)

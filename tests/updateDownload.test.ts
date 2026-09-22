@@ -81,6 +81,26 @@ describe('downloadRelease', () => {
     expect(fs.readdirSync(dir)).toEqual([])
   })
 
+  it('sweeps stale .new files before checking free space, so a disk-space refusal still leaves none behind', async () => {
+    fs.writeFileSync(path.join(dir, 'tandem.exe.new'), 'übrig von einem Absturz')
+    fs.writeFileSync(path.join(dir, 'better_sqlite3.node.new'), 'übrig von einem Absturz')
+    await expect(downloadRelease(release(), deps({ freeBytes: () => 10 })))
+      .rejects.toThrow(/Speicherplatz/)
+    expect(fs.readdirSync(dir)).toEqual([])
+  })
+
+  // No `freeBytes` override here, so this drives the real defaultFreeBytes
+  // against a directory that does not exist -- the path that used to leak a
+  // raw English `ENOENT: no such file or directory, statfs '...'`.
+  it('refuses in German, naming the directory, when the free-space probe itself fails', async () => {
+    const missingDir = path.join(dir, 'does-not-exist')
+    await expect(downloadRelease(release(), {
+      dir: missingDir,
+      fetchStream: async (url: string) => Readable.from([bodies[url]]),
+      onProgress: vi.fn(),
+    })).rejects.toThrow(/konnte nicht ermittelt werden/)
+  })
+
   it('leaves nothing behind when the connection drops mid-file', async () => {
     const fetchStream = async () =>
       Readable.from((async function* () {
@@ -99,7 +119,20 @@ describe('downloadRelease', () => {
     const bad = release({
       native: { ...release().native, sha256: 'f'.repeat(64) },
     })
-    await expect(downloadRelease(bad, deps())).rejects.toThrow(/Prüfsumme/)
+    // A directory that ends up empty is also what you'd see if the exe fetch
+    // never happened at all. Proving the intermediate state -- the exe's
+    // .new file already written and verified by the time the native fetch
+    // starts -- is what actually shows the first file succeeded before the
+    // second one failed.
+    let exeNewExistedBeforeNativeFetch = false
+    const fetchStream = async (url: string) => {
+      if (url === bad.native.url) {
+        exeNewExistedBeforeNativeFetch = fs.existsSync(path.join(dir, 'tandem.exe.new'))
+      }
+      return Readable.from([bodies[url]])
+    }
+    await expect(downloadRelease(bad, deps({ fetchStream }))).rejects.toThrow(/Prüfsumme/)
+    expect(exeNewExistedBeforeNativeFetch).toBe(true)
     expect(fs.readdirSync(dir)).toEqual([])
   })
 })

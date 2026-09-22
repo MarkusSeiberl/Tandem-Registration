@@ -2452,7 +2452,15 @@ function splitBlocks(text: string): string[][] {
   const blocks: string[][] = []
   let current: string[] = []
 
-  for (const line of text.split('\n')) {
+  for (let line of text.split('\n')) {
+    // GitHub release bodies are usually authored in a web textarea and arrive
+    // over HTTP with CRLF, so a split on '\n' leaves a trailing '\r'. HEADING
+    // has no /m flag and '.' never matches '\r', so an unnormalised line makes
+    // every '##' fail to match and render as literal text — visibly different
+    // from how GitHub renders the same body. Normalise once, here, rather than
+    // making each downstream pattern '\r'-tolerant.
+    line = line.replace(/\r$/, '')
+
     if (line.trim() === '') {
       if (current.length > 0) {
         blocks.push(current)
@@ -2514,7 +2522,7 @@ export function Markdown({ text }: { text: string }): ReactNode {
 
         return <p key={bi}>{inline(lines.join(' '), `${bi}`)}</p>
       })}
-    </>
+Expected: PASS, 14 tests (die sieben unten, plus vier fuer Ueberschriften mitten im Block und die nachsichtige Liste, plus drei fuer CRLF-Zeilenenden).
   )
 }
 ```

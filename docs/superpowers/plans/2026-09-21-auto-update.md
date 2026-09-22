@@ -61,7 +61,14 @@ Diese gelten für jeden Task und sind verbindlich:
 | Ein einzelner Server-Test | `npx vitest run tests/<datei>.test.ts` |
 | Server-Typen | `npx tsc -b` |
 | Manifest-Tests | `npm --prefix web/manifest test` |
-| Manifest-Typen | `npm --prefix web/manifest exec tsc -b` |
+| Manifest-Typen | `npx tsc -b web/manifest` |
+
+**Nicht** `npm --prefix web/manifest exec tsc -b` benutzen: npm schluckt das
+`-b` als eigene Option („Unknown cli config --b"), `tsc` läuft dann ohne
+Projektangabe, prüft nichts und **meldet Erfolg**. Mit `--` als Trenner ist es
+genauso wertlos, weil `--prefix` die Paketwurzel verschiebt, nicht das
+Arbeitsverzeichnis. Nur `npx tsc -b web/manifest` (oder `cd web/manifest &&
+npx tsc -b`) prüft wirklich — und liefert bei einem Fehler Exit 1.
 
 ---
 
@@ -2731,7 +2738,7 @@ export function reloadPage(): void {
 
 - [ ] **Step 4: Verify types and the existing suite**
 
-Run: `npm --prefix web/manifest exec tsc -b && npm --prefix web/manifest test`
+Run: `npx tsc -b web/manifest && npm --prefix web/manifest test`
 Expected: no type errors; every existing test still passes (the stub change
 touches `List.test.tsx` and `App.test.tsx` indirectly).
 
@@ -3460,7 +3467,7 @@ Expected: all green, including the seven new App tests.
 
 - [ ] **Step 9: Type check both halves**
 
-Run: `npm --prefix web/manifest exec tsc -b && npx tsc -b`
+Run: `npx tsc -b web/manifest && npx tsc -b`
 Expected: no errors.
 
 - [ ] **Step 10: Commit**
@@ -3598,7 +3605,7 @@ anything else with a packaged exe.
 
 - [ ] **Step 7: Full suite, both halves, one last time**
 
-Run: `npm test && npx tsc -b && npm --prefix web/manifest test && npm --prefix web/manifest exec tsc -b`
+Run: `npm test && npx tsc -b && npm --prefix web/manifest test && npx tsc -b web/manifest`
 Expected: all green.
 
 - [ ] **Step 8: Commit**

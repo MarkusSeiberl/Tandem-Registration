@@ -218,4 +218,55 @@ describe('App und das Update', () => {
     await userEvent.click(screen.getByRole('button', { name: /Update/ }))
     expect(await screen.findByRole('progressbar')).toBeInTheDocument()
   })
+
+  // The real broadcast never carries `allowed`, `promptPending` or `openToday`
+  // (see src/server/update/state.ts and src/server/routes/update.ts) — but
+  // App must not rely on that by accident. These three pin the merge itself
+  // against a frame that claims otherwise.
+  describe('gegen eine feindliche SSE-Nachricht', () => {
+    // A client whose GET said `allowed: false` never opens the SSE connection
+    // at all (`useUpdateEvents(update?.allowed === true, ...)`), so a frame
+    // cannot reach the merge to upgrade it from there — that direction is
+    // already unreachable code, not something this test could exercise. The
+    // reachable, and therefore meaningful, direction is the opposite: a
+    // client that legitimately fetched `allowed: true` (and so is listening)
+    // must not be downgraded by a frame that claims otherwise.
+    it('lässt den Sidebar-Eintrag stehen, auch wenn die Nachricht allowed: false behauptet', async () => {
+      render(<App />)
+      expect(await screen.findByRole('button', { name: /Update/ })).toBeInTheDocument()
+
+      fireUpdateEvent(updateStatus({ allowed: false }))
+      // Flush the state update the frame triggers (via act, through
+      // userEvent) before asserting on it — an unflushed synchronous check
+      // could pass for the wrong reason, by racing the re-render instead of
+      // surviving it.
+      await userEvent.click(screen.getByRole('button', { name: 'Manifest' }))
+
+      expect(screen.getByRole('button', { name: /Update/ })).toBeInTheDocument()
+    })
+
+    it('öffnet den Dialog nicht erneut, auch wenn die Nachricht promptPending: true behauptet', async () => {
+      vi.mocked(api.getUpdateStatus).mockResolvedValue(updateStatus({ promptPending: true }))
+      render(<App />)
+      await userEvent.click(await screen.findByRole('button', { name: 'Später' }))
+      expect(screen.queryByRole('dialog')).toBeNull()
+
+      fireUpdateEvent(updateStatus({ promptPending: true }))
+
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    // Control: an ordinary frame (only the state fields change) must still
+    // reach the screen, so the two tests above cannot pass simply because
+    // frames are being ignored outright.
+    it('übernimmt trotzdem eine gewöhnliche Nachricht ohne die drei clientspezifischen Felder', async () => {
+      render(<App />)
+      await screen.findByRole('button', { name: /Update/ })
+
+      fireUpdateEvent(updateStatus({ phase: 'downloading', downloadedBytes: 5, totalBytes: 10 }))
+      await userEvent.click(screen.getByRole('button', { name: /Update/ }))
+
+      expect(await screen.findByRole('progressbar')).toBeInTheDocument()
+    })
+  })
 })

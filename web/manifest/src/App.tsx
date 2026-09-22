@@ -51,8 +51,14 @@ function App() {
   }, [])
 
   useUpdateEvents(update?.allowed === true, (status) =>
-    // The pushed frame carries the server's view of the state; `allowed`,
-    // `promptPending` and `openToday` are per-client and stay as fetched.
+    // The broadcast (src/server/update/state.ts UpdateState.patch, sent via
+    // src/server/index.ts) carries only the eight UpdateStatus fields — never
+    // `allowed`, `promptPending` or `openToday`, which the GET route computes
+    // per client (src/server/routes/update.ts). So `status` cannot actually
+    // carry those three today. `allowed` is still pinned explicitly here as
+    // belt-and-braces: if a future broadcast ever widened to the full
+    // response, this is what stops a pushed frame from handing a tablet an
+    // `allowed` it never earned.
     setUpdate((prev) => (prev ? { ...prev, ...status, allowed: prev.allowed } : prev)),
   )
 
@@ -71,14 +77,21 @@ function App() {
 
   function acceptUpdate() {
     setPromptDismissed(true)
-    void markUpdatePromptSeen()
+    // Telling the server the dialog was shown is a courtesy, not a
+    // precondition: the dialog is already closed locally via
+    // `promptDismissed`. If the landing site is offline — entirely plausible
+    // here — the only consequence of losing this is that the dialog can show
+    // once more after the next server start, which is not worth surfacing to
+    // the operator as an error.
+    void markUpdatePromptSeen().catch(() => {})
     void startUpdateDownload().then(refreshUpdate).catch(() => {})
     setView('update')
   }
 
   function postponeUpdate() {
     setPromptDismissed(true)
-    void markUpdatePromptSeen()
+    // See acceptUpdate: same courtesy call, same reason to swallow a failure.
+    void markUpdatePromptSeen().catch(() => {})
   }
 
   async function handleShutdown() {

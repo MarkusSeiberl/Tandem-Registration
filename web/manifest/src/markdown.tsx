@@ -38,7 +38,13 @@ function splitBlocks(text: string): string[][] {
   const blocks: string[][] = []
   let current: string[] = []
 
-  for (const line of text.split('\n')) {
+  for (let line of text.split('\n')) {
+    // Normalize line endings: release bodies from GitHub commonly arrive with
+    // CRLF (web textarea authoring), so each line may have a trailing \r.
+    // Strip it once here so downstream consumers (heading regex, list checks,
+    // paragraph joins) see clean lines.
+    line = line.replace(/\r$/, '')
+
     if (line.trim() === '') {
       if (current.length > 0) {
         blocks.push(current)

@@ -76,4 +76,25 @@ describe('Markdown', () => {
     const { container } = render(<Markdown text="" />)
     expect(container.textContent).toBe('')
   })
+
+  it('recognises headings with CRLF line endings', () => {
+    render(<Markdown text={'## Kassieren\r\n\r\nEin Absatz.\r\n'} />)
+    expect(screen.getByRole('heading', { level: 3, name: 'Kassieren' })).toBeInTheDocument()
+    expect(screen.getByText('Ein Absatz.')).toBeInTheDocument()
+  })
+
+  it('renders text with CRLF without stray carriage returns', () => {
+    const { container } = render(<Markdown text={'## Heading\r\n### Subheading\r\nText here.\r\n'} />)
+    // Verify no \r survives into the rendered text
+    expect(container.textContent).not.toContain('\r')
+    expect(screen.getByRole('heading', { level: 3, name: 'Heading' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 4, name: 'Subheading' })).toBeInTheDocument()
+  })
+
+  it('handles a list with CRLF line endings', () => {
+    const { container } = render(<Markdown text={'- Item 1\r\n- Item 2\r\n'} />)
+    const items = screen.getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    expect(container.textContent).not.toContain('\r')
+  })
 })

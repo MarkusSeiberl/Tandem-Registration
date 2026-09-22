@@ -11,6 +11,13 @@ export interface UpdateProps {
 
 const mb = (bytes: number) => Math.round(bytes / 1_000_000)
 
+// Third line of defence, after the server's own 403 on the mutating routes and
+// the sidebar hiding this screen unless `allowed` is true: a screen that can
+// restart the server for the whole drop zone should not rely solely on its
+// parent to keep a tablet from reaching it. The title covers a mouse; the
+// visible hint covers a tablet, which has no hover state to reveal a title.
+const notAllowedTitle = 'Updates sind nur an dem Rechner möglich, auf dem Tandem läuft.'
+
 export default function Update({ status, onRefresh }: UpdateProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -86,10 +93,14 @@ export default function Update({ status, onRefresh }: UpdateProps) {
       {(error || status.error) && <p className="error">{error ?? status.error}</p>}
 
       {status.phase === 'available' && (
-        <button type="button" className="btn primary" disabled={busy}
-          onClick={() => void run(startUpdateDownload)}>
-          Herunterladen
-        </button>
+        <>
+          <button type="button" className="btn primary" disabled={busy || !status.allowed}
+            title={status.allowed ? undefined : notAllowedTitle}
+            onClick={() => void run(startUpdateDownload)}>
+            Herunterladen
+          </button>
+          {!status.allowed && <p className="hint">{notAllowedTitle}</p>}
+        </>
       )}
 
       {(status.phase === 'downloading' || status.phase === 'verifying') && (
@@ -103,18 +114,26 @@ export default function Update({ status, onRefresh }: UpdateProps) {
       )}
 
       {status.phase === 'ready' && (
-        <button type="button" className="btn primary" disabled={busy} onClick={handleInstall}>
-          Jetzt installieren und neu starten
-        </button>
+        <>
+          <button type="button" className="btn primary" disabled={busy || !status.allowed}
+            title={status.allowed ? undefined : notAllowedTitle} onClick={handleInstall}>
+            Jetzt installieren und neu starten
+          </button>
+          {!status.allowed && <p className="hint">{notAllowedTitle}</p>}
+        </>
       )}
 
       {status.phase === 'installing' && <p className="update-restarting">Tandem startet neu…</p>}
 
       {(status.phase === 'download-failed' || status.phase === 'install-failed') && (
-        <button type="button" className="btn secondary" disabled={busy}
-          onClick={() => void run(startUpdateDownload)}>
-          Erneut versuchen
-        </button>
+        <>
+          <button type="button" className="btn secondary" disabled={busy || !status.allowed}
+            title={status.allowed ? undefined : notAllowedTitle}
+            onClick={() => void run(startUpdateDownload)}>
+            Erneut versuchen
+          </button>
+          {!status.allowed && <p className="hint">{notAllowedTitle}</p>}
+        </>
       )}
 
       {status.phase === 'up-to-date' && <p>Dies ist bereits die aktuellste Version.</p>}

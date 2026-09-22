@@ -105,4 +105,46 @@ describe('Update', () => {
     render(<Update status={status({ phase: 'up-to-date', latestVersion: '1.1.0' })} onRefresh={vi.fn()} />)
     expect(screen.getByText(/aktuellste Version/)).toBeInTheDocument()
   })
+
+  // Defence in depth: the sidebar hides this screen from a tablet and the
+  // server refuses the mutating routes from a non-loopback address, but the
+  // component must not rely solely on either — a third guest reaching this
+  // screen by URL should still find the buttons inert.
+  describe('when not the machine Tandem runs on', () => {
+    it('disables the download button for an available update', () => {
+      render(<Update status={status({ allowed: false })} onRefresh={vi.fn()} />)
+      expect(screen.getByRole('button', { name: 'Herunterladen' })).toBeDisabled()
+    })
+
+    it('disables the install button for a ready update', () => {
+      render(<Update status={status({ phase: 'ready', allowed: false })} onRefresh={vi.fn()} />)
+      expect(
+        screen.getByRole('button', { name: 'Jetzt installieren und neu starten' }),
+      ).toBeDisabled()
+    })
+
+    it('disables the retry button for a failed download', () => {
+      render(
+        <Update
+          status={status({ phase: 'download-failed', allowed: false, error: 'Netzwerkfehler' })}
+          onRefresh={vi.fn()}
+        />,
+      )
+      expect(screen.getByRole('button', { name: 'Erneut versuchen' })).toBeDisabled()
+    })
+
+    it('still shows the versions and release notes', () => {
+      render(<Update status={status({ allowed: false })} onRefresh={vi.fn()} />)
+      expect(screen.getByText('1.1.0')).toBeInTheDocument()
+      expect(screen.getByText('1.2.0')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { level: 3, name: 'Kassieren' })).toBeInTheDocument()
+    })
+  })
+
+  it('keeps the buttons enabled on the machine Tandem runs on', () => {
+    render(<Update status={status({ phase: 'ready', allowed: true })} onRefresh={vi.fn()} />)
+    expect(
+      screen.getByRole('button', { name: 'Jetzt installieren und neu starten' }),
+    ).not.toBeDisabled()
+  })
 })

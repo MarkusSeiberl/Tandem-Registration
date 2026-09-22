@@ -122,8 +122,11 @@ describe('installUpdate — an unexpected throw after the server is closed', () 
       throw new Error('Sweep boom')
     })
     const d = deps()
-    await installUpdate(d)
-    spy.mockRestore()
+    try {
+      await installUpdate(d)
+    } finally {
+      spy.mockRestore()
+    }
     expect(read('tandem.exe')).toBe('alt')
     expect(read('better_sqlite3.node')).toBe('alt-node')
     expect(takeFailureMarker(dir)).toMatch(/Unerwarteter Fehler/)
@@ -142,6 +145,22 @@ describe('installUpdate — an unexpected throw after the server is closed', () 
     expect(read('better_sqlite3.node')).toBe('alt-node')
     expect(takeFailureMarker(dir)).toMatch(/Unerwarteter Fehler/)
     expect(spawnDetached).toHaveBeenCalledTimes(2)
+    expect(d.exit).toHaveBeenCalledWith(1)
+  })
+
+  // closeServer is documented as a compound teardown (Bonjour, Fastify, database).
+  // If it rejects — say the database close fails after the HTTP listener is
+  // already down — the call must still land in the same catch-all recovery as
+  // every other unexpected throw, not escape before the guarded region starts.
+  it('recovers when closeServer rejects', async () => {
+    stage()
+    const d = deps({ closeServer: vi.fn().mockRejectedValue(new Error('close boom')) })
+    await installUpdate(d)
+    // Nothing was renamed: the rejection happened before the rename block ever ran.
+    expect(read('tandem.exe')).toBe('alt')
+    expect(read('better_sqlite3.node')).toBe('alt-node')
+    expect(takeFailureMarker(dir)).toMatch(/Unerwarteter Fehler/)
+    expect(d.spawnDetached).toHaveBeenCalled()
     expect(d.exit).toHaveBeenCalledWith(1)
   })
 

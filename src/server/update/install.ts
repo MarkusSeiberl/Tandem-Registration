@@ -78,16 +78,17 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
     if (!fs.existsSync(file)) throw new Error(`${name + NEW_SUFFIX} fehlt — bitte neu laden.`)
   }
 
-  await deps.closeServer()
-
-  // From this point on the server is gone and nothing is listening. Every region
-  // below must end in one of the module's two defined outcomes — the new version
-  // running, or the old one restored and running — never in a third outcome where
-  // an unhandled throw leaves this process alive with a closed server and no
-  // restart. That is indistinguishable from a dead installation to an operator at
-  // the landing site, so it is wrapped in a catch-all recovery below.
+  // From this point on the server is meant to be gone and nothing listening. Every
+  // region below — closeServer() included — must end in one of the module's two
+  // defined outcomes — the new version running, or the old one restored and
+  // running — never in a third outcome where an unhandled throw leaves this
+  // process alive with a closed (or half-closed) server and no restart. That is
+  // indistinguishable from a dead installation to an operator at the landing site,
+  // so closeServer() itself sits inside the catch-all recovery below, not before it.
   let child: { kill: () => void } | undefined
   try {
+    await deps.closeServer()
+
     // A leftover from an earlier attempt would make the rename below fail.
     for (const [, old] of PAIRS) fs.rmSync(path.join(dir, old), { force: true })
 
@@ -100,7 +101,7 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
       restore(dir)
       fs.writeFileSync(
         path.join(dir, FAILURE_MARKER),
-        JSON.stringify({ reason: `Dateien konnten nicht getauscht werden: ${String(err)}` }),
+        JSON.stringify({ reason: `Dateien konnten nicht getauscht werden: „${String(err)}“` }),
       )
       deps.spawnDetached(exePath)
       deps.exit(1)
@@ -134,14 +135,25 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
     deps.spawnDetached(exePath)
     deps.exit(1)
   } catch (err) {
-    // Anything unexpected past this point — the stale-.old sweep, spawnDetached, or
-    // waitForHealth itself throwing instead of resolving to false — leaves the new
-    // version's health unknown. Unknown must fall back to the version known to work,
-    // so this performs the same recovery as the unhealthy-child path above. It is
-    // deliberately tolerant of its OWN failures (each step wrapped separately): if
-    // restore() or the marker write also throws, a best-effort restart of whatever
-    // exe is on disk still beats letting this become an unhandled rejection with no
-    // server and nothing running.
+    // Anything unexpected past this point — closeServer() itself throwing, the
+    // stale-.old sweep, spawnDetached, or waitForHealth itself throwing instead of
+    // resolving to false — leaves the new version's health unknown. Unknown must
+    // fall back to the version known to work, so this performs the same recovery
+    // as the unhealthy-child path above. It is deliberately tolerant of its OWN
+    // failures (each step wrapped separately): if restore() or the marker write
+    // also throws, a best-effort restart of whatever exe is on disk still beats
+    // letting this become an unhandled rejection with no server and nothing
+    // running.
+    //
+    // If closeServer() throws before its HTTP listener has actually closed, this
+    // process can still be holding the port when spawnDetached below starts a new
+    // copy of the exe. That is still safe: spawnDetached only asks the OS to start
+    // a detached process and returns immediately, without waiting for the child to
+    // bind, and the exit() right after it kills this process, which releases the
+    // port. A freshly spawned exe has to load its runtime and open the database
+    // before it gets anywhere near its own bind() call — far longer than this
+    // process needs to die — so by the time the child would attempt to bind, this
+    // process (and the port it held) is already gone.
     try { child?.kill() } catch { /* best effort — see comment above */ }
     try { restore(dir) } catch { /* best effort — see comment above */ }
     try {

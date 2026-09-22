@@ -1863,7 +1863,17 @@ const PAIRS: [live: string, old: string][] = [
  */
 export function cleanupLeftovers(dir: string): void {
   for (const name of [OLD_EXE, OLD_NATIVE, EXE_NAME + NEW_SUFFIX, NATIVE_NAME + NEW_SUFFIX]) {
-    fs.rmSync(path.join(dir, name), { force: true })
+    // Per file, and never throwing: `force: true` suppresses the error for a
+    // file that is *missing*, not one that is *locked*, and on Windows a file
+    // held open by antivirus, a backup agent or the indexer throws EBUSY or
+    // EPERM. This runs at startup, before listen() — a throw here means the
+    // registration server does not come up at all on a jump day, because of a
+    // leftover file. One file that cannot go must not stop the others either.
+    try {
+      fs.rmSync(path.join(dir, name), { force: true })
+    } catch (err) {
+      console.error(`[tandem] ${name} konnte nicht entfernt werden:`, err)
+    }
   }
 }
 
@@ -1879,7 +1889,14 @@ export function takeFailureMarker(dir: string): string | null {
     // A mangled marker is still a marker; the file goes either way so it
     // cannot reappear on every start.
   }
-  fs.rmSync(file, { force: true })
+  // Same reasoning as cleanupLeftovers: a locked marker must not stop the
+  // program from starting. If it cannot go, the reason is simply shown again
+  // on the next start until it can — annoying, and far better than not booting.
+  try {
+    fs.rmSync(file, { force: true })
+  } catch (err) {
+    console.error(`[tandem] ${FAILURE_MARKER} konnte nicht entfernt werden:`, err)
+  }
   return reason
 }
 
@@ -1997,7 +2014,7 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateInstall.test.ts`
-Expected: PASS, 16 tests (12 aus der Liste unten plus je einer fuer einen Wurf aus closeServer, dem .old-Sweep, spawnDetached und waitForHealth).
+Expected: PASS, 20 tests.
 
 - [ ] **Step 5: Commit**
 

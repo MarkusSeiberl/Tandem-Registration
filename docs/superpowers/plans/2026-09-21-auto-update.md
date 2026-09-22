@@ -2143,14 +2143,31 @@ async function runInstall() {
   try {
     await installUpdate({
       dir: installDir,
+      // Each step is guarded on its own so a failure early in the teardown
+      // cannot stop the listener from closing. Bonjour failing to unpublish
+      // must not leave the port held and the swap half-done; installUpdate
+      // catches a rejection from here, but the cleanest outcome is for this
+      // to get as far as it can and let the swap proceed.
       closeServer: async () => {
-        if (bonjour) {
-          await new Promise<void>((resolve) => {
-            bonjour!.unpublishAll(() => bonjour!.destroy(() => resolve()))
-          })
+        try {
+          if (bonjour) {
+            await new Promise<void>((resolve) => {
+              bonjour!.unpublishAll(() => bonjour!.destroy(() => resolve()))
+            })
+          }
+        } catch (err) {
+          console.error('[tandem] Bonjour liess sich nicht abmelden:', err)
         }
-        await app.close()
-        db.close()
+        try {
+          await app.close()
+        } catch (err) {
+          console.error('[tandem] Server liess sich nicht sauber schliessen:', err)
+        }
+        try {
+          db.close()
+        } catch (err) {
+          console.error('[tandem] Datenbank liess sich nicht sauber schliessen:', err)
+        }
       },
       spawnDetached: (exePath) => {
         const child = spawn(exePath, [], {

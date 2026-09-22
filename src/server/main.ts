@@ -2,7 +2,7 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import http from 'http'
-import { exec, execFileSync } from 'child_process'
+import { exec, execFileSync, spawn } from 'child_process'
 import { Bonjour } from 'bonjour-service'
 import { openDb } from './db'
 import { loadConfig, saveConfig } from './config'
@@ -12,8 +12,27 @@ import { notifyRegistration } from './notify'
 import { pickPathWindows } from './pickPathWin'
 import { assetPath, installDir, isPackaged } from './assets'
 import { FONT_ASSETS } from './contractPdf'
+import { APP_VERSION } from './version'
+import { UpdateState } from './update/state'
+import { fetchLatestRelease } from './update/github'
+import { downloadRelease, defaultFetchStream, removePartials } from './update/download'
+import { cleanupLeftovers, takeFailureMarker, installUpdate } from './update/install'
+import type { UpdateControls } from './routes/update'
 
 const dir = process.env.DIR || installDir
+
+// An interrupted update can leave rollback copies and half-finished downloads
+// behind. That this process is running at all proves the files on disk start,
+// so the copies have done their job. This runs before anything else opens —
+// including the better_sqlite3.node existence check below — so a half-loaded
+// download is never reported as a missing file.
+if (isPackaged) {
+  try {
+    cleanupLeftovers(installDir)
+  } catch (err) {
+    console.error('[tandem] Aufräumen nach Update fehlgeschlagen:', err)
+  }
+}
 
 /**
  * Ends the program on a problem the operator has to fix.
@@ -95,11 +114,23 @@ const notify = isPackaged ? notifyRegistration : undefined
 // The path dialogs are Windows dialogs. On any other system the settings screen
 // simply keeps its text fields — see src/server/routes/pickPath.ts.
 const pickPath = process.platform === 'win32' ? pickPathWindows : undefined
+// Only the shipped exe updates itself: it is the one build that owns the files
+// it runs from. A dev `npm start`, the e2e run and the unit tests see phase
+// 'disabled' and four routes that answer 501 — the same line notify, the
+// shutdown button and the path dialogs already draw.
+const updateState = new UpdateState(APP_VERSION, isPackaged ? 'idle' : 'disabled')
+
+// The actions are filled in below, once app/db/bonjour exist for the install
+// step to close. The object identity is what the routes hold on to.
+const updateControls: UpdateControls | undefined = isPackaged
+  ? { state: updateState, check: () => {}, download: () => {}, install: () => {} }
+  : undefined
+
 // The manifest's "Programm beenden" button ends up here — the same orderly
 // shutdown as Strg+C, so Bonjour is unpublished and the database closes cleanly
 // instead of the operator killing the console window.
 const app = buildServer(db, cfgRef, contractTemplate, (c) => saveConfig(dir, c), notify, pickPath,
-  () => { void shutdown('Beenden über das Manifest') })
+  () => { void shutdown('Beenden über das Manifest') }, updateControls)
 
 app.get('/api/contract', async () => ({ text: cfgRef.current.contractText }))
 
@@ -175,6 +206,126 @@ async function shutdown(signal: string) {
   process.exit(0)
 }
 
+let updateBusy = false
+
+async function runCheck(isStartup: boolean) {
+  if (updateBusy) return
+  updateState.beginCheck()
+  updateState.foundRelease(await fetchLatestRelease(), isStartup)
+}
+
+async function runDownload() {
+  const release = updateState.release
+  if (!release || updateBusy) return
+  updateBusy = true
+  updateState.patch({ phase: 'downloading', downloadedBytes: 0, totalBytes: 0, error: null })
+  try {
+    await downloadRelease(release, {
+      dir: installDir,
+      fetchStream: defaultFetchStream,
+      onProgress: (downloadedBytes, totalBytes) =>
+        updateState.patch({ phase: 'downloading', downloadedBytes, totalBytes }),
+    })
+    updateState.patch({ phase: 'ready', error: null })
+  } catch (err) {
+    removePartials(installDir)
+    updateState.fail('download-failed', err instanceof Error ? err.message : String(err))
+  } finally {
+    updateBusy = false
+  }
+}
+
+/** True once a Tandem answers on our port again — the new process is up. */
+function waitForHealth(timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  return new Promise((resolve) => {
+    const tick = async () => {
+      if (await tandemAlreadyRunning()) return resolve(true)
+      if (Date.now() >= deadline) return resolve(false)
+      setTimeout(tick, 1000).unref?.()
+    }
+    // A moment's grace: the child has to get as far as listen() first.
+    setTimeout(tick, 1000).unref?.()
+  })
+}
+
+async function runInstall() {
+  if (updateState.get().phase !== 'ready' || updateBusy) return
+  updateBusy = true
+  updateState.patch({ phase: 'installing', error: null })
+  try {
+    await installUpdate({
+      dir: installDir,
+      // Each step is guarded on its own so a failure early in the teardown
+      // cannot stop the listener from closing. Bonjour failing to unpublish
+      // must not leave the port held and the swap half-done; installUpdate
+      // catches a rejection from here, but the cleanest outcome is for this
+      // to get as far as it can and let the swap proceed.
+      closeServer: async () => {
+        try {
+          if (bonjour) {
+            await new Promise<void>((resolve) => {
+              bonjour!.unpublishAll(() => bonjour!.destroy(() => resolve()))
+            })
+          }
+        } catch (err) {
+          console.error('[tandem] Bonjour liess sich nicht abmelden:', err)
+        }
+        try {
+          await app.close()
+        } catch (err) {
+          console.error('[tandem] Server liess sich nicht sauber schliessen:', err)
+        }
+        try {
+          db.close()
+        } catch (err) {
+          console.error('[tandem] Datenbank liess sich nicht sauber schliessen:', err)
+        }
+      },
+      // TANDEM_RESTART tells the started process it is a replacement, not a
+      // second copy: on a busy port it must retry the bind instead of deferring
+      // to whatever is answering there (see the EADDRINUSE handler below). This
+      // process may still be holding the port at that instant — if closeServer
+      // threw before its listener unbound — and a child that politely gives up
+      // would leave the landing site with nothing running at all.
+      spawnDetached: (exePath) => {
+        const child = spawn(exePath, [], {
+          detached: true, stdio: 'ignore', cwd: path.dirname(exePath), windowsHide: true,
+          env: { ...process.env, TANDEM_RESTART: '1' },
+        })
+        child.unref()
+        return { kill: () => child.kill() }
+      },
+      waitForHealth,
+      exit: (code) => process.exit(code),
+    })
+  } catch (err) {
+    updateBusy = false
+    updateState.fail('install-failed', err instanceof Error ? err.message : String(err))
+  }
+}
+
+if (updateControls) {
+  updateControls.check = () => { void runCheck(false) }
+  updateControls.download = () => { void runDownload() }
+  updateControls.install = () => { void runInstall() }
+}
+
+// Recovers what a previous, interrupted attempt learned about its own failure
+// — read once and deleted, so it cannot reappear on every future start. Guarded
+// like cleanupLeftovers above: takeFailureMarker's rmSync(..., { force: true })
+// only swallows a missing file, not one a virus scanner or backup tool has
+// locked, and a throw here must never stop the server from going on to listen.
+let failure: string | null = null
+if (isPackaged) {
+  try {
+    failure = takeFailureMarker(installDir)
+  } catch (err) {
+    console.error('[tandem] Fehlermeldung des letzten Updates konnte nicht gelesen werden:', err)
+  }
+}
+if (failure) updateState.fail('install-failed', failure)
+
 process.on('SIGINT', () => shutdown('SIGINT'))
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 
@@ -232,7 +383,12 @@ function lanIPv4(): string[] {
   return out
 }
 
-app.listen({ port, host: '0.0.0.0' }).then(() => {
+// Runs once listen() has actually bound the port — whether on the very first
+// try, or after the TANDEM_RESTART retry loop in the .catch() below finds the
+// port free. Pulled into a named function so both paths run the identical
+// Bonjour-publish/extractWeb/banner/browser sequence instead of a second copy
+// of the block.
+function afterListen() {
   extractWeb()
   bonjour = new Bonjour()
   // Advertise an A record for `tandem.local` itself (host), not just a
@@ -270,7 +426,36 @@ app.listen({ port, host: '0.0.0.0' }).then(() => {
   console.log('  Zum Beenden dieses Fenster schließen oder STRG+C drücken.')
   console.log('')
   if (isPackaged) openBrowser(`http://localhost${p}/manifest`)
-}).catch(async (err: NodeJS.ErrnoException) => {
+
+  if (isPackaged) {
+    // Late enough that the tablets are served first, and unref'd so neither
+    // timer keeps the process alive. A site without internet notices nothing.
+    setTimeout(() => { void runCheck(true) }, 5000).unref?.()
+    setInterval(() => { void runCheck(false) }, 60 * 60 * 1000).unref?.()
+  }
+}
+
+app.listen({ port, host: '0.0.0.0' }).then(afterListen).catch(async (err: NodeJS.ErrnoException) => {
+  // Started by installUpdate as a replacement: the port is expected to be busy
+  // for a moment, because the process we are replacing is still shutting down.
+  // Retry instead of deferring — deferring would end with nobody serving.
+  if (err.code === 'EADDRINUSE' && process.env.TANDEM_RESTART === '1') {
+    const deadline = Date.now() + 60_000
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 500))
+      try {
+        await app.listen({ port, host: '0.0.0.0' })
+        afterListen()   // bound after all — carry on as a normal start
+        return
+      } catch (retryErr) {
+        if ((retryErr as NodeJS.ErrnoException).code !== 'EADDRINUSE') break
+      }
+    }
+    fatal(
+      `[tandem] Neustart nach dem Update fehlgeschlagen: Port ${port} blieb belegt.\n` +
+        `Die vorherige Version läuft möglicherweise noch. Tandem bitte von Hand starten.`,
+    )
+  }
   // Starting tandem.exe a second time is how the operator gets the manifest
   // page back after closing the browser tab — the exe has no console and no
   // taskbar window any more, so there is nothing else left to click. The port

@@ -46,5 +46,8 @@ export function buildServer(
   registerPathRoutes(app)
   registerShutdownRoutes(app, shutdown)
   registerUpdateRoutes(app, db, update)
+  // The manifest's update screen redraws from this instead of polling a
+  // 114 MB download's progress over HTTP.
+  update?.state.onChange((status) => sse.broadcast('update', status))
   return app
 }

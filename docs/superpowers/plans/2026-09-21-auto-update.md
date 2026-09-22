@@ -1506,8 +1506,23 @@ export interface DownloadDeps {
 }
 
 function defaultFreeBytes(dir: string): number {
-  const st = fs.statfsSync(dir)
-  return Number(st.bsize) * Number(st.bavail)
+  // statfsSync throws (ENOENT for a missing dir, or a native error on a
+  // filesystem that does not implement statfs) rather than returning a
+  // sentinel. Uncaught, that is raw English Node text on the screen of an
+  // operator whose exe has no console.
+  //
+  // Failing closed rather than reading "unknown" as "space is fine": `dir` is
+  // where the running exe already lives, so a probe failure there means
+  // something is wrong with that directory itself — and the same problem
+  // would very likely break the write that follows. Better to refuse at once,
+  // in German, naming the directory, than to spend a landing site's slow link
+  // on a few hundred megabytes that fail for the same reason at the end.
+  try {
+    const st = fs.statfsSync(dir)
+    return Number(st.bsize) * Number(st.bavail)
+  } catch {
+    throw new Error(`Freier Speicherplatz von „${dir}“ konnte nicht ermittelt werden.`)
+  }
 }
 
 export async function defaultFetchStream(url: string): Promise<NodeJS.ReadableStream> {
@@ -1579,6 +1594,14 @@ async function fetchAsset(
  */
 export async function downloadRelease(release: Release, deps: DownloadDeps): Promise<void> {
   const total = release.exe.size + release.native.size
+
+  // Sweep BEFORE probing free space, not after: a run killed mid-download
+  // (process killed, so the catch below never ran) leaves .new files behind,
+  // and those must not survive into this attempt either way. Doing it first
+  // also makes the check more accurate — the stale files are occupying
+  // exactly the space it is about to measure.
+  removePartials(deps.dir)
+
   const free = (deps.freeBytes ?? defaultFreeBytes)(deps.dir)
   // Twice over: the new files sit beside the old ones until the swap is done.
   if (free < total * 2) {
@@ -1588,7 +1611,6 @@ export async function downloadRelease(release: Release, deps: DownloadDeps): Pro
     )
   }
 
-  removePartials(deps.dir)
   try {
     const afterExe = await fetchAsset(release.exe, deps, 0, total)
     await fetchAsset(release.native, deps, afterExe, total)
@@ -1602,7 +1624,7 @@ export async function downloadRelease(release: Release, deps: DownloadDeps): Pro
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateDownload.test.ts`
-Expected: PASS, 9 tests (die acht unten plus einer fuer den Fall, dass die zweite Datei scheitert, nachdem die erste schon lag).
+Expected: PASS, 11 tests (die acht unten plus je einer fuer: zweite Datei scheitert nach erfolgreicher erster, fehlgeschlagene Platzmessung, und Reste werden auch bei Platzmangel weggeraeumt).
 
 - [ ] **Step 5: Commit**
 

@@ -41,13 +41,14 @@ describe('compareVersions', () => {
   // These four are all measured bugs in the naive `Number(n) || 0` version:
   // every one of them used to come back 0 (equal), which for the update
   // checker means "no update available" -- silently, and for the wrong
-  // reason each time.
+  // reason each time. compareVersions now answers `null` for each rather
+  // than throwing, but the point stands: none of them may compare as equal.
   it('refuses a pre-release suffix instead of treating it as equal', () => {
-    expect(() => compareVersions('1.2.0-beta', '1.2.0')).toThrow()
+    expect(compareVersions('1.2.0-beta', '1.2.0')).toBeNull()
   })
 
   it('refuses a pre-release suffix on either operand', () => {
-    expect(() => compareVersions('1.2.0', '1.2.0-beta')).toThrow()
+    expect(compareVersions('1.2.0', '1.2.0-beta')).toBeNull()
   })
 
   it('does not silently drop a fourth version segment', () => {
@@ -55,7 +56,7 @@ describe('compareVersions', () => {
   })
 
   it('refuses a non-numeric segment instead of treating it as equal', () => {
-    expect(() => compareVersions('1.2.x', '1.2.0')).toThrow()
+    expect(compareVersions('1.2.x', '1.2.0')).toBeNull()
   })
 })
 
@@ -95,10 +96,57 @@ describe('parseRelease', () => {
     expect(parseRelease(payload({ assets }))).toBeNull()
   })
 
-  it('refuses an asset whose download URL is not https', () => {
+  // Real assets come from GitHub's TLS-protected API, so https is required
+  // for anything reachable over the network.
+  it('refuses an asset whose download URL is http on a public host', () => {
     const assets = payload().assets.map((a) => (
       a.name === 'tandem.exe'
         ? { ...a, browser_download_url: 'http://example.invalid/tandem.exe' }
+        : a
+    ))
+    expect(parseRelease(payload({ assets }))).toBeNull()
+  })
+
+  // The manual staging test (build.md) serves a fake release over plain HTTP
+  // on loopback, because a TLS requirement there would mean a self-signed
+  // certificate that Node's `fetch` rejects anyway -- the test would simply
+  // never run. Loopback never touches the network, so there is nothing to
+  // downgrade.
+  it('accepts an asset whose download URL is http on 127.0.0.1', () => {
+    const assets = payload().assets.map((a) => (
+      a.name === 'tandem.exe'
+        ? { ...a, browser_download_url: 'http://127.0.0.1:8099/tandem.exe' }
+        : a
+    ))
+    expect(parseRelease(payload({ assets }))).not.toBeNull()
+  })
+
+  it('accepts an asset whose download URL is http on localhost', () => {
+    const assets = payload().assets.map((a) => (
+      a.name === 'tandem.exe'
+        ? { ...a, browser_download_url: 'http://localhost:8099/tandem.exe' }
+        : a
+    ))
+    expect(parseRelease(payload({ assets }))).not.toBeNull()
+  })
+
+  // `new URL('http://[::1]:8099/x').hostname` is the literal string "[::1]"
+  // (brackets included), not "::1" -- this pins the form this module has to
+  // handle.
+  it('accepts an asset whose download URL is http on IPv6 loopback', () => {
+    expect(new URL('http://[::1]:8099/x').hostname).toBe('[::1]')
+    const assets = payload().assets.map((a) => (
+      a.name === 'tandem.exe'
+        ? { ...a, browser_download_url: 'http://[::1]:8099/tandem.exe' }
+        : a
+    ))
+    expect(parseRelease(payload({ assets }))).not.toBeNull()
+  })
+
+  it('refuses an asset whose download URL does not parse at all', () => {
+    const assets = payload().assets.map((a) => (
+      a.name === 'tandem.exe'
+        ? { ...a, browser_download_url: 'not a url' }
         : a
     ))
     expect(parseRelease(payload({ assets }))).toBeNull()

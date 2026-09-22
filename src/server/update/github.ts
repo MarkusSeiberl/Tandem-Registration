@@ -33,25 +33,14 @@ export type Fetcher = (
 /**
  * A dotted-version part that is a plain non-negative integer, e.g. "0", "12".
  * Anything else ("0-beta", "x", "1e3") is not a version this program knows
- * how to rank.
+ * how to rank -- returns null rather than throwing; see compareVersions.
  */
-function toPart(part: string | undefined): number {
+function toPart(part: string | undefined): number | null {
   // A part that is simply absent (the shorter of two dotted strings) is not
   // malformed, it is just shorter. "1.2" vs "1.2.0" is a legitimate way to
   // spell the same version, so a missing trailing part counts as zero.
   if (part === undefined) return 0
-  if (!/^\d+$/.test(part)) {
-    // We throw rather than coerce to 0, because `Number(n) || 0` used to
-    // silently turn "1.2.0-beta" into "1.2.0" (equal!) and turn a build
-    // metadata suffix into "no update available" with nobody the wiser.
-    // A version this function cannot parse is a bug in whoever produced it
-    // (package.json, a release tag) and must fail loudly, not quietly
-    // compare as equal. Callers that feed this from an unvalidated source
-    // (APP_VERSION out of package.json, in a later task) must catch this
-    // themselves and log it; this function never runs at module load, so
-    // throwing here cannot crash the server at startup by itself.
-    throw new Error(`compareVersions: not a plain integer version part: "${part}"`)
-  }
+  if (!/^\d+$/.test(part)) return null
   return Number(part)
 }
 
@@ -61,13 +50,26 @@ function toPart(part: string | undefined): number {
  * has to get right here. Missing trailing parts count as zero; the parts are
  * compared out to the length of the longer operand, so a stray extra segment
  * (e.g. "1.2.0.5") is never silently dropped.
+ *
+ * Returns `null`, never throws, when either version has a part this function
+ * cannot rank (a pre-release suffix, a non-numeric segment, ...). `null`
+ * here means the same thing it does everywhere else in this module --
+ * "nothing here I would dare compare" -- and putting it in the return type
+ * instead of a thrown error means the compiler, not a comment, forces every
+ * caller to deal with it. That matters because a future caller compares this
+ * against APP_VERSION, which is unvalidated input straight out of
+ * package.json, and must treat an unparseable version as a failed check
+ * rather than something that happens to compare as equal.
  */
-export function compareVersions(a: string, b: string): number {
+export function compareVersions(a: string, b: string): number | null {
   const pa = a.split('.')
   const pb = b.split('.')
   const len = Math.max(pa.length, pb.length)
   for (let i = 0; i < len; i++) {
-    const diff = toPart(pa[i]) - toPart(pb[i])
+    const na = toPart(pa[i])
+    const nb = toPart(pb[i])
+    if (na === null || nb === null) return null
+    const diff = na - nb
     if (diff !== 0) return diff
   }
   return 0
@@ -85,9 +87,31 @@ function asAsset(raw: unknown): ReleaseAsset | null {
   // This URL gets fetched and the result executed in place of the running
   // program. `fetch` already refuses non-http(s) schemes and the URL comes
   // from GitHub's TLS-protected API, so this is not closing a live hole --
-  // but a trust boundary is exactly the place to spend one cheap line and
-  // require the scheme we actually expect instead of trusting the payload.
-  if (!a.browser_download_url.startsWith('https://')) return null
+  // but a trust boundary is exactly the place to spend a few lines and
+  // require the transport we actually expect instead of trusting the
+  // payload. TLS is required for anything reachable over a network; plain
+  // HTTP is allowed only on loopback, where the manual staging test
+  // (build.md) points a real packaged exe at a fake release served by a
+  // throwaway local server -- requiring TLS there would mean a self-signed
+  // certificate that Node's `fetch` rejects anyway, so the test would just
+  // never run. Loopback traffic never leaves the machine, so there is no
+  // network transport there to downgrade.
+  let downloadUrl: URL
+  try {
+    downloadUrl = new URL(a.browser_download_url)
+  } catch {
+    return null
+  }
+  // WHATWG URL keeps the brackets on an IPv6 host: `new URL('http://[::1]/x')
+  // .hostname` is the literal string "[::1]", not "::1". Handle both forms
+  // in case that ever changes across environments.
+  const isLoopbackHost = downloadUrl.hostname === 'localhost'
+    || downloadUrl.hostname === '127.0.0.1'
+    || downloadUrl.hostname === '::1'
+    || downloadUrl.hostname === '[::1]'
+  const isSecure = downloadUrl.protocol === 'https:'
+  const isLoopbackHttp = downloadUrl.protocol === 'http:' && isLoopbackHost
+  if (!isSecure && !isLoopbackHttp) return null
   if (typeof a.size !== 'number' || a.size <= 0) return null
   return { name: a.name, url: a.browser_download_url, size: a.size, sha256 }
 }

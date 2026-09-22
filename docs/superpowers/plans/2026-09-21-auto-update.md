@@ -519,11 +519,43 @@ export type Fetcher = (
  * sorts before '9' as a string, and that is the only thing a version compare
  * has to get right here. Missing parts count as zero.
  */
-export function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map((n) => Number(n) || 0)
-  const pb = b.split('.').map((n) => Number(n) || 0)
-  for (let i = 0; i < 3; i++) {
-    const diff = (pa[i] ?? 0) - (pb[i] ?? 0)
+/**
+ * A dotted-version part that is a plain non-negative integer, e.g. "0", "12".
+ * Anything else ("0-beta", "x", "1e3") is not a version this program knows how
+ * to rank — returns null rather than throwing; see compareVersions.
+ */
+function toPart(part: string | undefined): number | null {
+  // A part that is simply absent (the shorter of two dotted strings) is not
+  // malformed, it is just shorter. "1.2" vs "1.2.0" is a legitimate way to
+  // spell the same version, so a missing trailing part counts as zero.
+  if (part === undefined) return 0
+  if (!/^\d+$/.test(part)) return null
+  return Number(part)
+}
+
+/**
+ * Numeric comparison, part by part. Written out rather than pulled in: '10'
+ * sorts before '9' as a string, and that is the only thing a version compare
+ * has to get right here. Missing trailing parts count as zero; the parts are
+ * compared out to the length of the longer operand, so a stray extra segment
+ * (e.g. "1.2.0.5") is never silently dropped.
+ *
+ * Returns `null`, never throws, when either version carries a part it cannot
+ * rank. `null` means here what it means everywhere else in this module —
+ * "nothing I would dare compare" — and putting it in the return type instead
+ * of a thrown error makes the compiler, not a comment, force every caller to
+ * handle it. That matters because `foundRelease` compares this against
+ * APP_VERSION, which is unvalidated input straight out of package.json.
+ */
+export function compareVersions(a: string, b: string): number | null {
+  const pa = a.split('.')
+  const pb = b.split('.')
+  const len = Math.max(pa.length, pb.length)
+  for (let i = 0; i < len; i++) {
+    const na = toPart(pa[i])
+    const nb = toPart(pb[i])
+    if (na === null || nb === null) return null
+    const diff = na - nb
     if (diff !== 0) return diff
   }
   return 0
@@ -538,6 +570,32 @@ function asAsset(raw: unknown): ReleaseAsset | null {
   if (!/^[0-9a-f]{64}$/.test(sha256)) return null
   if (typeof a.name !== 'string') return null
   if (typeof a.browser_download_url !== 'string') return null
+  // This URL gets fetched and the result executed in place of the running
+  // program. `fetch` already refuses non-http(s) schemes and the URL comes from
+  // GitHub's TLS-protected API, so this closes no live hole — but a trust
+  // boundary is the place to require the transport we actually expect. TLS for
+  // anything reachable over a network; plain HTTP only on loopback, where the
+  // manual staging test (Task 12) serves a fake release from a throwaway local
+  // server. Requiring TLS there would mean a self-signed certificate that
+  // Node's `fetch` rejects anyway, so the test would simply never be run, and
+  // loopback traffic never leaves the machine — there is no transport there to
+  // downgrade.
+  let downloadUrl: URL
+  try {
+    downloadUrl = new URL(a.browser_download_url)
+  } catch {
+    return null
+  }
+  // WHATWG URL keeps the brackets on an IPv6 host: `new URL('http://[::1]/x')
+  // .hostname` is the literal string "[::1]", not "::1" (measured, Node 24).
+  // Both spellings are accepted in case that ever differs across environments.
+  const isLoopbackHost = downloadUrl.hostname === 'localhost'
+    || downloadUrl.hostname === '127.0.0.1'
+    || downloadUrl.hostname === '::1'
+    || downloadUrl.hostname === '[::1]'
+  const isSecure = downloadUrl.protocol === 'https:'
+  const isLoopbackHttp = downloadUrl.protocol === 'http:' && isLoopbackHost
+  if (!isSecure && !isLoopbackHttp) return null
   if (typeof a.size !== 'number' || a.size <= 0) return null
   return { name: a.name, url: a.browser_download_url, size: a.size, sha256 }
 }
@@ -596,7 +654,8 @@ export async function fetchLatestRelease(fetcher?: Fetcher): Promise<Release | n
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateGithub.test.ts`
-Expected: PASS, 13 tests.
+Expected: PASS, 24 tests (die Liste oben ist der Kern; der Loopback- und
+Sentinel-Fix aus dem Review hat sie auf 24 erweitert).
 
 - [ ] **Step 5: Commit**
 

@@ -164,6 +164,39 @@ describe('installUpdate — an unexpected throw after the server is closed', () 
     expect(d.exit).toHaveBeenCalledWith(1)
   })
 
+  // Says the installation was not touched, not that it was "restored" — nothing
+  // had been renamed yet when closeServer() rejected.
+  it('says the installation was not changed when closeServer rejects before any rename', async () => {
+    stage()
+    const d = deps({ closeServer: vi.fn().mockRejectedValue(new Error('close boom')) })
+    await installUpdate(d)
+    expect(takeFailureMarker(dir)).toMatch(/nichts verändert/)
+  })
+
+  // Pins as much of the EADDRINUSE-vs-dying-parent contract as this module can:
+  // closeServer() rejecting can leave this process still holding the port (and
+  // still answering health checks) for a moment, so the recovery spawn MUST
+  // happen, and the spawned process is the only thing that can retry the bind —
+  // this module has no way to wait for the port to free itself. What it CAN pin
+  // is its own ordering: spawnDetached is actually called on this path, and
+  // exit() — which kills this process and finally releases the port — comes
+  // strictly after it, never before. Whether the spawned process actually wins
+  // that race by retrying its bind instead of deferring to a "busy and healthy"
+  // read is a property of spawnDetached's real implementation (a later task,
+  // spawning the real tandem.exe), not something a call to a mocked function
+  // here can exercise.
+  it('calls spawnDetached before exit on the unexpected-throw recovery path', async () => {
+    stage()
+    const order: string[] = []
+    const d = deps({
+      closeServer: vi.fn().mockRejectedValue(new Error('close boom')),
+      spawnDetached: vi.fn(() => { order.push('spawn'); return { kill: vi.fn() } }),
+      exit: vi.fn(() => { order.push('exit') }),
+    })
+    await installUpdate(d)
+    expect(order).toEqual(['spawn', 'exit'])
+  })
+
   it('recovers when waitForHealth rejects instead of resolving false', async () => {
     stage()
     const kill = vi.fn()
@@ -174,7 +207,9 @@ describe('installUpdate — an unexpected throw after the server is closed', () 
     await installUpdate(d)
     expect(read('tandem.exe')).toBe('alt')
     expect(read('better_sqlite3.node')).toBe('alt-node')
-    expect(takeFailureMarker(dir)).toMatch(/Unerwarteter Fehler/)
+    // Unlike the closeServer-rejects case, the rename DID happen here (waitForHealth
+    // rejects only after spawnDetached), so the marker must say a restore occurred.
+    expect(takeFailureMarker(dir)).toMatch(/Unerwarteter Fehler.*wiederhergestellt/)
     expect(kill).toHaveBeenCalledTimes(1)
     // Once for the unhealthy new version, once for the restored old one.
     expect(d.spawnDetached).toHaveBeenCalledTimes(2)

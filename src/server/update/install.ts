@@ -11,6 +11,29 @@ export interface InstallDeps {
   dir: string
   /** Bonjour down, Fastify closed, database closed. */
   closeServer: () => Promise<void>
+  /**
+   * Starts exePath as a new detached process and returns a handle to it.
+   *
+   * The process this starts MUST NOT defer to whatever is already answering on
+   * the port — the way main.ts's own EADDRINUSE handling does when it finds a
+   * healthy Tandem there and reopens the browser instead of erroring. That
+   * behaviour exists for an operator double-clicking the exe; it is wrong here.
+   * installUpdate can still be holding the port at the instant this is called
+   * (see the comment on closeServer() throwing, further down in this file), so
+   * the process being started here may find the port busy and its own
+   * predecessor answering "healthy" for a moment — not a second instance, but
+   * this one on its way out. A child that concludes "busy and healthy, another
+   * copy must be running" and exits 0 would leave nothing running once this
+   * process then dies too: this is a replacement, not a second copy. The
+   * implementation must instead retry binding the port until it frees or a
+   * timeout elapses.
+   *
+   * The signature only carries exePath. If the implementation needs to tell
+   * "started as an update restart, please retry the bind" apart from an
+   * operator's ordinary double-click, it is free to arrange that itself — e.g.
+   * an environment variable it sets on the child it spawns — without any
+   * change to this module.
+   */
   spawnDetached: (exePath: string) => { kill: () => void }
   waitForHealth: (timeoutMs: number) => Promise<boolean>
   exit: (code: number) => void
@@ -75,7 +98,7 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
   // Before anything is closed or moved: is there actually a full release here?
   for (const name of [EXE_NAME, NATIVE_NAME]) {
     const file = path.join(dir, name + NEW_SUFFIX)
-    if (!fs.existsSync(file)) throw new Error(`${name + NEW_SUFFIX} fehlt — bitte neu laden.`)
+    if (!fs.existsSync(file)) throw new Error(`„${name + NEW_SUFFIX}“ fehlt — bitte neu laden.`)
   }
 
   // From this point on the server is meant to be gone and nothing listening. Every
@@ -86,6 +109,11 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
   // indistinguishable from a dead installation to an operator at the landing site,
   // so closeServer() itself sits inside the catch-all recovery below, not before it.
   let child: { kill: () => void } | undefined
+  // Tracks whether the rename block below ever completed, so the catch-all's
+  // marker text can say what actually happened instead of always claiming a
+  // restore: closeServer() throwing, or the stale-.old sweep throwing, both
+  // happen before anything is touched on disk, and "restored" would be false.
+  let renamed = false
   try {
     await deps.closeServer()
 
@@ -107,6 +135,7 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
       deps.exit(1)
       return
     }
+    renamed = true
 
     child = deps.spawnDetached(exePath)
     // 90 s, not 30: Windows Defender can scan a freshly written, unsigned 114 MB
@@ -146,23 +175,33 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
     // running.
     //
     // If closeServer() throws before its HTTP listener has actually closed, this
-    // process can still be holding the port when spawnDetached below starts a new
-    // copy of the exe. That is still safe: spawnDetached only asks the OS to start
-    // a detached process and returns immediately, without waiting for the child to
-    // bind, and the exit() right after it kills this process, which releases the
-    // port. A freshly spawned exe has to load its runtime and open the database
-    // before it gets anywhere near its own bind() call — far longer than this
-    // process needs to die — so by the time the child would attempt to bind, this
-    // process (and the port it held) is already gone.
+    // process can still be holding the port at the moment spawnDetached below
+    // starts a new copy of the exe — and can even still be answering /api/health
+    // for the instant it takes exit() to actually tear this process down. Waiting
+    // it out here is not an option: exit() is synchronous and this whole branch is
+    // best-effort, with no room for a "wait for the port to free, then spawn"
+    // step. Safety instead rests entirely on the spawnDetached contract (see
+    // InstallDeps.spawnDetached above): the process it starts must retry binding
+    // the port until it frees, never defer to whatever answers there in the
+    // meantime. A child that deferred — the way main.ts's own EADDRINUSE handling
+    // does for a double-clicking operator — could see "busy and healthy" (this
+    // dying process, not a second instance), exit 0, and then this process exits
+    // too, leaving nothing running.
     try { child?.kill() } catch { /* best effort — see comment above */ }
     try { restore(dir) } catch { /* best effort — see comment above */ }
     try {
+      // renamed is only true once the rename block above has fully completed,
+      // so this tells the operator the truth for both cases: nothing was ever
+      // touched (closeServer() or the stale-.old sweep threw first), versus a
+      // swap that did happen and was rolled back by restore() just above.
+      const reason = renamed
+        ? `Unerwarteter Fehler bei der Installation: „${String(err)}“. Die vorherige ` +
+          'Version wurde, soweit möglich, wiederhergestellt und gestartet.'
+        : `Unerwarteter Fehler bei der Installation: „${String(err)}“. An der Installation ` +
+          'wurde nichts verändert. Die vorherige Version wurde neu gestartet.'
       fs.writeFileSync(
         path.join(dir, FAILURE_MARKER),
-        JSON.stringify({
-          reason: `Unerwarteter Fehler bei der Installation: „${String(err)}“. Die vorherige ` +
-            'Version wurde, soweit möglich, wiederhergestellt und gestartet.',
-        }),
+        JSON.stringify({ reason }),
       )
     } catch { /* best effort — see comment above */ }
     try { deps.spawnDetached(exePath) } catch { /* best effort — see comment above */ }

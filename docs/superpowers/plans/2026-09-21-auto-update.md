@@ -1488,7 +1488,7 @@ import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import { pipeline } from 'stream/promises'
-import { Readable } from 'stream'
+import { Readable, Transform } from 'stream'
 import { EXE_NAME, NATIVE_NAME } from './github'
 import type { Release, ReleaseAsset } from './github'
 
@@ -1535,19 +1535,33 @@ async function fetchAsset(
   let lastReport = 0
 
   const source = await deps.fetchStream(asset.url)
-  source.on('data', (chunk: Buffer) => {
-    hash.update(chunk)
-    done += chunk.length
-    // Throttled: a 114 MB file would otherwise push thousands of SSE frames
-    // at every connected manifest.
-    const now = Date.now()
-    if (now - lastReport >= 500) {
-      lastReport = now
-      deps.onProgress(done, total)
-    }
+
+  // Hashing happens inside the pipeline as a Transform, not via a parallel
+  // 'data' listener on `source`. Attaching `.on('data', …)` switches a stream
+  // into flowing mode immediately, and whether `pipeline()`'s own consumer is
+  // wired up before the first chunk is emitted is a timing detail of Node's
+  // stream internals, not a guarantee this code can lean on — if it lost that
+  // race, bytes would reach the hash but never the file (or the other way
+  // round), and a truncated file could still pass its own checksum. Routing
+  // every byte through a Transform that both hashes and forwards makes that
+  // impossible by construction: one consumer, and hashing and writing happen
+  // on the same chunk in the same step.
+  const hasher = new Transform({
+    transform(chunk: Buffer, _enc, callback) {
+      hash.update(chunk)
+      done += chunk.length
+      // Throttled: a 114 MB file would otherwise push thousands of SSE frames
+      // at every connected manifest.
+      const now = Date.now()
+      if (now - lastReport >= 500) {
+        lastReport = now
+        deps.onProgress(done, total)
+      }
+      callback(null, chunk)
+    },
   })
 
-  await pipeline(source, fs.createWriteStream(target))
+  await pipeline(source, hasher, fs.createWriteStream(target))
 
   const got = hash.digest('hex')
   if (got !== asset.sha256) {
@@ -1588,7 +1602,7 @@ export async function downloadRelease(release: Release, deps: DownloadDeps): Pro
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateDownload.test.ts`
-Expected: PASS, 8 tests.
+Expected: PASS, 9 tests (die acht unten plus einer fuer den Fall, dass die zweite Datei scheitert, nachdem die erste schon lag).
 
 - [ ] **Step 5: Commit**
 

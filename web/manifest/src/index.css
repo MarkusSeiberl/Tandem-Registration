@@ -1335,3 +1335,35 @@ h2 {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+.update-screen {
+  padding: 24px 28px;
+  max-width: 720px;
+}
+
+.update-versions {
+  display: grid;
+  grid-template-columns: max-content auto;
+  gap: 4px 16px;
+  margin: 0 0 20px;
+}
+
+.update-versions dt { font-weight: 600; }
+.update-versions dd { margin: 0; }
+
+.update-progress progress { width: 100%; height: 14px; }
+.update-progress p { margin: 6px 0 0; }
+
+.update-notes { margin-top: 28px; }
+.update-notes h3 { margin-bottom: 4px; }
+.update-notes ul { margin: 4px 0 12px 20px; }
+
+/* The sidebar entry only exists while something is pending, so it may shout. */
+.tab .update-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}

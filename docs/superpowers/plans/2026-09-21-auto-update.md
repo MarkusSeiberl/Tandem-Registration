@@ -1912,58 +1912,89 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
 
   await deps.closeServer()
 
-  // A leftover from an earlier attempt would make the rename below fail.
-  for (const [, old] of PAIRS) fs.rmSync(path.join(dir, old), { force: true })
-
+  // From here the server is gone and nothing is listening. Every region below
+  // must end in one of this module's two defined outcomes — the new version
+  // running, or the old one restored and running. A third outcome, where an
+  // unhandled throw leaves this process alive with a closed server and no
+  // restart, is indistinguishable from a dead installation for an operator at
+  // the landing site, and the caller cannot even report it: there is no server
+  // left to report through. Hence the catch-all at the bottom.
+  let child: { kill: () => void } | undefined
   try {
-    for (const [live, old] of PAIRS) fs.renameSync(path.join(dir, live), path.join(dir, old))
-    for (const [live] of PAIRS) {
-      fs.renameSync(path.join(dir, live + NEW_SUFFIX), path.join(dir, live))
+    // A leftover from an earlier attempt would make the rename below fail.
+    for (const [, old] of PAIRS) fs.rmSync(path.join(dir, old), { force: true })
+
+    try {
+      for (const [live, old] of PAIRS) fs.renameSync(path.join(dir, live), path.join(dir, old))
+      for (const [live] of PAIRS) {
+        fs.renameSync(path.join(dir, live + NEW_SUFFIX), path.join(dir, live))
+      }
+    } catch (err) {
+      restore(dir)
+      fs.writeFileSync(
+        path.join(dir, FAILURE_MARKER),
+        JSON.stringify({ reason: `Dateien konnten nicht getauscht werden: ${String(err)}` }),
+      )
+      deps.spawnDetached(exePath)
+      deps.exit(1)
+      return
     }
-  } catch (err) {
+
+    child = deps.spawnDetached(exePath)
+    // 90 s, not 30: Windows Defender can scan a freshly written, unsigned 114 MB
+    // binary before it is allowed to run. A genuinely broken exe fails in seconds
+    // anyway, so the long wait only ever costs us in the rare real failure.
+    const healthy = await deps.waitForHealth(deps.healthTimeoutMs ?? 90_000)
+
+    if (healthy) {
+      for (const [, old] of PAIRS) fs.rmSync(path.join(dir, old), { force: true })
+      deps.exit(0)
+      return
+    }
+
+    // The new version does not answer. Put everything back and start what we know
+    // works — the operator must never be left with a dead installation.
+    child.kill()
     restore(dir)
     fs.writeFileSync(
       path.join(dir, FAILURE_MARKER),
-      JSON.stringify({ reason: `Dateien konnten nicht getauscht werden: ${String(err)}` }),
+      JSON.stringify({
+        reason:
+          'Die neue Version ist nicht gestartet. Die vorherige Version wurde ' +
+          'wiederhergestellt und läuft weiter.',
+      }),
     )
     deps.spawnDetached(exePath)
     deps.exit(1)
-    return
+  } catch (err) {
+    // Anything unexpected past closeServer — the stale-.old sweep, spawnDetached,
+    // or waitForHealth throwing instead of resolving to false — leaves the new
+    // version's health unknown, and unknown falls back to the version known to
+    // work. Deliberately tolerant of its OWN failures, each step wrapped alone:
+    // if restore() or the marker write also throws, a best-effort restart of
+    // whatever is on disk still beats an unhandled rejection with no server and
+    // nothing running.
+    try { child?.kill() } catch { /* best effort — see comment above */ }
+    try { restore(dir) } catch { /* best effort — see comment above */ }
+    try {
+      fs.writeFileSync(
+        path.join(dir, FAILURE_MARKER),
+        JSON.stringify({
+          reason: `Unerwarteter Fehler bei der Installation: „${String(err)}“. Die vorherige ` +
+            'Version wurde, soweit möglich, wiederhergestellt und gestartet.',
+        }),
+      )
+    } catch { /* best effort — see comment above */ }
+    try { deps.spawnDetached(exePath) } catch { /* best effort — see comment above */ }
+    deps.exit(1)
   }
-
-  const child = deps.spawnDetached(exePath)
-  // 90 s, not 30: Windows Defender can scan a freshly written, unsigned 114 MB
-  // binary before it is allowed to run. A genuinely broken exe fails in seconds
-  // anyway, so the long wait only ever costs us in the rare real failure.
-  const healthy = await deps.waitForHealth(deps.healthTimeoutMs ?? 90_000)
-
-  if (healthy) {
-    for (const [, old] of PAIRS) fs.rmSync(path.join(dir, old), { force: true })
-    deps.exit(0)
-    return
-  }
-
-  // The new version does not answer. Put everything back and start what we know
-  // works — the operator must never be left with a dead installation.
-  child.kill()
-  restore(dir)
-  fs.writeFileSync(
-    path.join(dir, FAILURE_MARKER),
-    JSON.stringify({
-      reason:
-        'Die neue Version ist nicht gestartet. Die vorherige Version wurde ' +
-        'wiederhergestellt und läuft weiter.',
-    }),
-  )
-  deps.spawnDetached(exePath)
-  deps.exit(1)
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateInstall.test.ts`
-Expected: PASS, 12 tests.
+Expected: PASS, 15 tests (12 aus der Liste unten plus je einer fuer einen Wurf aus dem .old-Sweep, aus spawnDetached und aus waitForHealth).
 
 - [ ] **Step 5: Commit**
 

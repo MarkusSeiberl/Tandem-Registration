@@ -2546,7 +2546,13 @@ git commit -m "feat(update): Release-Notes als React-Elemente rendern"
 **Files:**
 - Modify: `web/manifest/src/api.ts`
 - Modify: `web/manifest/src/useEvents.ts`
-- Modify: `web/manifest/src/setupTests.ts`
+- Modify: `web/manifest/src/setupTests.ts` (dazu `eventSourceOpenCount()` und
+  `fireRawEvent()`, siehe unten)
+- Create: `web/manifest/src/useEvents.test.ts` — fünf Tests für
+  `useUpdateEvents`: abgeschaltet öffnet **keine** Verbindung (gezählt, nicht
+  bloß „Callback blieb still"), eingeschaltet genau eine und liefert die
+  geparste Nutzlast, Unmount schließt, Wechsel `true → false` schließt, ein
+  kaputter Frame wirft nicht und ruft nicht auf.
 
 **Interfaces:**
 - Consumes: `UpdateStatusResponse` (Task 4).
@@ -2602,6 +2608,23 @@ Die Typen der `listeners`-Map ziehen entsprechend nach
 /** Simulates the server broadcasting an `update` event with its status payload. */
 export function fireUpdateEvent(status: unknown) {
   FakeEventSource.dispatch('update', status)
+}
+
+/**
+ * How many connections are open right now. Exists so a test can assert that a
+ * tablet opens NONE — without it the only observable is "the callback stayed
+ * silent", which a guard that opens the connection and merely forgets the
+ * listener would also satisfy, leaking exactly the connection this design
+ * forbids. Exported as a function, not a static, so it works regardless of the
+ * conditional install below.
+ */
+export function eventSourceOpenCount(): number {
+  return FakeEventSource.openCount()
+}
+
+/** A frame that is not valid JSON — `dispatch` always stringifies, so it cannot produce one. */
+export function fireRawEvent(type: string, data: string) {
+  FakeEventSource.dispatchRaw(type, data)
 }
 ```
 

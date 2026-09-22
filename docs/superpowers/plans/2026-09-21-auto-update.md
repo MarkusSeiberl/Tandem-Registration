@@ -985,7 +985,7 @@ export class UpdateState {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateState.test.ts`
-Expected: PASS, 11 tests (10 aus der Liste oben plus der Test fuer den nicht vergleichbaren Fall).
+Expected: PASS, 14 tests (die Liste oben plus die Tests aus den Reviews: nicht vergleichbare Version, veralteter Release-Griff, alte Fehlermeldung, entschaerfter Dialog).
 
 - [ ] **Step 5: Commit**
 
@@ -1963,7 +1963,7 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateInstall.test.ts`
-Expected: PASS, 11 tests (10 aus der Liste oben plus der Test fuer den nicht vergleichbaren Fall).
+Expected: PASS, 12 tests.
 
 - [ ] **Step 5: Commit**
 

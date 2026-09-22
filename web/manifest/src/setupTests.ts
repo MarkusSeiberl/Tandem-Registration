@@ -40,6 +40,22 @@ class FakeEventSource {
       }
     }
   }
+
+  // `dispatch` always runs its payload through JSON.stringify, so it can never
+  // produce a malformed (non-JSON) frame. This bypasses that to let a test send
+  // exactly the raw string a real server-sent-events frame would carry.
+  static dispatchRaw(type: string, raw: string) {
+    for (const instance of FakeEventSource.instances) {
+      for (const listener of instance.listeners.get(type) ?? []) {
+        listener({ data: raw } as MessageEvent)
+      }
+    }
+  }
+
+  /** Test-only: how many stubbed connections are currently open (not yet closed). */
+  static openCount(): number {
+    return FakeEventSource.instances.size
+  }
 }
 
 if (typeof globalThis.EventSource === 'undefined') {
@@ -55,6 +71,20 @@ export function fireChangedEvent() {
 /** Simulates the server broadcasting an `update` event with its status payload. */
 export function fireUpdateEvent(status: unknown) {
   FakeEventSource.dispatch('update', status)
+}
+
+/** Simulates a raw event frame, e.g. an unparseable payload a client must not choke on. */
+export function fireRawEvent(type: string, raw: string) {
+  FakeEventSource.dispatchRaw(type, raw)
+}
+
+// Exported as a plain function (not the class) so it stays reachable from a test
+// even though the class itself is only installed onto globalThis conditionally
+// above. It reads FakeEventSource's own instance set directly, so it reports the
+// real count of hook-opened connections regardless of that conditional install.
+/** How many stubbed EventSource connections a test's hook(s) currently hold open. */
+export function eventSourceOpenCount(): number {
+  return FakeEventSource.openCount()
 }
 
 // jsdom implements <dialog> as an element but not its modal methods, so any

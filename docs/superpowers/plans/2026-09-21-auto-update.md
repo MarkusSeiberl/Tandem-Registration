@@ -923,7 +923,7 @@ export class UpdateState {
       // `release` and does not gate on phase, so a release left over from an
       // earlier successful check would still be fetchable after a later check
       // found nothing.
-      this.found = null
+      this.forget()
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
@@ -939,12 +939,12 @@ export class UpdateState {
         `[tandem] Versionsvergleich nicht möglich: "${release.version}" gegen ` +
           `"${this.status.currentVersion}".`,
       )
-      this.found = null
+      this.forget()
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
     if (newer <= 0) {
-      this.found = null
+      this.forget()
       // error: null as well — a message left over from a failed download would
       // otherwise sit on an up-to-date status, looking like something the
       // operator still has to do.
@@ -962,6 +962,17 @@ export class UpdateState {
   }
 
   markPromptSeen(): void {
+    this.promptArmed = false
+  }
+
+  /**
+   * There is nothing installable any more. Drops the handle the downloader
+   * works from AND any armed dialog: leaving the dialog armed while `release`
+   * is gone would open a modal offering a version the download step then
+   * silently refuses to fetch — a dead end with no feedback.
+   */
+  private forget(): void {
+    this.found = null
     this.promptArmed = false
   }
 

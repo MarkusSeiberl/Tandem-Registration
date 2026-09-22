@@ -339,7 +339,7 @@ git commit -m "feat(update): das Programm kennt seine eigene Version"
   export interface ReleaseAsset { name: string; url: string; size: number; sha256: string }
   export interface Release { version: string; notes: string; exe: ReleaseAsset; native: ReleaseAsset }
   export type Fetcher = (url: string) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>
-  /** null = die beiden lassen sich nicht vergleichen (kaputte Versionsangabe). */
+  /** null = the two cannot be ranked (a version part this cannot parse). */
   export function compareVersions(a: string, b: string): number | null
   export function parseRelease(payload: unknown): Release | null
   export function fetchLatestRelease(fetcher?: Fetcher): Promise<Release | null>
@@ -947,7 +947,7 @@ export class UpdateState {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateState.test.ts`
-Expected: PASS, 11 tests.
+Expected: PASS, 11 tests (10 aus der Liste oben plus der Test fuer den nicht vergleichbaren Fall).
 
 - [ ] **Step 5: Commit**
 
@@ -1868,7 +1868,7 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateInstall.test.ts`
-Expected: PASS, 11 tests.
+Expected: PASS, 11 tests (10 aus der Liste oben plus der Test fuer den nicht vergleichbaren Fall).
 
 - [ ] **Step 5: Commit**
 

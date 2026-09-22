@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 import * as api from './api'
+import type { UpdateStatus } from './api'
 import { today } from './date'
 import { fireUpdateEvent } from './setupTests'
 
@@ -145,7 +146,10 @@ describe('App', () => {
   })
 })
 
-const updateStatus = (over = {}) => ({
+// Explicit return type (rather than letting it be inferred) so `phase` stays
+// pinned to UpdatePhase — a typo or future phase value here fails to compile
+// instead of silently passing through as `string`.
+const updateStatus = (over: Partial<UpdateStatus> = {}): UpdateStatus => ({
   phase: 'available', currentVersion: '1.1.0', latestVersion: '1.2.0',
   notes: null, downloadedBytes: 0, totalBytes: 0, error: null,
   checkedAt: null, allowed: true, promptPending: false, openToday: 0,

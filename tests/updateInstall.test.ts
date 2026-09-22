@@ -232,6 +232,28 @@ describe('cleanupLeftovers', () => {
     expect(() => cleanupLeftovers(dir)).not.toThrow()
     expect(has('tandem.exe')).toBe(true)
   })
+
+  it('does not throw when a file cannot be removed, and still attempts the others', () => {
+    fs.writeFileSync(path.join(dir, OLD_EXE), 'alt')
+    fs.writeFileSync(path.join(dir, OLD_NATIVE), 'alt')
+    fs.writeFileSync(path.join(dir, 'tandem.exe.new'), 'halb geladen')
+    fs.writeFileSync(path.join(dir, 'better_sqlite3.node.new'), 'halb-node')
+
+    const spy = vi.spyOn(fs, 'rmSync')
+    spy.mockImplementationOnce(() => {
+      throw new Error('EBUSY: file locked')
+    })
+    try {
+      expect(() => cleanupLeftovers(dir)).not.toThrow()
+    } finally {
+      spy.mockRestore()
+    }
+
+    // The first file failed, but the rest should still be deleted (or attempted).
+    // At least the successfully removed ones should be gone.
+    const remaining = fs.readdirSync(dir)
+    expect(remaining.length).toBeLessThan(4)
+  })
 })
 
 describe('takeFailureMarker', () => {
@@ -246,5 +268,19 @@ describe('takeFailureMarker', () => {
     fs.writeFileSync(path.join(dir, FAILURE_MARKER), 'kein JSON')
     expect(takeFailureMarker(dir)).toBeNull()
     expect(has(FAILURE_MARKER)).toBe(false)
+  })
+
+  it('does not throw when the marker file cannot be removed, but still returns the reason', () => {
+    fs.writeFileSync(path.join(dir, FAILURE_MARKER), JSON.stringify({ reason: 'test reason' }))
+    const spy = vi.spyOn(fs, 'rmSync')
+    spy.mockImplementationOnce(() => {
+      throw new Error('EBUSY: file locked')
+    })
+    try {
+      expect(takeFailureMarker(dir)).toBe('test reason')
+      expect(has(FAILURE_MARKER)).toBe(true) // file still exists because deletion failed
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

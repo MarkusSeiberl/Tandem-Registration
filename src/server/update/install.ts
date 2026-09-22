@@ -54,7 +54,17 @@ const PAIRS: [live: string, old: string][] = [
  */
 export function cleanupLeftovers(dir: string): void {
   for (const name of [OLD_EXE, OLD_NATIVE, EXE_NAME + NEW_SUFFIX, NATIVE_NAME + NEW_SUFFIX]) {
-    fs.rmSync(path.join(dir, name), { force: true })
+    const filePath = path.join(dir, name)
+    try {
+      fs.rmSync(filePath, { force: true })
+    } catch (err) {
+      // force: true suppresses "file does not exist" errors but not file-locking errors
+      // (EBUSY, EPERM, EACCES on Windows from antivirus, backup agents, or indexers).
+      // This runs before listen(), so a throw here means the program does not start.
+      // Try to remove each file independently so one locked file does not prevent
+      // cleaning up the others.
+      console.warn(`Datei konnte nicht gelöscht werden: ${filePath} — ${String(err)}`)
+    }
   }
 }
 
@@ -70,7 +80,17 @@ export function takeFailureMarker(dir: string): string | null {
     // A mangled marker is still a marker; the file goes either way so it
     // cannot reappear on every start.
   }
-  fs.rmSync(file, { force: true })
+  try {
+    fs.rmSync(file, { force: true })
+  } catch (err) {
+    // force: true suppresses "file does not exist" errors but not file-locking errors
+    // (EBUSY, EPERM, EACCES on Windows from antivirus, backup agents, or indexers).
+    // This runs before listen(), so a throw here means the program does not start.
+    // Return the reason we read; the file will persist, meaning the same reason
+    // shows again on the next start until the file can be deleted — annoying but
+    // not fatal, and clearly better than failing to start.
+    console.warn(`Datei konnte nicht gelöscht werden: ${file} — ${String(err)}`)
+  }
   return reason
 }
 

@@ -1000,6 +1000,9 @@ git commit -m "feat(update): Zustand des Updates mit einmaligem Start-Dialog"
 
 **Files:**
 - Create: `src/server/routes/update.ts`
+- Create: `src/server/routes/isLocal.ts` (aus `shutdown.ts` herausgezogen, von
+  beiden benutzt)
+- Modify: `src/server/routes/shutdown.ts` (benutzt jetzt das geteilte `isLocal`)
 - Create: `tests/update-route.test.ts`
 - Modify: `src/server/index.ts` (Import, 8. Parameter, `registerUpdateRoutes`)
 - Modify: `tests/helpers/testServer.ts` (8. Parameter durchreichen)
@@ -1050,6 +1053,22 @@ function withUpdate(state = new UpdateState('1.1.0')) {
   }
   return { ...testServer({}, undefined, undefined, undefined, controls), controls, state }
 }
+
+// Die Schranke wird tabellengetrieben geprüft, nicht stichprobenhaft: alle vier
+// POST-Routen gegen alle drei Fälle (lokal erlaubt, LAN → 403, ohne Controls →
+// 501). Geprüft wird die **Nebenwirkung**, nicht nur der Statuscode — eine
+// Route, die 403 antwortet und die Aktion trotzdem ausführt, bestünde eine
+// reine Statusprüfung. Eine an einer Route geprüfte und für die anderen drei
+// angenommene Sicherheitskontrolle ist keine geprüfte Sicherheitskontrolle.
+const ROUTES = [
+  { url: '/api/update/check', code: 202, spy: (c: UpdateControls) => c.check },
+  { url: '/api/update/download', code: 202, spy: (c: UpdateControls) => c.download },
+  { url: '/api/update/install', code: 202, spy: (c: UpdateControls) => c.install },
+  {
+    url: '/api/update/prompt-seen', code: 204,
+    spy: (c: UpdateControls) => vi.spyOn(c.state, 'markPromptSeen'),
+  },
+] as const
 
 test('the status names both versions and is open to every device', async () => {
   const state = new UpdateState('1.1.0')
@@ -1155,6 +1174,7 @@ import { FastifyInstance } from 'fastify'
 import type { Database } from 'better-sqlite3'
 import { APP_VERSION } from '../version'
 import { today } from '../day'
+import { isLocal } from './isLocal'
 import type { UpdateState, UpdateStatus } from '../update/state'
 
 /**
@@ -1175,12 +1195,13 @@ export interface UpdateStatusResponse extends UpdateStatus {
   openToday: number
 }
 
-// Same reasoning as routes/shutdown.ts: the manifest has no login and every
-// device on the club WLAN can open it, so the server decides. `req.ip` is the
-// socket's peer address — nothing a client can set about itself.
-function isLocal(ip: string): boolean {
-  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
-}
+// isLocal lives in its own module (src/server/routes/isLocal.ts) and is shared
+// with routes/shutdown.ts, which draws the same line for the same reason: the
+// manifest has no login and every device on the club WLAN can open it, so the
+// server decides. `req.ip` is the socket's peer address — nothing a client can
+// set about itself, and the app sets no `trustProxy`, so no request header can
+// influence it. One copy, not two: a loopback form added to one of two
+// byte-identical copies would leave the other silently weaker.
 
 function openToday(db: Database): number {
   const row = db
@@ -1287,7 +1308,7 @@ with `import type { UpdateControls } from '../../src/server/routes/update'` at t
 - [ ] **Step 6: Run test to verify it passes**
 
 Run: `npx vitest run tests/update-route.test.ts`
-Expected: PASS, 7 tests.
+Expected: PASS â die tabellengetriebene Schrankenpruefung plus die Tests fuer Status-Nutzlast, openToday und die Dialog-Abfolge.
 
 - [ ] **Step 7: Verify the version really lands in the bundle**
 
@@ -2289,7 +2310,7 @@ export function Markdown({ text }: { text: string }): ReactNode {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm --prefix web/manifest test -- markdown`
-Expected: PASS, 7 tests.
+Expected: PASS â die tabellengetriebene Schrankenpruefung plus die Tests fuer Status-Nutzlast, openToday und die Dialog-Abfolge.
 
 - [ ] **Step 5: Commit**
 

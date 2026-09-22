@@ -110,6 +110,59 @@ describe('installUpdate — the new version does not come up', () => {
   })
 })
 
+describe('installUpdate — an unexpected throw after the server is closed', () => {
+  // fs.rmSync is not part of InstallDeps, so the only honest way to force the
+  // stale-.old sweep to fail is to make the real fs.rmSync throw for that one
+  // call. Spying on it directly (rather than e.g. turning OLD_EXE into a
+  // directory) avoids leaving disk state that would itself corrupt the very
+  // files this test checks were restored.
+  it('recovers when the stale-.old sweep throws', async () => {
+    stage()
+    const spy = vi.spyOn(fs, 'rmSync').mockImplementationOnce(() => {
+      throw new Error('Sweep boom')
+    })
+    const d = deps()
+    await installUpdate(d)
+    spy.mockRestore()
+    expect(read('tandem.exe')).toBe('alt')
+    expect(read('better_sqlite3.node')).toBe('alt-node')
+    expect(takeFailureMarker(dir)).toMatch(/Unerwarteter Fehler/)
+    expect(d.spawnDetached).toHaveBeenCalled()
+    expect(d.exit).toHaveBeenCalledWith(1)
+  })
+
+  it('recovers when spawnDetached throws on the way up', async () => {
+    stage()
+    const spawnDetached = vi.fn()
+      .mockImplementationOnce(() => { throw new Error('spawn boom') })
+      .mockReturnValue({ kill: vi.fn() })
+    const d = deps({ spawnDetached })
+    await installUpdate(d)
+    expect(read('tandem.exe')).toBe('alt')
+    expect(read('better_sqlite3.node')).toBe('alt-node')
+    expect(takeFailureMarker(dir)).toMatch(/Unerwarteter Fehler/)
+    expect(spawnDetached).toHaveBeenCalledTimes(2)
+    expect(d.exit).toHaveBeenCalledWith(1)
+  })
+
+  it('recovers when waitForHealth rejects instead of resolving false', async () => {
+    stage()
+    const kill = vi.fn()
+    const d = deps({
+      spawnDetached: vi.fn().mockReturnValue({ kill }),
+      waitForHealth: vi.fn().mockRejectedValue(new Error('health boom')),
+    })
+    await installUpdate(d)
+    expect(read('tandem.exe')).toBe('alt')
+    expect(read('better_sqlite3.node')).toBe('alt-node')
+    expect(takeFailureMarker(dir)).toMatch(/Unerwarteter Fehler/)
+    expect(kill).toHaveBeenCalledTimes(1)
+    // Once for the unhealthy new version, once for the restored old one.
+    expect(d.spawnDetached).toHaveBeenCalledTimes(2)
+    expect(d.exit).toHaveBeenCalledWith(1)
+  })
+})
+
 describe('cleanupLeftovers', () => {
   it('deletes rollback copies — this process running proves the new version starts', () => {
     fs.writeFileSync(path.join(dir, OLD_EXE), 'alt')

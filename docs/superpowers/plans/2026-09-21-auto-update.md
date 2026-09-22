@@ -339,7 +339,8 @@ git commit -m "feat(update): das Programm kennt seine eigene Version"
   export interface ReleaseAsset { name: string; url: string; size: number; sha256: string }
   export interface Release { version: string; notes: string; exe: ReleaseAsset; native: ReleaseAsset }
   export type Fetcher = (url: string) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>
-  export function compareVersions(a: string, b: string): number
+  /** null = die beiden lassen sich nicht vergleichen (kaputte Versionsangabe). */
+  export function compareVersions(a: string, b: string): number | null
   export function parseRelease(payload: unknown): Release | null
   export function fetchLatestRelease(fetcher?: Fetcher): Promise<Release | null>
   ```
@@ -756,10 +757,10 @@ describe('UpdateState', () => {
     expect(state.get().phase).toBe('disabled')
   })
 
-  // compareVersions throws on a version part it cannot parse, and APP_VERSION
-  // comes out of package.json unvalidated. A build mistake must not take the
-  // jump day down, and must not leave the state stuck in 'checking' — the
-  // sidebar entry and the dialog both wait on a resolved phase.
+  // compareVersions answers null for a version part it cannot parse, and
+  // APP_VERSION comes out of package.json unvalidated. A build mistake must not
+  // take the jump day down, and must not leave the state stuck in 'checking' —
+  // the sidebar entry and the dialog both wait on a resolved phase.
   it('survives an unparsable local version', () => {
     const state = new UpdateState('1.2.0-beta')
     state.beginCheck()
@@ -845,17 +846,18 @@ export class UpdateState {
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
-    // compareVersions throws on a version part it cannot parse. The release
+    // compareVersions answers null when it cannot compare the two. The release
     // tag is already gated by parseRelease's regex; the other operand is
     // APP_VERSION out of package.json and is not. A malformed local version is
     // a build mistake, not something the operator can fix at the landing site,
     // so it must never take the jump day down or strand the state in
     // 'checking' — it becomes an ordinary failed check, loud in the log.
-    let newer: number
-    try {
-      newer = compareVersions(release.version, this.status.currentVersion)
-    } catch (err) {
-      console.error('[tandem] Versionsvergleich fehlgeschlagen:', err)
+    const newer = compareVersions(release.version, this.status.currentVersion)
+    if (newer === null) {
+      console.error(
+        `[tandem] Versionsvergleich nicht möglich: "${release.version}" gegen ` +
+          `"${this.status.currentVersion}".`,
+      )
       this.release = null
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return

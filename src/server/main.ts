@@ -269,17 +269,17 @@ async function runInstall() {
             })
           }
         } catch (err) {
-          console.error('[tandem] Bonjour liess sich nicht abmelden:', err)
+          console.error('[tandem] Bonjour ließ sich nicht abmelden:', err)
         }
         try {
           await app.close()
         } catch (err) {
-          console.error('[tandem] Server liess sich nicht sauber schliessen:', err)
+          console.error('[tandem] Server ließ sich nicht sauber schließen:', err)
         }
         try {
           db.close()
         } catch (err) {
-          console.error('[tandem] Datenbank liess sich nicht sauber schliessen:', err)
+          console.error('[tandem] Datenbank ließ sich nicht sauber schließen:', err)
         }
       },
       // TANDEM_RESTART tells the started process it is a replacement, not a
@@ -441,19 +441,44 @@ app.listen({ port, host: '0.0.0.0' }).then(afterListen).catch(async (err: NodeJS
   // Retry instead of deferring — deferring would end with nobody serving.
   if (err.code === 'EADDRINUSE' && process.env.TANDEM_RESTART === '1') {
     const deadline = Date.now() + 60_000
+    // Tracks why the loop stopped retrying: still EADDRINUSE when the
+    // deadline hit, some other errno from listen() itself, or undefined once
+    // the bind actually succeeds. Only the bind outcome belongs in this try —
+    // afterListen() is called below it, so a failure there (extractWeb,
+    // bonjour.publish — real synchronous I/O) is never mistaken for the port
+    // still being occupied.
+    let lastErr: NodeJS.ErrnoException | undefined
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 500))
       try {
         await app.listen({ port, host: '0.0.0.0' })
-        afterListen()   // bound after all — carry on as a normal start
-        return
+        lastErr = undefined
+        break
       } catch (retryErr) {
-        if ((retryErr as NodeJS.ErrnoException).code !== 'EADDRINUSE') break
+        lastErr = retryErr as NodeJS.ErrnoException
+        if (lastErr.code !== 'EADDRINUSE') break
       }
     }
+    if (!lastErr) {
+      // Bound after all — carry on as a normal start. Caught separately, not
+      // folded into the retry's try above, so a throw here reports its own
+      // message instead of the misleading "Port blieb belegt".
+      try {
+        afterListen()
+      } catch (afterErr) {
+        fatal(`[tandem] Start fehlgeschlagen: ${(afterErr as Error).message}`)
+      }
+      return
+    }
+    if (lastErr.code === 'EADDRINUSE') {
+      fatal(
+        `[tandem] Neustart nach dem Update fehlgeschlagen: Port ${port} blieb belegt.\n` +
+          `Die vorherige Version läuft möglicherweise noch. Tandem bitte von Hand starten.`,
+      )
+    }
     fatal(
-      `[tandem] Neustart nach dem Update fehlgeschlagen: Port ${port} blieb belegt.\n` +
-        `Die vorherige Version läuft möglicherweise noch. Tandem bitte von Hand starten.`,
+      `[tandem] Neustart nach dem Update fehlgeschlagen: ${lastErr.message}\n` +
+        `Tandem bitte von Hand starten.`,
     )
   }
   // Starting tandem.exe a second time is how the operator gets the manifest

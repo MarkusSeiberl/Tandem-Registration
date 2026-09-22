@@ -20,6 +20,15 @@ export interface UpdateStatus {
 
 // Check if a version string is valid: all parts must be numeric.
 // '1.2.3' is valid; '1.2.0-beta' is not.
+//
+// This duplicates what compareVersions checks internally, but it cannot be
+// deleted in favor of relying solely on compareVersions returning null:
+// compareVersions compares part by part and returns as soon as it finds a
+// numeric difference, *before* it ever reaches a later malformed part (e.g.
+// compareVersions('1.3.0', '1.2.0-beta') returns 1, not null, because '3'
+// already differs from '2' at index 1). This guard is the only thing that
+// reliably catches a malformed currentVersion regardless of where the two
+// versions first diverge.
 function isValidVersion(version: string): boolean {
   const parts = version.split('.')
   return parts.length > 0 && parts.every(part => /^\d+$/.test(part))
@@ -29,8 +38,12 @@ export class UpdateState {
   private status: UpdateStatus
   private listeners: ((s: UpdateStatus) => void)[] = []
   private promptArmed = false
+  private _release: Release | null = null
+
   /** The release the download and install steps work from. */
-  release: Release | null = null
+  get release(): Release | null {
+    return this._release
+  }
 
   constructor(currentVersion: string, phase: UpdatePhase = 'idle') {
     this.status = {
@@ -68,6 +81,7 @@ export class UpdateState {
   foundRelease(release: Release | null, isStartup: boolean): void {
     const checkedAt = new Date().toISOString()
     if (!release) {
+      this._release = null
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
@@ -82,7 +96,7 @@ export class UpdateState {
         `[tandem] Versionsvergleich nicht möglich: "${release.version}" gegen ` +
           `"${this.status.currentVersion}".`,
       )
-      this.release = null
+      this._release = null
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
@@ -92,16 +106,16 @@ export class UpdateState {
         `[tandem] Versionsvergleich nicht möglich: "${release.version}" gegen ` +
           `"${this.status.currentVersion}".`,
       )
-      this.release = null
+      this._release = null
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
     if (newer <= 0) {
-      this.release = null
-      this.patch({ phase: 'up-to-date', latestVersion: release.version, checkedAt })
+      this._release = null
+      this.patch({ phase: 'up-to-date', latestVersion: release.version, checkedAt, error: null })
       return
     }
-    this.release = release
+    this._release = release
     if (isStartup) this.promptArmed = true
     this.patch({
       phase: 'available', latestVersion: release.version, notes: release.notes,

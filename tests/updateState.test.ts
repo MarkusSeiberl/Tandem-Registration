@@ -51,6 +51,28 @@ describe('UpdateState', () => {
     expect(state.get().error).toBeNull()
   })
 
+  it('drops a stale release when a later check fails', () => {
+    const state = new UpdateState('1.1.0')
+    state.beginCheck()
+    state.foundRelease(release('1.2.0'), true)
+    expect(state.release).not.toBeNull()
+
+    state.foundRelease(null, false)
+    expect(state.get().phase).toBe('check-failed')
+    expect(state.release).toBeNull()
+  })
+
+  it('clears a leftover error once a later check finds itself up to date', () => {
+    const state = new UpdateState('1.2.0')
+    state.fail('download-failed', 'Prüfsumme stimmt nicht.')
+    expect(state.get().error).not.toBeNull()
+
+    state.beginCheck()
+    state.foundRelease(release('1.2.0'), true)
+    expect(state.get().phase).toBe('up-to-date')
+    expect(state.get().error).toBeNull()
+  })
+
   // The single rule only this class knows.
   it('arms the dialog on the startup check only', () => {
     const startup = new UpdateState('1.1.0')

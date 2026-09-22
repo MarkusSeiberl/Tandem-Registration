@@ -2420,7 +2420,16 @@ import type { ReactNode } from 'react'
  */
 
 // Split on the two inline forms at once so the parts alternate predictably.
+//
+// The pairing is deliberately CommonMark's, not something stricter: `**` may
+// open emphasis inside a word, so `O(n**2) not O(n**3)` renders with the same
+// emphasis GitHub itself produces. This screen shows the author what they wrote
+// on GitHub — diverging "helpfully" would show them something else.
 const INLINE = /(\*\*[^*]+\*\*|`[^`]+`)/g
+
+// Matches an ATX heading line. Only ## and ### are recognised: the screen's own
+// title is an h2, and h1 is reserved for it — never produced here.
+const HEADING = /^(#{2,3})\s+(.*)$/
 
 function inline(text: string, keyPrefix: string): ReactNode[] {
   return text.split(INLINE).map((part, i) => {
@@ -2435,27 +2444,62 @@ function inline(text: string, keyPrefix: string): ReactNode[] {
   })
 }
 
+// GitHub ends a block at every ATX heading, blank line or not — a heading line
+// is never swallowed into the paragraph before or after it. Grouping raw lines
+// on that rule, instead of only splitting on blank lines, means a heading is
+// recognised wherever it appears rather than only as a block's first line.
+function splitBlocks(text: string): string[][] {
+  const blocks: string[][] = []
+  let current: string[] = []
+
+  for (const line of text.split('\n')) {
+    if (line.trim() === '') {
+      if (current.length > 0) {
+        blocks.push(current)
+        current = []
+      }
+      continue
+    }
+    // A heading always starts a fresh block, even mid-paragraph.
+    if (HEADING.test(line) && current.length > 0) {
+      blocks.push(current)
+      current = []
+    }
+    current.push(line)
+  }
+
+  if (current.length > 0) blocks.push(current)
+  return blocks
+}
+
 export function Markdown({ text }: { text: string }): ReactNode {
-  const blocks = text.split(/\n{2,}/).filter((b) => b.trim() !== '')
+  const blocks = splitBlocks(text)
 
   return (
     <>
-      {blocks.map((block, bi) => {
-        const lines = block.split('\n')
-
-        if (lines.every((l) => l.startsWith('- '))) {
+      {blocks.map((lines, bi) => {
+        // A block is a list once its FIRST line opens with "- ". A later line
+        // that doesn't is a lazy continuation of the item above it — that is how
+        // GitHub reads it too — not a reason to fall back to a paragraph and
+        // lose the whole list over one stray line.
+        if (lines[0].startsWith('- ')) {
+          const items: string[] = []
+          for (const line of lines) {
+            if (line.startsWith('- ')) items.push(line.slice(2))
+            else if (items.length > 0) items[items.length - 1] += ` ${line}`
+          }
           return (
             <ul key={bi}>
-              {lines.map((l, li) => (
-                <li key={li}>{inline(l.slice(2), `${bi}-${li}`)}</li>
+              {items.map((item, li) => (
+                <li key={li}>{inline(item, `${bi}-${li}`)}</li>
               ))}
             </ul>
           )
         }
 
-        // A heading is its own block; anything after it in the same block is an
-        // ordinary paragraph, which is how GitHub bodies are written anyway.
-        const heading = /^(#{2,3})\s+(.*)$/.exec(lines[0])
+        // A heading is its own block (see splitBlocks); anything after it in the
+        // same block is an ordinary paragraph.
+        const heading = HEADING.exec(lines[0])
         if (heading) {
           const rest = lines.slice(1).join(' ')
           // ## becomes h3: the screen's own title is the h2.
@@ -2478,7 +2522,7 @@ export function Markdown({ text }: { text: string }): ReactNode {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm --prefix web/manifest test -- markdown`
-Expected: PASS — die tabellengetriebene Schrankenpruefung plus die Tests fuer Status-Nutzlast, openToday und die Dialog-Abfolge.
+Expected: PASS, 11 tests (die sieben unten plus je einer fuer: zwei Ueberschriften ohne Leerzeile, Ueberschrift direkt gefolgt von Text, Ueberschrift mitten im Block, Liste mit einer Fehlzeile).
 
 - [ ] **Step 5: Commit**
 

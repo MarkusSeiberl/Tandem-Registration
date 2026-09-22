@@ -1308,7 +1308,7 @@ with `import type { UpdateControls } from '../../src/server/routes/update'` at t
 - [ ] **Step 6: Run test to verify it passes**
 
 Run: `npx vitest run tests/update-route.test.ts`
-Expected: PASS â die tabellengetriebene Schrankenpruefung plus die Tests fuer Status-Nutzlast, openToday und die Dialog-Abfolge.
+Expected: PASS — die tabellengetriebene Schrankenpruefung plus die Tests fuer Status-Nutzlast, openToday und die Dialog-Abfolge.
 
 - [ ] **Step 7: Verify the version really lands in the bundle**
 
@@ -2176,17 +2176,17 @@ async function runInstall() {
             })
           }
         } catch (err) {
-          console.error('[tandem] Bonjour liess sich nicht abmelden:', err)
+          console.error('[tandem] Bonjour ließ sich nicht abmelden:', err)
         }
         try {
           await app.close()
         } catch (err) {
-          console.error('[tandem] Server liess sich nicht sauber schliessen:', err)
+          console.error('[tandem] Server ließ sich nicht sauber schließen:', err)
         }
         try {
           db.close()
         } catch (err) {
-          console.error('[tandem] Datenbank liess sich nicht sauber schliessen:', err)
+          console.error('[tandem] Datenbank ließ sich nicht sauber schließen:', err)
         }
       },
       // TANDEM_RESTART tells the started process it is a replacement, not a
@@ -2273,14 +2273,32 @@ um. Vor dem vorhandenen `EADDRINUSE`-Zweig:
   // Retry instead of deferring — deferring would end with nobody serving.
   if (err.code === 'EADDRINUSE' && process.env.TANDEM_RESTART === '1') {
     const deadline = Date.now() + 60_000
+    let lastErr: NodeJS.ErrnoException | undefined
+    let bound = false
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 500))
       try {
+        // ONLY the bind goes in this try. afterListen() does real synchronous
+        // I/O that can throw (extractWeb's fs calls, bonjour.publish) — if it
+        // sat in here, a post-bind failure would be reported as „Port blieb
+        // belegt“ and send the operator hunting for a lingering old process
+        // instead of the actual cause.
         await app.listen({ port, host: '0.0.0.0' })
-        return   // bound after all — carry on as a normal start
+        bound = true
+        break
       } catch (retryErr) {
-        if ((retryErr as NodeJS.ErrnoException).code !== 'EADDRINUSE') break
+        lastErr = retryErr as NodeJS.ErrnoException
+        if (lastErr.code !== 'EADDRINUSE') break
       }
+    }
+    if (bound) {
+      afterListen()   // bound after all — carry on as a normal start
+      return
+    }
+    // Say which of the two it actually was: the port never freed, or listen
+    // failed for some other reason entirely.
+    if (lastErr && lastErr.code !== 'EADDRINUSE') {
+      fatal(`[tandem] Neustart nach dem Update fehlgeschlagen: ${lastErr.message}`)
     }
     fatal(
       `[tandem] Neustart nach dem Update fehlgeschlagen: Port ${port} blieb belegt.\n` +
@@ -2460,7 +2478,7 @@ export function Markdown({ text }: { text: string }): ReactNode {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm --prefix web/manifest test -- markdown`
-Expected: PASS â die tabellengetriebene Schrankenpruefung plus die Tests fuer Status-Nutzlast, openToday und die Dialog-Abfolge.
+Expected: PASS — die tabellengetriebene Schrankenpruefung plus die Tests fuer Status-Nutzlast, openToday und die Dialog-Abfolge.
 
 - [ ] **Step 5: Commit**
 

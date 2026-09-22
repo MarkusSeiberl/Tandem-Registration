@@ -702,7 +702,7 @@ git commit -m "feat(update): das neueste Release abfragen und pruefen"
     foundRelease(release: Release | null, isStartup: boolean): void
     markPromptSeen(): void
     fail(phase: UpdatePhase, message: string): void
-    readonly release: Release | null
+    readonly release: Release | null  // getter, set only by foundRelease
   }
   ```
 
@@ -863,8 +863,16 @@ export class UpdateState {
   private status: UpdateStatus
   private listeners: ((s: UpdateStatus) => void)[] = []
   private promptArmed = false
-  /** The release the download and install steps work from. */
-  release: Release | null = null
+  private found: Release | null = null
+
+  /**
+   * The release the download and install steps work from. Read-only from
+   * outside: it is set only by foundRelease, so nothing can point the
+   * downloader at something this class never approved.
+   */
+  get release(): Release | null {
+    return this.found
+  }
 
   constructor(currentVersion: string, phase: UpdatePhase = 'idle') {
     this.status = {
@@ -902,6 +910,11 @@ export class UpdateState {
   foundRelease(release: Release | null, isStartup: boolean): void {
     const checkedAt = new Date().toISOString()
     if (!release) {
+      // Clear the handle too, not just the phase: the download step reads
+      // `release` and does not gate on phase, so a release left over from an
+      // earlier successful check would still be fetchable after a later check
+      // found nothing.
+      this.found = null
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
@@ -917,16 +930,21 @@ export class UpdateState {
         `[tandem] Versionsvergleich nicht möglich: "${release.version}" gegen ` +
           `"${this.status.currentVersion}".`,
       )
-      this.release = null
+      this.found = null
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
     if (newer <= 0) {
-      this.release = null
-      this.patch({ phase: 'up-to-date', latestVersion: release.version, checkedAt })
+      this.found = null
+      // error: null as well — a message left over from a failed download would
+      // otherwise sit on an up-to-date status, looking like something the
+      // operator still has to do.
+      this.patch({
+        phase: 'up-to-date', latestVersion: release.version, checkedAt, error: null,
+      })
       return
     }
-    this.release = release
+    this.found = release
     if (isStartup) this.promptArmed = true
     this.patch({
       phase: 'available', latestVersion: release.version, notes: release.notes,

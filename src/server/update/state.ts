@@ -65,7 +65,7 @@ export class UpdateState {
   foundRelease(release: Release | null, isStartup: boolean): void {
     const checkedAt = new Date().toISOString()
     if (!release) {
-      this._release = null
+      this.forget()
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
@@ -81,12 +81,12 @@ export class UpdateState {
         `[tandem] Versionsvergleich nicht möglich: "${release.version}" gegen ` +
           `"${this.status.currentVersion}".`,
       )
-      this._release = null
+      this.forget()
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
     if (newer <= 0) {
-      this._release = null
+      this.forget()
       this.patch({ phase: 'up-to-date', latestVersion: release.version, checkedAt, error: null })
       return
     }
@@ -99,6 +99,17 @@ export class UpdateState {
   }
 
   markPromptSeen(): void {
+    this.promptArmed = false
+  }
+
+  /**
+   * There is nothing installable any more. Drops the handle the downloader
+   * works from AND any armed dialog: leaving the dialog armed while the
+   * release is gone would open a modal offering a version the download step
+   * then silently refuses to fetch — a dead end with no feedback.
+   */
+  private forget(): void {
+    this._release = null
     this.promptArmed = false
   }
 

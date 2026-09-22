@@ -62,6 +62,20 @@ describe('UpdateState', () => {
     expect(state.release).toBeNull()
   })
 
+  it('also disarms the dialog when a later check finds nothing', () => {
+    const state = new UpdateState('1.1.0')
+    state.beginCheck()
+    state.foundRelease(release('1.2.0'), true)
+    // Arm the dialog and keep the release handle ready
+    expect(state.promptPending).toBe(true)
+    expect(state.release).not.toBeNull()
+
+    // A network drop or later failed check clears both
+    state.foundRelease(null, false)
+    expect(state.promptPending).toBe(false)
+    expect(state.release).toBeNull()
+  })
+
   it('clears a leftover error once a later check finds itself up to date', () => {
     const state = new UpdateState('1.2.0')
     state.fail('download-failed', 'Prüfsumme stimmt nicht.')

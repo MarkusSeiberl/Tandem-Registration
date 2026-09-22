@@ -1910,17 +1910,20 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
     if (!fs.existsSync(file)) throw new Error(`${name + NEW_SUFFIX} fehlt — bitte neu laden.`)
   }
 
-  await deps.closeServer()
-
-  // From here the server is gone and nothing is listening. Every region below
-  // must end in one of this module's two defined outcomes — the new version
-  // running, or the old one restored and running. A third outcome, where an
-  // unhandled throw leaves this process alive with a closed server and no
-  // restart, is indistinguishable from a dead installation for an operator at
-  // the landing site, and the caller cannot even report it: there is no server
-  // left to report through. Hence the catch-all at the bottom.
+  // From here the server is meant to be gone and nothing listening. Every
+  // region below — `closeServer()` included — must end in one of this module's
+  // two defined outcomes: the new version running, or the old one restored and
+  // running. A third outcome, where an unhandled throw leaves this process
+  // alive with a closed (or half-closed) server and no restart, is
+  // indistinguishable from a dead installation for an operator at the landing
+  // site, and the caller cannot even report it — there is no server left to
+  // report through. `closeServer` is a compound teardown (Bonjour, Fastify,
+  // database); a throw in a later step of it leaves exactly that state, which
+  // is why the call sits INSIDE the guard, not before it.
   let child: { kill: () => void } | undefined
   try {
+    await deps.closeServer()
+
     // A leftover from an earlier attempt would make the rename below fail.
     for (const [, old] of PAIRS) fs.rmSync(path.join(dir, old), { force: true })
 
@@ -1933,7 +1936,7 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
       restore(dir)
       fs.writeFileSync(
         path.join(dir, FAILURE_MARKER),
-        JSON.stringify({ reason: `Dateien konnten nicht getauscht werden: ${String(err)}` }),
+        JSON.stringify({ reason: `Dateien konnten nicht getauscht werden: „${String(err)}“` }),
       )
       deps.spawnDetached(exePath)
       deps.exit(1)
@@ -1994,7 +1997,7 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateInstall.test.ts`
-Expected: PASS, 15 tests (12 aus der Liste unten plus je einer fuer einen Wurf aus dem .old-Sweep, aus spawnDetached und aus waitForHealth).
+Expected: PASS, 16 tests (12 aus der Liste unten plus je einer fuer einen Wurf aus closeServer, dem .old-Sweep, spawnDetached und waitForHealth).
 
 - [ ] **Step 5: Commit**
 

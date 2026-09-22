@@ -32,11 +32,16 @@ export default function Update({ status, onRefresh }: UpdateProps) {
     let timer: number | undefined
     const poll = async () => {
       if (stopped) return
-      if (await serverAlive()) {
+      const alive = await serverAlive()
+      // The component may have unmounted (or left the `installing` phase)
+      // while that request was in flight; cleanup only cancels the *next*
+      // timer, so re-check here before acting on a stale result.
+      if (stopped) return
+      if (alive) {
         reloadPage()
         return
       }
-      if (!stopped) timer = window.setTimeout(poll, 1000)
+      timer = window.setTimeout(poll, 1000)
     }
     void poll()
     return () => {
@@ -76,8 +81,11 @@ export default function Update({ status, onRefresh }: UpdateProps) {
     void run(installUpdate)
   }
 
-  const percent =
+  // downloadedBytes can transiently exceed totalBytes (e.g. a chunk race);
+  // clamp so aria-valuenow never leaves the 0-100 range it advertises.
+  const rawPercent =
     status.totalBytes > 0 ? Math.round((status.downloadedBytes / status.totalBytes) * 100) : 0
+  const percent = Math.min(100, Math.max(0, rawPercent))
 
   return (
     <div className="update-screen">
@@ -137,6 +145,22 @@ export default function Update({ status, onRefresh }: UpdateProps) {
       )}
 
       {status.phase === 'up-to-date' && <p>Dies ist bereits die aktuellste Version.</p>}
+
+      {/* Informational-only phases: nothing to do here, so no button and no
+          `allowed` gating — just an honest line about the current state. */}
+      {status.phase === 'checking' && <p>Es wird gerade nach Updates gesucht…</p>}
+
+      {status.phase === 'check-failed' && (
+        <p>
+          Die Prüfung auf Updates hat nicht geklappt. Das liegt an diesem Standort meist an
+          einer fehlenden Internetverbindung, nicht an einem Fehler – der nächste Versuch
+          läuft automatisch.
+        </p>
+      )}
+
+      {status.phase === 'idle' && <p>Es wurde noch nicht auf Updates geprüft.</p>}
+
+      {status.phase === 'disabled' && <p>Auf diesem Gerät sind Updates nicht verfügbar.</p>}
 
       {status.notes && (
         <section className="update-notes">

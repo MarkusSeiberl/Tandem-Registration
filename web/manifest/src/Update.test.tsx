@@ -89,6 +89,26 @@ describe('Update', () => {
     expect(api.reloadPage).not.toHaveBeenCalled()
   })
 
+  it('does not reload after unmount if the in-flight check resolves alive', async () => {
+    let resolveAlive: (alive: boolean) => void = () => {}
+    vi.mocked(api.serverAlive).mockReturnValue(
+      new Promise((resolve) => {
+        resolveAlive = resolve
+      }),
+    )
+    const { unmount } = render(
+      <Update status={status({ phase: 'installing' })} onRefresh={vi.fn()} />,
+    )
+    await waitFor(() => expect(api.serverAlive).toHaveBeenCalled())
+    unmount()
+    resolveAlive(true)
+    // Flush microtasks so the (now stale) poll continuation would run if the
+    // post-await guard were missing.
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(api.reloadPage).not.toHaveBeenCalled()
+  })
+
   it('shows a failed download with a way to try again', async () => {
     render(
       <Update
@@ -111,9 +131,18 @@ describe('Update', () => {
   // component must not rely solely on either — a third guest reaching this
   // screen by URL should still find the buttons inert.
   describe('when not the machine Tandem runs on', () => {
+    const hintText = 'Updates sind nur an dem Rechner möglich, auf dem Tandem läuft.'
+
     it('disables the download button for an available update', () => {
       render(<Update status={status({ allowed: false })} onRefresh={vi.fn()} />)
       expect(screen.getByRole('button', { name: 'Herunterladen' })).toBeDisabled()
+    })
+
+    it('shows a visible hint next to the disabled download button', () => {
+      // A title attribute alone is useless on a tablet, which has no hover
+      // state — the hint paragraph is what the operator actually sees.
+      render(<Update status={status({ allowed: false })} onRefresh={vi.fn()} />)
+      expect(screen.getByText(hintText)).toBeInTheDocument()
     })
 
     it('disables the install button for a ready update', () => {
@@ -121,6 +150,11 @@ describe('Update', () => {
       expect(
         screen.getByRole('button', { name: 'Jetzt installieren und neu starten' }),
       ).toBeDisabled()
+    })
+
+    it('shows a visible hint next to the disabled install button', () => {
+      render(<Update status={status({ phase: 'ready', allowed: false })} onRefresh={vi.fn()} />)
+      expect(screen.getByText(hintText)).toBeInTheDocument()
     })
 
     it('disables the retry button for a failed download', () => {
@@ -131,6 +165,16 @@ describe('Update', () => {
         />,
       )
       expect(screen.getByRole('button', { name: 'Erneut versuchen' })).toBeDisabled()
+    })
+
+    it('shows a visible hint next to the disabled retry button', () => {
+      render(
+        <Update
+          status={status({ phase: 'download-failed', allowed: false, error: 'Netzwerkfehler' })}
+          onRefresh={vi.fn()}
+        />,
+      )
+      expect(screen.getByText(hintText)).toBeInTheDocument()
     })
 
     it('still shows the versions and release notes', () => {
@@ -146,5 +190,47 @@ describe('Update', () => {
     expect(
       screen.getByRole('button', { name: 'Jetzt installieren und neu starten' }),
     ).not.toBeDisabled()
+  })
+
+  it('shows no hint when allowed, even where a disabled button would have one', () => {
+    const hintText = 'Updates sind nur an dem Rechner möglich, auf dem Tandem läuft.'
+    render(<Update status={status({ phase: 'ready', allowed: true })} onRefresh={vi.fn()} />)
+    expect(screen.queryByText(hintText)).toBeNull()
+  })
+
+  describe('quiet phases that used to render nothing', () => {
+    it('says a check is running', () => {
+      render(<Update status={status({ phase: 'checking' })} onRefresh={vi.fn()} />)
+      expect(screen.getByText(/gerade nach Updates gesucht/)).toBeInTheDocument()
+    })
+
+    it('explains a failed check without alarming the operator', () => {
+      // The server sets check-failed with error: null on purpose — a landing
+      // site without internet is normal, not a fault to fix.
+      render(<Update status={status({ phase: 'check-failed' })} onRefresh={vi.fn()} />)
+      expect(screen.getByText(/Internetverbindung/)).toBeInTheDocument()
+      expect(screen.getByText(/automatisch/)).toBeInTheDocument()
+    })
+
+    it('says nothing has been checked yet in the idle phase', () => {
+      render(<Update status={status({ phase: 'idle' })} onRefresh={vi.fn()} />)
+      expect(screen.getByText(/noch nicht auf Updates geprüft/)).toBeInTheDocument()
+    })
+
+    it('says updates are unavailable in the disabled phase', () => {
+      render(<Update status={status({ phase: 'disabled' })} onRefresh={vi.fn()} />)
+      expect(screen.getByText(/nicht verfügbar/)).toBeInTheDocument()
+    })
+  })
+
+  it('clamps the progress percentage to 100 when bytes overshoot', () => {
+    render(
+      <Update
+        status={status({ phase: 'downloading', downloadedBytes: 130_000_000, totalBytes: 116_000_000 })}
+        onRefresh={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100')
+    expect(screen.getByText(/\(100 %\)/)).toBeInTheDocument()
   })
 })

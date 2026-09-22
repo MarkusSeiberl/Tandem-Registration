@@ -2915,11 +2915,18 @@ export default function Update({ status, onRefresh }: UpdateProps) {
     let timer: number | undefined
     const poll = async () => {
       if (stopped) return
-      if (await serverAlive()) {
+      const alive = await serverAlive()
+      // The component may have unmounted (or left the `installing` phase)
+      // while that request was in flight; cleanup only cancels the *next*
+      // timer, so re-check here before acting on a stale result — otherwise an
+      // in-flight call reloads a page the operator has already navigated away
+      // from.
+      if (stopped) return
+      if (alive) {
         reloadPage()
         return
       }
-      if (!stopped) timer = window.setTimeout(poll, 1000)
+      timer = window.setTimeout(poll, 1000)
     }
     // Poll at once; wait only BETWEEN attempts. Delaying the first check by a
     // second races @testing-library's 1000 ms waitFor default — and in a real
@@ -2962,8 +2969,12 @@ export default function Update({ status, onRefresh }: UpdateProps) {
     void run(installUpdate)
   }
 
+  // Clamped: a transient downloadedBytes above totalBytes must not put
+  // aria-valuenow past 100.
   const percent =
-    status.totalBytes > 0 ? Math.round((status.downloadedBytes / status.totalBytes) * 100) : 0
+    status.totalBytes > 0
+      ? Math.min(100, Math.max(0, Math.round((status.downloadedBytes / status.totalBytes) * 100)))
+      : 0
 
   return (
     <div className="update-screen">
@@ -3023,6 +3034,25 @@ export default function Update({ status, onRefresh }: UpdateProps) {
 
       {status.phase === 'up-to-date' && <p>Dies ist bereits die aktuellste Version.</p>}
 
+      {/* Every one of the twelve phases says something. The four quiet ones —
+          disabled, idle, checking, check-failed — used to fall through to the
+          version block and nothing else, leaving an operator in front of two
+          numbers and no word about what is happening. check-failed in
+          particular carries error: null on purpose (a landing site without
+          internet is the normal case, not a fault), so without its own line it
+          is indistinguishable from idle. These are informational only: no
+          buttons, and not gated on `allowed`. */}
+      {status.phase === 'checking' && <p>Es wird nach Updates gesucht…</p>}
+      {status.phase === 'check-failed' && (
+        <p>
+          Die Suche nach Updates hat nicht geklappt — meist, weil am Landeplatz
+          keine Internetverbindung besteht. Es wird automatisch erneut versucht.
+        </p>
+      )}
+      {(status.phase === 'idle' || status.phase === 'disabled') && (
+        <p>Es liegt derzeit kein Update vor.</p>
+      )}
+
       {status.notes && (
         <section className="update-notes">
           <h3>Was neu ist</h3>
@@ -3080,7 +3110,7 @@ die `.sidebar-bottom` schon befolgt:
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npm --prefix web/manifest test -- Update`
-Expected: PASS, 9 tests.
+Expected: PASS, 24 tests (die neun unten plus die Tests aus den Reviews: allowed-Gate mit sichtbarem Hinweis, Unmount-Rennen des Polls, geklammerter Prozentwert, und je eine Zeile fuer die vier stillen Phasen).
 
 - [ ] **Step 6: Commit**
 

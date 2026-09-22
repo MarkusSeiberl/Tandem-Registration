@@ -3,6 +3,7 @@ import type { Database } from 'better-sqlite3'
 import { APP_VERSION } from '../version'
 import { today } from '../day'
 import type { UpdateState, UpdateStatus } from '../update/state'
+import { isLocal } from './isLocal'
 
 /**
  * What the routes are allowed to set in motion. Only the packaged exe hands
@@ -20,13 +21,6 @@ export interface UpdateStatusResponse extends UpdateStatus {
   allowed: boolean
   promptPending: boolean
   openToday: number
-}
-
-// Same reasoning as routes/shutdown.ts: the manifest has no login and every
-// device on the club WLAN can open it, so the server decides. `req.ip` is the
-// socket's peer address — nothing a client can set about itself.
-function isLocal(ip: string): boolean {
-  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
 }
 
 function openToday(db: Database): number {

@@ -31,40 +31,61 @@ test('only the machine the server runs on is allowed to act', async () => {
   await app.close()
 })
 
-test('a dev server reports itself disabled and refuses every action', async () => {
+test('a dev server reports itself disabled', async () => {
   const { app } = testServer()
   const status = await app.inject({ method: 'GET', url: '/api/update/status' })
   expect(status.json()).toMatchObject({ phase: 'disabled', allowed: false })
-  for (const url of ['/api/update/check', '/api/update/download', '/api/update/install']) {
+  await app.close()
+})
+
+// All four POST routes share one `action()` gate, but that is an inspection
+// fact, not a proven one — a future refactor that gave one route its own
+// handler would not fail any status-only test. This table drives every route
+// through all three cases and checks the side effect, not just the status
+// code, so a route that answers 403 while still running the action would
+// fail it too.
+// check/download/install are already vi.fn()s on the controls object built by
+// withUpdate(); markPromptSeen is a real UpdateState method, so its route
+// needs a spy wrapped around the real thing to assert on.
+const ROUTES = [
+  { url: '/api/update/check', code: 202, spyOn: (c: UpdateControls) => c.check as ReturnType<typeof vi.fn> },
+  { url: '/api/update/download', code: 202, spyOn: (c: UpdateControls) => c.download as ReturnType<typeof vi.fn> },
+  { url: '/api/update/install', code: 202, spyOn: (c: UpdateControls) => c.install as ReturnType<typeof vi.fn> },
+  {
+    url: '/api/update/prompt-seen', code: 204,
+    spyOn: (c: UpdateControls) => vi.spyOn(c.state, 'markPromptSeen'),
+  },
+] as const
+
+for (const { url, code, spyOn } of ROUTES) {
+  test(`${url}: the local machine runs the action`, async () => {
+    const { app, controls } = withUpdate()
+    const spy = spyOn(controls)
+    const res = await app.inject({ method: 'POST', url })
+    expect(res.statusCode).toBe(code)
+    expect(spy).toHaveBeenCalledTimes(1)
+    await app.close()
+  })
+
+  test(`${url}: a device on the network is refused, and nothing runs`, async () => {
+    const { app, controls } = withUpdate()
+    const spy = spyOn(controls)
+    const res = await app.inject({ method: 'POST', url, remoteAddress: REMOTE })
+    expect(res.statusCode).toBe(403)
+    expect(spy).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  test(`${url}: a server without update controls refuses`, async () => {
+    // No update controls are handed to this server at all, so there is
+    // nothing an action function could be — the 501 itself is the proof
+    // that no action ran.
+    const { app } = testServer()
     const res = await app.inject({ method: 'POST', url })
     expect(res.statusCode).toBe(501)
-  }
-  await app.close()
-})
-
-test('a tablet cannot start a download', async () => {
-  const { app, controls } = withUpdate()
-  const res = await app.inject({
-    method: 'POST', url: '/api/update/download', remoteAddress: REMOTE,
+    await app.close()
   })
-  expect(res.statusCode).toBe(403)
-  expect(controls.download).not.toHaveBeenCalled()
-  await app.close()
-})
-
-test('the local machine starts check, download and install', async () => {
-  const { app, controls } = withUpdate()
-  for (const [url, fn] of [
-    ['/api/update/check', controls.check],
-    ['/api/update/download', controls.download],
-    ['/api/update/install', controls.install],
-  ] as const) {
-    const res = await app.inject({ method: 'POST', url })
-    expect(res.statusCode).toBe(202)
-    expect(fn).toHaveBeenCalledTimes(1)
-  }
-  await app.close()
-})
+}
 
 test('the dialog is pending once, then never again', async () => {
   const state = new UpdateState('1.1.0')

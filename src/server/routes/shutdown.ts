@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify'
+import { isLocal } from './isLocal'
 
 /**
  * Stopping the program from the manifest screen.
@@ -8,15 +9,8 @@ import { FastifyInstance } from 'fastify'
  * for everyone: guest tablets included, mid-registration included, which is why
  * the manifest asks before calling this.
  *
- * Only from the machine the server runs on. The manifest has no login and any
- * device on the club WLAN can open it, so without this check one curious tablet
- * could end the jump day for everybody. `req.ip` is the socket's peer address —
- * nothing a client can set about itself.
+ * Only from the machine the server runs on — see isLocal.ts for why.
  */
-function isLocal(ip: string): boolean {
-  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
-}
-
 export function registerShutdownRoutes(app: FastifyInstance, shutdown?: () => void) {
   // The manifest asks before it draws the button: a client that cannot use it
   // should say so instead of offering an action that answers 403.

@@ -2172,9 +2172,16 @@ async function runInstall() {
           console.error('[tandem] Datenbank liess sich nicht sauber schliessen:', err)
         }
       },
+      // TANDEM_RESTART tells the started process it is a replacement, not a
+      // second copy: on a busy port it must retry the bind instead of deferring
+      // to whatever is answering there (see the EADDRINUSE handler below). This
+      // process may still be holding the port at that instant — if closeServer
+      // threw before its listener unbound — and a child that politely gives up
+      // would leave the landing site with nothing running at all.
       spawnDetached: (exePath) => {
         const child = spawn(exePath, [], {
           detached: true, stdio: 'ignore', cwd: path.dirname(exePath), windowsHide: true,
+          env: { ...process.env, TANDEM_RESTART: '1' },
         })
         child.unref()
         return { kill: () => child.kill() }
@@ -2231,19 +2238,58 @@ Inside the existing `app.listen({...}).then(() => { … })`, after
   }
 ```
 
-- [ ] **Step 8: Verify the dev server still reports itself disabled**
+- [ ] **Step 8: A restart retries the port instead of deferring**
+
+Der vorhandene `EADDRINUSE`-Zweig im `.catch()` von `app.listen(...)` behandelt
+einen belegten Port mit antwortendem Tandem als „läuft schon, Browser
+aufmachen, Ende". Für einen Start aus `installUpdate` heraus ist das falsch:
+dort ist dieser Prozess der *Ersatz*, und was auf dem Port antwortet, ist der
+sterbende Vorgänger. Verabschiedet sich das Kind höflich, bleibt am Landeplatz
+nichts übrig.
+
+`TANDEM_RESTART` (von `spawnDetached` gesetzt) schaltet deshalb auf Wiederholen
+um. Vor dem vorhandenen `EADDRINUSE`-Zweig:
+
+```ts
+  // Started by installUpdate as a replacement: the port is expected to be busy
+  // for a moment, because the process we are replacing is still shutting down.
+  // Retry instead of deferring — deferring would end with nobody serving.
+  if (err.code === 'EADDRINUSE' && process.env.TANDEM_RESTART === '1') {
+    const deadline = Date.now() + 60_000
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 500))
+      try {
+        await app.listen({ port, host: '0.0.0.0' })
+        return   // bound after all — carry on as a normal start
+      } catch (retryErr) {
+        if ((retryErr as NodeJS.ErrnoException).code !== 'EADDRINUSE') break
+      }
+    }
+    fatal(
+      `[tandem] Neustart nach dem Update fehlgeschlagen: Port ${port} blieb belegt.\n` +
+        `Die vorherige Version läuft möglicherweise noch. Tandem bitte von Hand starten.`,
+    )
+  }
+```
+
+Die Schleife muss dieselbe `then()`-Nachbereitung auslösen wie ein gewöhnlicher
+Start (Bonjour, `extractWeb()`, Banner, Browser). Am einfachsten, indem der
+Erfolgspfad in eine benannte Funktion gezogen und von beiden Stellen gerufen
+wird — nicht durch eine zweite Kopie des Blocks.
+
+- [ ] **Step 9: Verify the dev server still reports itself disabled**
 
 Run: `npm test && npx tsc -b`
 Expected: all green, including `tests/update-route.test.ts`.
 
-- [ ] **Step 9: Boot the dev server and read the status by hand**
+- [ ] **Step 10: Boot the dev server and read the status by hand**
 
 Run: `npm start` in one terminal, then in another:
 `curl -s http://localhost/api/update/status`
 Expected: `{"phase":"disabled", … ,"allowed":false,"promptPending":false,"openToday":0}`
 Then stop the dev server with Strg+C.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add src/server/main.ts src/server/index.ts

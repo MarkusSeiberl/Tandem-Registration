@@ -3367,8 +3367,12 @@ Zustand und Laden, neben dem vorhandenen `shutdownAllowed()`-Effekt:
   }, [])
 
   useUpdateEvents(update?.allowed === true, (status) =>
-    // The pushed frame carries the server's view of the state; `allowed`,
-    // `promptPending` and `openToday` are per-client and stay as fetched.
+    // The broadcast carries only UpdateState's eight fields; `allowed`,
+    // `promptPending` and `openToday` are added per request by the GET handler
+    // and are therefore absent from a frame — that is why they survive the
+    // spread. `allowed` is pinned explicitly anyway: it decides whether a
+    // device may act at all, and it should not depend on what a file in
+    // src/server chooses to broadcast. Tests pin this against a hostile frame.
     setUpdate((prev) => (prev ? { ...prev, ...status, allowed: prev.allowed } : prev)),
   )
 
@@ -3385,16 +3389,21 @@ Zustand und Laden, neben dem vorhandenen `shutdownAllowed()`-Effekt:
     update?.allowed === true && update.promptPending && !promptDismissed &&
     update.latestVersion !== null
 
+  // markUpdatePromptSeen is fire-and-forget on purpose: the dialog is already
+  // closed locally via promptDismissed, so a failed POST costs at most one
+  // extra dialog after the next server start. This feature assumes a landing
+  // site that is often offline — an unhandled rejection in the operator's
+  // browser would be the worse outcome.
   function acceptUpdate() {
     setPromptDismissed(true)
-    void markUpdatePromptSeen()
+    void markUpdatePromptSeen().catch(() => {})
     void startUpdateDownload().then(refreshUpdate).catch(() => {})
     setView('update')
   }
 
   function postponeUpdate() {
     setPromptDismissed(true)
-    void markUpdatePromptSeen()
+    void markUpdatePromptSeen().catch(() => {})
   }
 ```
 

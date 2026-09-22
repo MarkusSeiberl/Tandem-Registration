@@ -2522,7 +2522,7 @@ export function Markdown({ text }: { text: string }): ReactNode {
 
         return <p key={bi}>{inline(lines.join(' '), `${bi}`)}</p>
       })}
-Expected: PASS, 14 tests (die sieben unten, plus vier fuer Ueberschriften mitten im Block und die nachsichtige Liste, plus drei fuer CRLF-Zeilenenden).
+    </>
   )
 }
 ```
@@ -2530,7 +2530,7 @@ Expected: PASS, 14 tests (die sieben unten, plus vier fuer Ueberschriften mitten
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm --prefix web/manifest test -- markdown`
-Expected: PASS, 11 tests (die sieben unten plus je einer fuer: zwei Ueberschriften ohne Leerzeile, Ueberschrift direkt gefolgt von Text, Ueberschrift mitten im Block, Liste mit einer Fehlzeile).
+Expected: PASS, 14 tests (sieben aus der Liste, vier fuer Ueberschriften mitten im Block und die nachsichtige Liste, drei fuer CRLF-Zeilenenden).
 
 - [ ] **Step 5: Commit**
 

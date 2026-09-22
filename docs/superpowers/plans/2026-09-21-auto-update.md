@@ -551,11 +551,20 @@ export function compareVersions(a: string, b: string): number | null {
   const pa = a.split('.')
   const pb = b.split('.')
   const len = Math.max(pa.length, pb.length)
+  const na: (number | null)[] = []
+  const nb: (number | null)[] = []
   for (let i = 0; i < len; i++) {
-    const na = toPart(pa[i])
-    const nb = toPart(pb[i])
-    if (na === null || nb === null) return null
-    const diff = na - nb
+    na.push(toPart(pa[i]))
+    nb.push(toPart(pb[i]))
+  }
+  // Both operands are validated in full BEFORE anything is compared. An
+  // earlier version returned on the first difference, which meant a malformed
+  // part sitting after it was never reached: compareVersions('2.0.0', '1.x.0')
+  // answered 1 instead of null, and the doc promise above was simply untrue.
+  // A caller cannot compensate for that — the guarantee has to live here.
+  if (na.some((n) => n === null) || nb.some((n) => n === null)) return null
+  for (let i = 0; i < len; i++) {
+    const diff = (na[i] as number) - (nb[i] as number)
     if (diff !== 0) return diff
   }
   return 0
@@ -654,7 +663,7 @@ export async function fetchLatestRelease(fetcher?: Fetcher): Promise<Release | n
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateGithub.test.ts`
-Expected: PASS, 24 tests (die Liste oben ist der Kern; der Loopback- und
+Expected: PASS, 27 tests (die Liste oben ist der Kern; der Loopback-, Sentinel- und Kurzschluss-Fix aus den Reviews hat sie erweitert).
 Sentinel-Fix aus dem Review hat sie auf 24 erweitert).
 
 - [ ] **Step 5: Commit**

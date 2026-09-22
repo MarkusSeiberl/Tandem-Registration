@@ -2912,18 +2912,22 @@ export default function Update({ status, onRefresh }: UpdateProps) {
   useEffect(() => {
     if (status.phase !== 'installing') return
     let stopped = false
+    let timer: number | undefined
     const poll = async () => {
       if (stopped) return
       if (await serverAlive()) {
         reloadPage()
         return
       }
-      window.setTimeout(poll, 1000)
+      if (!stopped) timer = window.setTimeout(poll, 1000)
     }
-    const timer = window.setTimeout(poll, 1000)
+    // Poll at once; wait only BETWEEN attempts. Delaying the first check by a
+    // second races @testing-library's 1000 ms waitFor default — and in a real
+    // restart the new server may already be answering by the time we look.
+    void poll()
     return () => {
       stopped = true
-      window.clearTimeout(timer)
+      if (timer !== undefined) window.clearTimeout(timer)
     }
   }, [status.phase])
 
@@ -2974,8 +2978,19 @@ export default function Update({ status, onRefresh }: UpdateProps) {
 
       {(error || status.error) && <p className="error">{error ?? status.error}</p>}
 
+      {/* A tablet may SEE the state — versions, notes, progress, errors — but
+          not act on it. The server refuses its POSTs with 403 anyway and the
+          sidebar entry is hidden from it, so this is the third layer: the
+          screen must not depend on its parent hiding it. The hint is visible
+          text, not just a title: a tablet has no hover. */}
+      {!status.allowed && (
+        <p className="hint">
+          Updates sind nur an dem Rechner möglich, auf dem Tandem läuft.
+        </p>
+      )}
+
       {status.phase === 'available' && (
-        <button type="button" className="btn primary" disabled={busy}
+        <button type="button" className="btn primary" disabled={busy || !status.allowed}
           onClick={() => void run(startUpdateDownload)}>
           Herunterladen
         </button>
@@ -2992,7 +3007,7 @@ export default function Update({ status, onRefresh }: UpdateProps) {
       )}
 
       {status.phase === 'ready' && (
-        <button type="button" className="btn primary" disabled={busy} onClick={handleInstall}>
+        <button type="button" className="btn primary" disabled={busy || !status.allowed} onClick={handleInstall}>
           Jetzt installieren und neu starten
         </button>
       )}
@@ -3000,7 +3015,7 @@ export default function Update({ status, onRefresh }: UpdateProps) {
       {status.phase === 'installing' && <p className="update-restarting">Tandem startet neu…</p>}
 
       {(status.phase === 'download-failed' || status.phase === 'install-failed') && (
-        <button type="button" className="btn secondary" disabled={busy}
+        <button type="button" className="btn secondary" disabled={busy || !status.allowed}
           onClick={() => void run(startUpdateDownload)}>
           Erneut versuchen
         </button>

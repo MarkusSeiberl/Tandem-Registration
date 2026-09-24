@@ -414,9 +414,13 @@ function afterListen() {
   if (isPackaged) openBrowser(`http://localhost${p}/manifest`)
 
   if (isPackaged) {
-    // Late enough that the tablets are served first, and unref'd so neither
-    // timer keeps the process alive. A site without internet notices nothing.
-    setTimeout(() => { void runCheck(true) }, 5000).unref?.()
+    // A second's grace so listen, Bonjour and the browser launch come first;
+    // the query itself is async and times out after 5 s, so tablets are never
+    // held up. Unref'd so neither timer keeps the process alive. A site
+    // without internet notices nothing. The manifest refetches its status when
+    // the find is pushed, so a page opened before the check still gets the
+    // dialog (see web/manifest/src/App.tsx).
+    setTimeout(() => { void runCheck(true) }, 1000).unref?.()
     setInterval(() => { void runCheck(false) }, 60 * 60 * 1000).unref?.()
   }
 }

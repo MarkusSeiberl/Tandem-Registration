@@ -52,7 +52,7 @@ function App() {
 
   useUpdateEvents(update?.allowed === true, (status) => {
     // The page usually loads before the startup check has run (the exe opens
-    // the browser as soon as it listens, the check follows 5 s later), and the
+    // the browser as soon as it listens, the check follows a second later), and the
     // frame that reports the find carries no promptPending. Ask the GET route
     // once when a release turns up, or the dialog could never open.
     // useUpdateEvents always calls the latest callback, so `update` is current.

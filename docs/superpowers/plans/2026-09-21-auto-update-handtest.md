@@ -85,7 +85,7 @@ Geräts bleibt der Tab unsichtbar; das ist Absicht, kein Bug.
 
 ### 3. Ablauf beobachten
 
-Rund 5 Sekunden nach dem Start prüft das Programm einmal automatisch (danach
+Rund 1 Sekunde nach dem Start prüft das Programm einmal automatisch (danach
 stündlich). Erwartet, in dieser Reihenfolge:
 
 1. **Dialog** „Jetzt aktualisieren?“ (o.ä., siehe `UpdateDialog.tsx`) erscheint
@@ -191,7 +191,7 @@ Nach wenigen Sekunden (spätestens ~90):
    (Eine exe, die startet, aber nie antwortet, liefert stattdessen „Die neue
    Version ist nicht gestartet. …“ — diesen Fall stellt das abgeschnittene
    Release nicht her.) Der Text bleibt stehen, auch wenn die Startprüfung
-   5 Sekunden später dasselbe Release wieder findet; „Erneut versuchen“ ist
+   eine Sekunde später dasselbe Release wieder findet; „Erneut versuchen“ ist
    danach bedienbar.
 
    Dieser Text kommt aus `update-failed.json`, das `installUpdate` beim

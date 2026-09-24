@@ -55,8 +55,8 @@ export class UpdateState {
 
   /**
    * True while the screen reports a rolled-back install. After a rollback the
-   * restarted old version reads the failure marker, and 5 s later its startup
-   * check finds the very release that just failed. A check must not erase the
+   * restarted old version reads the failure marker, and a second later its
+   * startup check finds the very release that just failed. A check must not erase the
    * only explanation the operator gets — only a current installation does.
    */
   private get holdsInstallFailure(): boolean {

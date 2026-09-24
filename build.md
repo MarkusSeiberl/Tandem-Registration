@@ -211,7 +211,7 @@ and is a safe floor — it runs fine on the Node 22/24 runtime `pkg` embeds.
 
 ## Selbstupdate
 
-`tandem.exe` fragt 5 s nach dem Start und danach stündlich bei
+`tandem.exe` fragt 1 s nach dem Start und danach stündlich bei
 `api.github.com/repos/MarkusSeiberl/Tandem-Registration/releases/latest` nach
 einer neueren Version und bietet sie im Manifest an. Der Tausch läuft im
 laufenden Prozess ab — auf Windows darf ein laufendes Exe umbenannt und an

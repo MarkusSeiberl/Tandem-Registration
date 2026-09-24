@@ -97,7 +97,7 @@ Log-Eintrag — nie eine Fehlermeldung auf dem Schirm. Dasselbe gilt für
 Netzwerkfehler: ein Landeplatz ohne Internet ist der Normalfall, nicht die
 Störung (`build.md`: „lokales Netzwerk, kein Internet nötig“).
 
-Erste Abfrage 5 s nach `listen()`, danach stündlich. Der Timer ist `unref`'t
+Erste Abfrage 1 s nach `listen()`, danach stündlich. Der Timer ist `unref`'t
 und hält den Prozess nicht offen.
 
 ## Zustand

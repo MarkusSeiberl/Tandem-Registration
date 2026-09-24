@@ -207,7 +207,7 @@ describe('App und das Update', () => {
   })
 
   // The packaged exe opens the browser the moment it listens, but the startup
-  // check only runs 5 s later. The first GET therefore always sees 'idle', and
+  // check only runs a second later. The first GET therefore always sees 'idle', and
   // the pushed frame that follows never carries promptPending — so App has to
   // ask again when a release turns up, or the dialog can never open.
   it('opens the dialog when the startup check finds a release after the page loaded', async () => {

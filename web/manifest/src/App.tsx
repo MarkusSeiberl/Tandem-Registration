@@ -223,6 +223,9 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
                 Beenden ist nur an dem Rechner möglich, auf dem Tandem läuft.
               </p>
             )}
+            {/* The status route answers every device, not just the host PC, so
+                this shows on the tablets too. Absent only on an older server. */}
+            {update && <p className="app-version">Version {update.currentVersion}</p>}
           </div>
         </nav>
 

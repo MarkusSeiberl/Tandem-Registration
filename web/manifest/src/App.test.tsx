@@ -167,6 +167,16 @@ describe('App und das Update', () => {
     vi.mocked(api.startUpdateDownload).mockResolvedValue()
   })
 
+  // Every device, whatever the update phase: it is what the operator reads out
+  // when asked which version runs.
+  it('shows the running version below "Programm beenden"', async () => {
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(
+      updateStatus({ phase: 'up-to-date', allowed: false, currentVersion: '1.1.0' }),
+    )
+    render(<App />)
+    expect(await screen.findByText('Version 1.1.0')).toBeInTheDocument()
+  })
+
   it('shows the sidebar entry once an update is available', async () => {
     render(<App />)
     expect(await screen.findByRole('button', { name: /Update/ })).toBeInTheDocument()

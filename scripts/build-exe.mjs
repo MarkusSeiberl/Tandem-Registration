@@ -11,6 +11,7 @@
 // shipped .node on the same ABI by construction.
 
 import { exec } from '@yao-pkg/pkg';
+import { waitUntilWritable } from './wait-writable.mjs';
 
 const major = process.versions.node.split('.')[0];
 const target = `node${major}-win-x64`;
@@ -30,3 +31,8 @@ await exec([
   '--targets', target,
   '--output', 'dist/tandem.exe',
 ]);
+
+// Windows Defender holds the fresh exe for a few seconds while it scans it;
+// the patch steps that follow open it for writing and would fail with EBUSY.
+// See wait-writable.mjs.
+await waitUntilWritable('dist/tandem.exe');

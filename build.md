@@ -209,6 +209,88 @@ upstream Windows prebuild for this version, so don't build the release on
 Node 20.) esbuild's `--target=node22` only controls JS syntax downleveling
 and is a safe floor — it runs fine on the Node 22/24 runtime `pkg` embeds.
 
+## Selbstupdate
+
+`tandem.exe` fragt 5 s nach dem Start und danach stündlich bei
+`api.github.com/repos/MarkusSeiberl/Tandem-Registration/releases/latest` nach
+einer neueren Version und bietet sie im Manifest an. Der Tausch läuft im
+laufenden Prozess ab — auf Windows darf ein laufendes Exe umbenannt und an
+seinen alten Pfad sofort neu geschrieben werden, und für das geladene
+`better_sqlite3.node` gilt dasselbe (siehe `installUpdate` in
+`src/server/update/install.ts`). Deshalb gibt es kein Hilfsskript: Der Prozess
+schließt Bonjour/Fastify/DB, benennt beide laufenden Dateien nach
+`tandem.old.exe`/`better_sqlite3.old.node` um, schreibt die heruntergeladenen
+`.new`-Dateien an ihren alten Platz und startet die neue Version als
+eigenständigen Kindprozess über `spawnDetached`. Dieser Kindprozess bekommt
+`TANDEM_RESTART=1` gesetzt: Der Port ist im Moment des Starts oft noch von der
+alten Instanz belegt (sie beendet sich gerade erst), und `TANDEM_RESTART`
+sagt dem Kind, dass es sich um einen Ersatz und keine zweite Instanz handelt —
+es muss den Port bis zu 60 s lang erneut zu binden versuchen, statt (wie beim
+normalen Doppelklick) höflich aufzugeben und sich auf die bereits laufende
+Instanz zu verlassen.
+
+**Der 90-Sekunden-Gesundheitscheck.** Nach dem Start der neuen Version wartet
+`installUpdate` bis zu **90 s** (nicht 30) auf `waitForHealth`, bevor es die
+alten Dateien endgültig löscht. 90 s statt 30, weil das Exe unsigniert ist:
+Windows Defender kann ein frisch geschriebenes, 114 MB großes Binary erst
+scannen, bevor es überhaupt starten darf, und dieser Scan kann auf einem
+langsamen Rechner mehrere zehn Sekunden dauern. Eine wirklich kaputte neue
+Version scheitert ohnehin in Sekunden — die lange Wartezeit kostet also nur im
+seltenen echten Fehlerfall Zeit, nie im Erfolgsfall.
+
+**Aufräumen beim Start.** Zwei Funktionen in `install.ts` laufen bei jedem
+Programmstart, bevor der Server lauscht, und sind beide bewusst tolerant
+gegenüber Dateien, die ein Virenscanner, ein Backup-Tool oder der Windows-
+Indexer gerade gesperrt hält (`EBUSY`/`EPERM`/`EACCES`): ein Wurf hier hieße,
+das Programm startet gar nicht erst.
+- `cleanupLeftovers` löscht `tandem.old.exe`, `better_sqlite3.old.node`
+  (Rückroll-Kopien eines geglückten Updates) und liegen gebliebene
+  `*.new`-Dateien (abgebrochene Downloads). Jede Datei wird einzeln versucht,
+  damit eine gesperrte Datei nicht auch das Löschen der anderen verhindert —
+  ein Fehler landet nur als Warnung im Log.
+- `takeFailureMarker` liest `update-failed.json` (der Grund eines
+  gescheiterten Versuchs) genau einmal aus und löscht die Datei danach; lässt
+  sich die Datei nicht löschen, bleibt sie liegen und der Grund erscheint beim
+  nächsten Start erneut — unschön, aber kein Startabbruch.
+
+**Ein Release muss beide Dateien tragen.** `better_sqlite3.node` ist gegen die
+Node-ABI des Build-Rechners gebaut, und `build-exe.mjs` leitet das pkg-Target
+aus derselben Node-Version ab; ein Update, das nur das Exe tauscht, stirbt nach
+einem Node-Major-Wechsel beim Start. `parseRelease`
+(`src/server/update/github.ts`) ignoriert ein Release, dem eine der beiden Dateien fehlt,
+vollständig — es erscheint dem Programm gegenüber, als gäbe es keine neuere
+Version.
+
+**Die Version muss zum Tag passen.** `build:exe` ruft als **allerersten**
+Schritt `scripts/check-version-tag.mjs` auf und bricht ab, wenn `package.json`
+etwas anderes sagt als der Git-Tag auf HEAD (kein Tag auf HEAD = gewöhnlicher
+Entwicklungsbuild, keine Prüfung). Erst danach folgen
+`check-native-binary.mjs`, `build-exe.mjs`, `patch-subsystem.mjs`,
+`patch-version-info.mjs` und `copy-native-binary.mjs`.
+`scripts/build-server.mjs` stempelt die Version aus `package.json` als
+`__APP_VERSION__` in das Bundle — das ist die Zahl, gegen die der Updater die
+Release-Version vergleicht.
+
+**Checkliste für ein Release**
+
+1. Version in `package.json` anheben.
+2. Commit, dann `git tag vX.Y.Z`.
+3. `npm run build:all`.
+4. `gh release create vX.Y.Z dist/tandem.exe dist/better_sqlite3.node --notes-file …`
+
+Die Release-Notes werden im Manifest angezeigt. Unterstützt sind `##`/`###`,
+`**fett**`, `` `code` `` und `-`-Listen — alles andere erscheint als Text.
+
+**Gegen ein echtes Release testen, ohne eines zu veröffentlichen:**
+`TANDEM_RELEASE_URL` auf eine lokal ausgelieferte Kopie der GitHub-Antwort
+setzen — überschreibt für genau diesen Prozess, wohin `fetchLatestRelease`
+fragt. Ohne die Variable fragt das Programm immer GitHub. `asAsset`
+(`github.ts`) lässt für `browser_download_url` neben `https:` ausdrücklich
+auch reines `http://` auf `localhost`/`127.0.0.1`/`::1` zu — genau diese
+Ausnahme macht den lokalen Testaufbau ohne selbstsigniertes Zertifikat
+möglich; siehe `docs/superpowers/plans/2026-09-21-auto-update-handtest.md`
+für den vollständigen Handtest-Ablauf.
+
 ### pkg config (pkg.config.json)
 
 Config lives in `pkg.config.json` (passed explicitly via

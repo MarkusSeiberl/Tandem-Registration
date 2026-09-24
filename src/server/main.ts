@@ -2,7 +2,7 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import http from 'http'
-import { exec, execFileSync, spawn } from 'child_process'
+import { exec, execFileSync } from 'child_process'
 import { Bonjour } from 'bonjour-service'
 import { openDb } from './db'
 import { loadConfig, saveConfig } from './config'
@@ -17,6 +17,8 @@ import { UpdateState } from './update/state'
 import { fetchLatestRelease } from './update/github'
 import { downloadRelease, defaultFetchStream, removePartials } from './update/download'
 import { cleanupLeftovers, takeFailureMarker, installUpdate } from './update/install'
+import { waitForHealth } from './update/health'
+import { spawnDetached } from './update/spawn'
 import type { UpdateControls } from './routes/update'
 
 const dir = process.env.DIR || installDir
@@ -28,7 +30,17 @@ const dir = process.env.DIR || installDir
 // download is never reported as a missing file.
 if (isPackaged) {
   try {
-    cleanupLeftovers(installDir)
+    // Started by installUpdate, the old process is still running from
+    // tandem.old.exe until it has seen this one answer, and Windows will not
+    // delete a running image. Try again every 2 s for a minute; unref'd, as
+    // the server keeps the process alive anyway.
+    if (!cleanupLeftovers(installDir) && process.env.TANDEM_RESTART === '1') {
+      let attempts = 0
+      const retry = setInterval(() => {
+        if (cleanupLeftovers(installDir) || ++attempts >= 30) clearInterval(retry)
+      }, 2000)
+      retry.unref()
+    }
   } catch (err) {
     console.error('[tandem] Aufräumen nach Update fehlgeschlagen:', err)
   }
@@ -235,20 +247,6 @@ async function runDownload() {
   }
 }
 
-/** True once a Tandem answers on our port again — the new process is up. */
-function waitForHealth(timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs
-  return new Promise((resolve) => {
-    const tick = async () => {
-      if (await tandemAlreadyRunning()) return resolve(true)
-      if (Date.now() >= deadline) return resolve(false)
-      setTimeout(tick, 1000).unref?.()
-    }
-    // A moment's grace: the child has to get as far as listen() first.
-    setTimeout(tick, 1000).unref?.()
-  })
-}
-
 async function runInstall() {
   if (updateState.get().phase !== 'ready' || updateBusy) return
   updateBusy = true
@@ -282,21 +280,9 @@ async function runInstall() {
           console.error('[tandem] Datenbank ließ sich nicht sauber schließen:', err)
         }
       },
-      // TANDEM_RESTART tells the started process it is a replacement, not a
-      // second copy: on a busy port it must retry the bind instead of deferring
-      // to whatever is answering there (see the EADDRINUSE handler below). This
-      // process may still be holding the port at that instant — if closeServer
-      // threw before its listener unbound — and a child that politely gives up
-      // would leave the landing site with nothing running at all.
-      spawnDetached: (exePath) => {
-        const child = spawn(exePath, [], {
-          detached: true, stdio: 'ignore', cwd: path.dirname(exePath), windowsHide: true,
-          env: { ...process.env, TANDEM_RESTART: '1' },
-        })
-        child.unref()
-        return { kill: () => child.kill() }
-      },
-      waitForHealth,
+      spawnDetached,
+      // True once a Tandem answers on our port again — the new process is up.
+      waitForHealth: (timeoutMs) => waitForHealth(tandemAlreadyRunning, timeoutMs),
       exit: (code) => process.exit(code),
     })
   } catch (err) {

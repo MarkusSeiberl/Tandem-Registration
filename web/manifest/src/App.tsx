@@ -50,7 +50,13 @@ function App() {
       })
   }, [])
 
-  useUpdateEvents(update?.allowed === true, (status) =>
+  useUpdateEvents(update?.allowed === true, (status) => {
+    // The page usually loads before the startup check has run (the exe opens
+    // the browser as soon as it listens, the check follows 5 s later), and the
+    // frame that reports the find carries no promptPending. Ask the GET route
+    // once when a release turns up, or the dialog could never open.
+    // useUpdateEvents always calls the latest callback, so `update` is current.
+    if (status.phase === 'available' && update?.phase !== 'available') refreshUpdate()
     // The broadcast (src/server/update/state.ts UpdateState.patch, sent via
     // src/server/index.ts) carries only the eight UpdateStatus fields — never
     // `allowed`, `promptPending` or `openToday`, which the GET route computes
@@ -59,10 +65,10 @@ function App() {
     // belt-and-braces: if a future broadcast ever widened to the full
     // response, this is what stops a pushed frame from handing a tablet an
     // `allowed` it never earned.
-    setUpdate((prev) => (prev ? { ...prev, ...status, allowed: prev.allowed } : prev)),
-  )
+    setUpdate((prev) => (prev ? { ...prev, ...status, allowed: prev.allowed } : prev))
+  })
 
-  const refreshUpdate = () => { void getUpdateStatus().then(setUpdate).catch(() => {}) }
+  function refreshUpdate() { void getUpdateStatus().then(setUpdate).catch(() => {}) }
 
   // Only while something is actually pending — and only where it can be acted on.
   const PENDING: UpdatePhase[] = [
@@ -73,7 +79,10 @@ function App() {
   const [promptDismissed, setPromptDismissed] = useState(false)
   const showPrompt =
     update?.allowed === true && update.promptPending && !promptDismissed &&
-    update.latestVersion !== null
+    update.latestVersion !== null &&
+    // A download started from the update screen leaves promptPending set;
+    // "download now?" makes no sense once one is under way or done.
+    update.phase === 'available'
 
   function acceptUpdate() {
     setPromptDismissed(true)

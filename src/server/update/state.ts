@@ -53,7 +53,18 @@ export class UpdateState {
     for (const l of this.listeners) l(this.get())
   }
 
+  /**
+   * True while the screen reports a rolled-back install. After a rollback the
+   * restarted old version reads the failure marker, and 5 s later its startup
+   * check finds the very release that just failed. A check must not erase the
+   * only explanation the operator gets — only a current installation does.
+   */
+  private get holdsInstallFailure(): boolean {
+    return this.status.phase === 'install-failed'
+  }
+
   beginCheck(): void {
+    if (this.holdsInstallFailure) return
     this.patch({ phase: 'checking' })
   }
 
@@ -66,6 +77,7 @@ export class UpdateState {
     const checkedAt = new Date().toISOString()
     if (!release) {
       this.forget()
+      if (this.holdsInstallFailure) return this.patch({ checkedAt })
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
@@ -82,6 +94,7 @@ export class UpdateState {
           `"${this.status.currentVersion}".`,
       )
       this.forget()
+      if (this.holdsInstallFailure) return this.patch({ checkedAt })
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
@@ -91,6 +104,12 @@ export class UpdateState {
       return
     }
     this._release = release
+    if (this.holdsInstallFailure) {
+      // Keep phase and error; hold the release so "Erneut versuchen" can
+      // download it, and arm no dialog over the report.
+      this.patch({ latestVersion: release.version, notes: release.notes, checkedAt })
+      return
+    }
     if (isStartup) this.promptArmed = true
     this.patch({
       phase: 'available', latestVersion: release.version, notes: release.notes,

@@ -143,4 +143,58 @@ describe('UpdateState', () => {
     expect(state.promptPending).toBe(false)
     expect(state.release).toBeNull()
   })
+
+  // After a rollback the restarted old version reads the failure marker, and
+  // 5 s later its startup check finds the very release that just failed. That
+  // check must not wipe the only explanation the operator gets.
+  describe('nach einem zurückgerollten Update', () => {
+    const failed = () => {
+      const state = new UpdateState('1.1.0')
+      state.fail('install-failed', 'Die neue Version ist nicht gestartet.')
+      return state
+    }
+
+    it('keeps the failure through the startup check that finds the release again', () => {
+      const state = failed()
+      state.beginCheck()
+      state.foundRelease(release('1.1.1'), true)
+      expect(state.get().phase).toBe('install-failed')
+      expect(state.get().error).toBe('Die neue Version ist nicht gestartet.')
+      expect(state.get().latestVersion).toBe('1.1.1')
+    })
+
+    // "Erneut versuchen" downloads from state.release.
+    it('still holds the release so the retry can download it', () => {
+      const state = failed()
+      state.beginCheck()
+      state.foundRelease(release('1.1.1'), true)
+      expect(state.release?.version).toBe('1.1.1')
+    })
+
+    // Popping "download now?" over the report that the last attempt failed
+    // would bury it.
+    it('does not arm the dialog over the failure', () => {
+      const state = failed()
+      state.beginCheck()
+      state.foundRelease(release('1.1.1'), true)
+      expect(state.promptPending).toBe(false)
+    })
+
+    it('keeps the failure when the landing site is offline', () => {
+      const state = failed()
+      state.beginCheck()
+      state.foundRelease(null, true)
+      expect(state.get().phase).toBe('install-failed')
+      expect(state.get().error).toBe('Die neue Version ist nicht gestartet.')
+    })
+
+    // Someone installed the release by other means: nothing is pending.
+    it('clears once the installed version is current', () => {
+      const state = failed()
+      state.beginCheck()
+      state.foundRelease(release('1.1.0'), true)
+      expect(state.get().phase).toBe('up-to-date')
+      expect(state.get().error).toBeNull()
+    })
+  })
 })

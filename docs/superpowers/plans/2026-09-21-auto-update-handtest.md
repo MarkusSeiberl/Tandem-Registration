@@ -28,7 +28,8 @@ Ordner wiederholt. Deshalb bekommt der Rollback-Lauf eine eigene, noch bei
 1.1.0 stehende Kopie.
 
 Beide `tandem-*test`-Ordner sind reine Kopien von `dist/tandem.exe` +
-`dist/better_sqlite3.node`, gebaut auf 1.1.0 (Commit `825e6f8`). Geht einer
+`dist/better_sqlite3.node`, gebaut auf 1.1.0 (Arbeitsstand mit den Fixes aus
+dem ersten Handtest-Lauf vom 2026-09-24, siehe unten). Geht einer
 kaputt, genügt ein erneutes Kopieren aus `dist/` (nach `npm run build:all` bei
 `package.json`-Version 1.1.0).
 
@@ -122,7 +123,10 @@ Muss **genau** enthalten: `tandem.exe`, `better_sqlite3.node`, `config.json`,
 bedeutet, dass der Tausch nicht sauber abgeschlossen hat.
 
 `tandem.exe` sollte jetzt ungefähr die Größe von
-`C:\Temp\tandem-release\tandem.exe` haben (114.036.947 Byte).
+`C:\Temp\tandem-release\tandem.exe` haben (114.561.521 Byte). Die
+`.old`-Dateien verschwinden erst ein paar Sekunden nach dem Neustart: Windows
+lässt sie nicht löschen, solange der alte Prozess noch aus ihnen läuft, also
+räumt der neue Prozess sie nach, sobald der alte beendet ist.
 
 Teil 1 fertig. Exe-Fenster kann geschlossen bleiben oder laufen — für Teil 2
 wird eine andere Kopie verwendet.
@@ -158,37 +162,37 @@ sein können, ohne sich einen Port zu teilen.)
 Dialog akzeptieren, Download abwarten (läuft normal durch, die Prüfsumme der
 kaputten Datei stimmt ja), „Jetzt installieren und neu starten“ klicken.
 
-### 3. **Hier unbedingt Geduld haben**
+### 3. Kurz warten
 
-Die Seite zeigt „Tandem startet neu…“ — und bleibt jetzt länger dabei als in
-Teil 1. Der Tausch läuft durch, die kaputte exe wird gestartet, aber sie
-antwortet nie auf `/api/health`. `installUpdate` (`src/server/update/
-install.ts`) wartet darauf **90 Sekunden**, nicht 30, bevor es aufgibt und
-zurückrollt — extra lang, weil ein unsigniertes 114-MB-Binary von Windows
-Defender erst gescannt werden kann, bevor es überhaupt starten darf; eine
-wirklich kaputte Version soll dadurch nicht fälschlich als „vielleicht noch
-am Scannen“ durchgehen.
-
-**Der Rollback-Lauf dauert deshalb bis zu anderthalb Minuten, in denen sich
-scheinbar nichts tut.** Das Fenster jetzt zuzumachen oder den Prozess zu
-killen sähe nach einem Hänger aus, wäre aber genau der falsche Moment — das
-ist die geplante Wartezeit, kein Hängenbleiben. Einfach abwarten.
+Die Seite zeigt „Tandem startet neu…“. Der Tausch läuft durch, aber die
+abgeschnittene exe lässt sich von Windows gar nicht erst starten (`spawn`
+scheitert mit `EFTYPE`). `installUpdate` (`src/server/update/install.ts`)
+rollt deshalb sofort zurück, nicht erst nach dem 90-Sekunden-Warten auf
+`/api/health` — das greift nur bei einer exe, die startet, aber nie antwortet.
+Rechnen mit wenigen Sekunden; falls Windows Defender dazwischenfunkt, auch
+länger. Fenster/Prozess in der Zeit nicht beenden.
 
 ### 4. Was den erfolgreichen Rollback beweist
 
-Nach spätestens ~90 Sekunden:
+Nach wenigen Sekunden (spätestens ~90):
 
 1. **Der alte Prozess kommt von selbst zurück** — der Tab lädt neu (derselbe
    Poll-Mechanismus wie in Teil 1) und das Manifest ist wieder erreichbar,
    ganz ohne manuellen Eingriff.
 2. `dir C:\Temp\tandem-rollbacktest` zeigt wieder ein `tandem.exe` in der
-   **ursprünglichen Größe** (114.559.304 Byte, wie beim Start) — nicht die
+   **ursprünglichen Größe** (114.561.417 Byte, wie beim Start) — nicht die
    1.000.000-Byte-Datei. Kein `.old`, kein `.new` liegt mehr da (`restore()`
    und `cleanupLeftovers` räumen auf).
-3. Der Update-Bildschirm zeigt oben in Rot/als Fehlertext genau:
+3. Der Update-Bildschirm zeigt oben in Rot/als Fehlertext:
 
-   > Die neue Version ist nicht gestartet. Die vorherige Version wurde
-   > wiederhergestellt und läuft weiter.
+   > Unerwarteter Fehler bei der Installation: „Error: spawn EFTYPE“. Die
+   > vorherige Version wurde, soweit möglich, wiederhergestellt und gestartet.
+
+   (Eine exe, die startet, aber nie antwortet, liefert stattdessen „Die neue
+   Version ist nicht gestartet. …“ — diesen Fall stellt das abgeschnittene
+   Release nicht her.) Der Text bleibt stehen, auch wenn die Startprüfung
+   5 Sekunden später dasselbe Release wieder findet; „Erneut versuchen“ ist
+   danach bedienbar.
 
    Dieser Text kommt aus `update-failed.json`, das `installUpdate` beim
    Fehlschlag schreibt, und wird von `takeFailureMarker` beim Neustart genau
@@ -225,3 +229,30 @@ Wenn alle drei Punkte zutreffen, ist der Rollback bewiesen.
 5. `git status --porcelain src/ scripts/` sollte leer sein — der ganze
    Handtest lief über `TANDEM_RELEASE_URL` und Temp-Ordner, keine Quelldatei
    wurde angefasst.
+
+## Erster Lauf (2026-09-24): was schiefging und was behoben ist
+
+1. **Dialog erschien nicht.** Die Seite holte den Status beim Öffnen, bevor die
+   Startprüfung lief; der Push danach trägt kein `promptPending`. Jetzt fragt
+   der Manifest-Schirm den Status neu ab, sobald ein Release auftaucht
+   (`web/manifest/src/App.tsx`), und zeigt den Dialog nur in Phase `available`.
+2. **Neue exe startete nicht** (`The "paths[0]" argument must be of type
+   string`). pkg schreibt beim `spawn` den eigenen exe-Pfad in `PKG_EXECPATH`;
+   die neue exe liegt am selben Pfad und hielt sich deshalb für nacktes
+   `node`. `src/server/update/spawn.ts` setzt `PKG_EXECPATH` auf `''`.
+   Zusätzlich war die damalige `C:\Temp\tandem-release\tandem.exe` selbst
+   defekt (522 KB zu klein, startete auch von Hand nicht); die Release-Ordner
+   sind neu gebaut, `release*.json` mit neuen Prüfsummen.
+3. **Kein Rückroll, alter Prozess einfach weg.** `waitForHealth` hatte nur
+   `unref`-Timer; nach `closeServer` hielt nichts mehr die Event-Loop offen und
+   Node beendete sich still. Jetzt `src/server/update/health.ts` ohne `unref`.
+4. **Erfolgreiches Update wurde zurückgerollt** (erst nach 2. sichtbar).
+   `tandem.old.exe` ist das Image des laufenden alten Prozesses; Windows
+   verweigert das Löschen (`EPERM`), das landete im Catch-all. Jetzt toleriert,
+   der neue Prozess räumt nach (`cleanupLeftovers`, in `main.ts` wiederholt).
+5. **Rückroll-Meldung verschwand** 5 s nach dem Neustart, weil die
+   Startprüfung `install-failed` mit `available` überschrieb
+   (`src/server/update/state.ts`).
+
+Beide Teile wurden danach automatisiert gegen die echten exes gefahren (Ports
+8095/8097, eigener Fake-Server auf 8098) und liefen wie oben beschrieben.

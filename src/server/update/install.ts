@@ -51,8 +51,14 @@ const PAIRS: [live: string, old: string][] = [
  * Called at startup. That this process is running at all is the proof that the
  * version on disk starts, so the rollback copies have done their job — and it
  * also catches an old process that died before it could clean up itself.
+ *
+ * Returns true when nothing is left. Right after an update it is false: the
+ * old process is still running from tandem.old.exe and has the old .node
+ * loaded, and Windows will not delete either until it exits. The restarted
+ * process calls this again until it succeeds.
  */
-export function cleanupLeftovers(dir: string): void {
+export function cleanupLeftovers(dir: string): boolean {
+  let clean = true
   for (const name of [OLD_EXE, OLD_NATIVE, EXE_NAME + NEW_SUFFIX, NATIVE_NAME + NEW_SUFFIX]) {
     const filePath = path.join(dir, name)
     try {
@@ -64,8 +70,10 @@ export function cleanupLeftovers(dir: string): void {
       // Try to remove each file independently so one locked file does not prevent
       // cleaning up the others.
       console.warn(`Datei konnte nicht gelöscht werden: ${filePath} — ${String(err)}`)
+      clean = false
     }
   }
+  return clean
 }
 
 /** Reads why the last attempt failed, exactly once. */
@@ -164,7 +172,19 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
     const healthy = await deps.waitForHealth(deps.healthTimeoutMs ?? 90_000)
 
     if (healthy) {
-      for (const [, old] of PAIRS) fs.rmSync(path.join(dir, old), { force: true })
+      // tandem.old.exe is this very process's image and better_sqlite3.old.node
+      // is loaded in it; Windows refuses to delete either while this runs
+      // (EPERM). The update has succeeded at this point, so a failed delete
+      // must not fall through to the catch-all below — that would kill the
+      // healthy new version and roll back. The new process removes what is
+      // left once this one is gone (cleanupLeftovers, retried in main.ts).
+      for (const [, old] of PAIRS) {
+        try {
+          fs.rmSync(path.join(dir, old), { force: true })
+        } catch {
+          // Left for the new process — see above.
+        }
+      }
       deps.exit(0)
       return
     }

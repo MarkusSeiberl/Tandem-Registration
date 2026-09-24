@@ -5,7 +5,7 @@ import App from './App'
 import * as api from './api'
 import type { UpdateStatus } from './api'
 import { today } from './date'
-import { fireUpdateEvent } from './setupTests'
+import { eventSourceOpenCount, fireUpdateEvent } from './setupTests'
 
 // The whole app tree is mounted here, so the module is kept and only the calls
 // this test drives are replaced — a hand-written list of exports would need a
@@ -194,6 +194,39 @@ describe('App und das Update', () => {
     vi.mocked(api.getUpdateStatus).mockResolvedValue(updateStatus({ promptPending: true }))
     render(<App />)
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
+  // The packaged exe opens the browser the moment it listens, but the startup
+  // check only runs 5 s later. The first GET therefore always sees 'idle', and
+  // the pushed frame that follows never carries promptPending — so App has to
+  // ask again when a release turns up, or the dialog can never open.
+  it('opens the dialog when the startup check finds a release after the page loaded', async () => {
+    vi.mocked(api.getUpdateStatus).mockResolvedValueOnce(
+      updateStatus({ phase: 'idle', latestVersion: null }),
+    )
+    render(<App />)
+    await screen.findByText('Keine Registrierungen für dieses Datum.')
+    // The first GET has landed and the update channel is open next to the
+    // list's own one.
+    await vi.waitFor(() => expect(eventSourceOpenCount()).toBe(2))
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(updateStatus({ promptPending: true }))
+    fireUpdateEvent(updateStatus({ phase: 'available' }))
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
+  // A download started from the update screen instead of the dialog leaves
+  // promptPending set on the server. Asking "download now?" about a download
+  // already under way would be nonsense.
+  it('does not offer the dialog once the download is past "available"', async () => {
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(
+      updateStatus({ phase: 'downloading', promptPending: true, downloadedBytes: 5, totalBytes: 10 }),
+    )
+    render(<App />)
+    await screen.findByRole('button', { name: /Update/ })
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('starts the download and opens the screen on yes', async () => {

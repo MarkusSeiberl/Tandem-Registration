@@ -76,6 +76,66 @@ describe('installUpdate — the happy path', () => {
   })
 })
 
+// Windows refuses to delete the image of a running process. The rollback copy
+// of the exe IS this process's image — it was renamed, not closed — so the
+// cleanup after a healthy restart always fails with EPERM on the real machine.
+// That must not turn a successful update into a rollback that kills the new
+// version: the new process cleans up after this one has exited.
+describe('installUpdate — the rollback copy is still locked by this process', () => {
+  const lockOldExe = () => {
+    const real = fs.rmSync
+    return vi.spyOn(fs, 'rmSync').mockImplementation((p, opts) => {
+      // Only once the swap is done: the stale-copy sweep before it deletes a
+      // leftover from an earlier run, which no process holds.
+      if (path.basename(String(p)) === OLD_EXE && !has('tandem.exe.new')) {
+        throw Object.assign(new Error('EPERM, Permission denied'), { code: 'EPERM' })
+      }
+      return real(p, opts)
+    })
+  }
+
+  it('still ends the old process with success and leaves the new files in place', async () => {
+    stage()
+    const d = deps()
+    const spy = lockOldExe()
+    try {
+      await installUpdate(d)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(d.exit).toHaveBeenCalledWith(0)
+    expect(d.exit).not.toHaveBeenCalledWith(1)
+    expect(read('tandem.exe')).toBe('neu')
+    expect(read('better_sqlite3.node')).toBe('neu-node')
+    expect(has(FAILURE_MARKER)).toBe(false)
+  })
+
+  it('does not kill the new version or start the old one again', async () => {
+    stage()
+    const kill = vi.fn()
+    const d = deps({ spawnDetached: vi.fn().mockReturnValue({ kill }) })
+    const spy = lockOldExe()
+    try {
+      await installUpdate(d)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(kill).not.toHaveBeenCalled()
+    expect(d.spawnDetached).toHaveBeenCalledTimes(1)
+  })
+
+  it('still removes the copies it can', async () => {
+    stage()
+    const spy = lockOldExe()
+    try {
+      await installUpdate(deps())
+    } finally {
+      spy.mockRestore()
+    }
+    expect(has(OLD_NATIVE)).toBe(false)
+  })
+})
+
 describe('installUpdate — the new version does not come up', () => {
   it('puts both old files back and starts the old exe again', async () => {
     stage()
@@ -225,6 +285,22 @@ describe('cleanupLeftovers', () => {
     fs.writeFileSync(path.join(dir, 'tandem.exe'), 'laufend')
     cleanupLeftovers(dir)
     expect(fs.readdirSync(dir)).toEqual(['tandem.exe'])
+  })
+
+  // The restarted process retries until the old one has let go of its image.
+  it('says whether everything is gone', () => {
+    fs.writeFileSync(path.join(dir, OLD_EXE), 'alt')
+    expect(cleanupLeftovers(dir)).toBe(true)
+
+    fs.writeFileSync(path.join(dir, OLD_EXE), 'alt')
+    const spy = vi.spyOn(fs, 'rmSync').mockImplementationOnce(() => {
+      throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
+    })
+    try {
+      expect(cleanupLeftovers(dir)).toBe(false)
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('does nothing on a folder that has never seen an update', () => {

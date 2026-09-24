@@ -74,19 +74,30 @@ Lügen.
 
 Aus der Antwort zählt:
 
-- `tag_name` — führendes `v` weg, dann numerischer Vergleich über drei Teile.
-  Nur **echt neuer** gilt.
+- `tag_name` — führendes `v` weg, dann numerischer Vergleich. Nur **echt
+  neuer** gilt. Der Vergleich prüft *beide* Operanden vollständig, bevor er
+  vergleicht, und antwortet `null`, wenn einer nicht rankbar ist: die eigene
+  Version kommt ungeprüft aus `package.json`, und eine Rückgabe beim ersten
+  Unterschied hätte einen kaputten Teil dahinter nie erreicht
+  (`compareVersions('2.0.0', '1.x.0')` ergab so `1` statt `null`). `null` wird
+  vom Zustand als gescheiterte Abfrage behandelt, nicht als Gleichstand.
 - `body` — die Release-Notes, unverändert übernommen.
 - `assets` — es müssen beide Namen exakt vorkommen (`tandem.exe`,
   `better_sqlite3.node`), jeweils mit `browser_download_url`, `size` und einem
-  `digest`, der mit `sha256:` beginnt.
+  `digest`, der mit `sha256:` beginnt. Die URL wird mit `new URL()` geparst,
+  nicht per Präfixvergleich: TLS für alles, was über ein Netz erreichbar ist,
+  einfaches HTTP **nur auf Loopback**. Letzteres, weil der Handtest ein echtes
+  gepacktes Exe gegen ein lokal ausgeliefertes Fake-Release laufen lässt — TLS
+  dort hieße ein selbstsigniertes Zertifikat, das Nodes `fetch` ohnehin
+  ablehnt, und der Test liefe nie. Loopback verlässt die Maschine nicht, dort
+  gibt es keinen Transport herabzustufen.
 
 Fehlt oder verunglückt etwas davon, ist das Ergebnis „kein Update“ mit einem
 Log-Eintrag — nie eine Fehlermeldung auf dem Schirm. Dasselbe gilt für
 Netzwerkfehler: ein Landeplatz ohne Internet ist der Normalfall, nicht die
 Störung (`build.md`: „lokales Netzwerk, kein Internet nötig“).
 
-Erste Abfrage 5 s nach `listen()`, danach stündlich. Der Timer ist `unref`'t
+Erste Abfrage 1 s nach `listen()`, danach stündlich. Der Timer ist `unref`'t
 und hält den Prozess nicht offen.
 
 ## Zustand
@@ -149,17 +160,50 @@ Die Reihenfolge ist das eigentliche Feature:
 1. Erst `202` antworten, dann handeln. Der Browser muss gehört haben, dass es
    losgeht, bevor der Server verschwindet (derselbe Griff wie bei
    `/api/shutdown`).
-2. Bonjour abmelden, `app.close()`, Datenbank schließen (WAL-Checkpoint).
-3. Alte `tandem.old.exe` / `better_sqlite3.old.node` löschen, falls noch da.
-4. Beide laufenden Dateien auf `.old` umbenennen.
-5. Beide `.new`-Dateien an ihren Platz umbenennen.
-6. `tandem.exe` als losgelösten Prozess starten (`detached`, `stdio: 'ignore'`,
-   `unref()`).
-7. Bis zu 30 s lang `http://127.0.0.1:PORT/api/health` abfragen.
+2. Prüfen, ob beide `.new`-Dateien überhaupt da sind. Das ist der einzige
+   Schritt **vor** dem Schließen — ein Wurf hier ist folgenlos.
+3. Bonjour abmelden, `app.close()`, Datenbank schließen (WAL-Checkpoint). Jede
+   Stufe einzeln abgesichert: ein Bonjour-Fehler darf den Listener nicht offen
+   lassen.
+4. Alte `tandem.old.exe` / `better_sqlite3.old.node` löschen, falls noch da.
+5. Beide laufenden Dateien auf `.old` umbenennen.
+6. Beide `.new`-Dateien an ihren Platz umbenennen.
+7. `tandem.exe` als losgelösten Prozess starten (`detached`, `stdio: 'ignore'`,
+   `unref()`), mit `TANDEM_RESTART=1` in der Umgebung — siehe unten.
+8. Bis zu **90 s** lang `http://127.0.0.1:PORT/api/health` abfragen.
    - Antwortet es: `.old`-Dateien löschen, `process.exit(0)`.
    - Antwortet es nicht: Kind beenden, beide `.old`-Dateien über die neuen
      zurückbenennen, `update-failed.json` neben das Exe schreiben, das
      wiederhergestellte alte Exe starten, beenden.
+
+90 s, nicht 30: Windows Defender darf ein frisch geschriebenes, nicht
+signiertes 114-MB-Binary erst scannen, bevor es laufen darf. Ein wirklich
+kaputtes Exe scheitert ohnehin in Sekunden — die lange Frist kostet nur im
+echten Fehlerfall etwas.
+
+**Alles ab Schritt 3 liegt in einer Auffangsicherung.** Sonst gäbe es einen
+dritten Ausgang neben „neue Version läuft" und „alte ist zurück und läuft":
+einen Prozess, der mit geschlossenem Server am Leben bleibt und nichts bedient.
+Für den Landeplatz ist das von einer toten Installation nicht zu unterscheiden
+— und der Aufrufer kann es nicht einmal melden, weil nichts mehr hört. Die
+Wiederherstellung ist dabei absichtlich fehlertolerant gegen ihr eigenes
+Scheitern: lieber ein bester Startversuch als eine unbehandelte Rejection.
+
+`update-failed.json` unterscheidet zwei Fälle, damit sein Text stimmt: wurde
+nie etwas umbenannt (früher Wurf), steht dort, dass nichts verändert wurde —
+nicht, dass „wiederhergestellt" wurde.
+
+### `TANDEM_RESTART`
+
+`main.ts` behandelt einen belegten Port plus ein gesund antwortendes Tandem als
+„läuft schon, Browser aufmachen, Ende". Für einen Start aus `installUpdate`
+heraus ist das falsch: dort ist das Kind der **Ersatz**, und was da antwortet,
+ist der sterbende Vorgänger. Verabschiedet es sich höflich mit 0 und der
+Vorgänger beendet sich planmäßig danach, läuft am Landeplatz nichts mehr.
+
+`spawnDetached` setzt deshalb `TANDEM_RESTART=1`; unter dieser Fahne wiederholt
+der Start den Bind bis zu 60 s lang, statt zu deferieren. `install.ts` kann das
+nur als Vertrag verlangen — eingelöst wird er in `main.ts`.
 
 Der wiederhergestellte Start liest `update-failed.json` einmal, zeigt den Grund
 auf dem Update-Schirm und löscht die Datei. Der Operator steht nie vor einer
@@ -180,9 +224,16 @@ von selbst wieder an, sobald der neue Server hört.
 
 - `tandem.old.exe` / `better_sqlite3.old.node` da → löschen. Dass dieser Prozess
   überhaupt läuft, ist der Beweis, dass die neue Version startet. Fängt auch den
-  Fall ab, dass der alte Prozess vor Schritt 7 gestorben ist.
+  Fall ab, dass der alte Prozess vor der Gesundheitsprüfung gestorben ist.
 - `*.new` da → löschen, ein abgebrochener Download.
 - `update-failed.json` da → in den Zustand laden, Datei löschen.
+
+Beide Aufräumer sind **einzeln pro Datei abgesichert und werfen nie**.
+`fs.rmSync(..., { force: true })` schluckt nur eine *fehlende* Datei, nicht eine
+*gesperrte* — auf Windows wirft eine von Virenscanner, Backup-Agent oder Indexer
+gehaltene Datei `EBUSY` oder `EPERM`. Beides läuft vor `listen()`. Ein Wurf dort
+hieße: der Registrierungsserver kommt am Sprungtag wegen einer Restdatei gar
+nicht hoch — schlimmer als ein fehlendes Update.
 
 ## Das Manifest
 
@@ -217,7 +268,23 @@ und Prozent / Button „Jetzt installieren und neu starten“ / Fehler mit
 Wiederholen. Vor dem Installieren fragt ein `confirm`, das die Zahl der offenen
 Tandems von heute nennt und sagt, dass jedes Tablet die Verbindung verliert.
 Nach dem `POST` zeigt der Schirm „Tandem startet neu…“, fragt `/api/health` ab,
-bis der neue Server antwortet, und lädt die Seite neu.
+bis der neue Server antwortet, und lädt die Seite neu. Gefragt wird **sofort**
+und erst danach im Sekundentakt: nach einem Neustart kann der Server bereits
+antworten, wenn man zum ersten Mal hinsieht.
+
+**Jede der zwölf Phasen sagt etwas.** Die vier stillen — `disabled`, `idle`,
+`checking`, `check-failed` — fielen zuerst auf den Versionsblock durch und
+schwiegen sonst. `check-failed` trägt absichtlich `error: null`, weil ein
+Landeplatz ohne Internet der Normalfall ist und kein Fehler; ohne eigene Zeile
+war es von `idle` nicht zu unterscheiden. Ein Betreiber vor einer stummen
+Fläche hält das Programm für kaputt.
+
+**Aktionen nur auf dem Tandem-Rechner.** Die Knöpfe sind bei `allowed === false`
+deaktiviert, mit **sichtbarem** Hinweis statt nur einem `title` — ein Tablet hat
+kein Hover. Das ist die dritte Lage neben der 403-Schranke des Servers und dem
+versteckten Sidebar-Eintrag: der Schirm soll sich nicht darauf verlassen, dass
+sein Elternteil ihn versteckt. Informationen bleiben sichtbar; nur Handeln ist
+gesperrt.
 
 **SSE.** `useEvents` hört heute nur auf `changed`. Der Update-Zustand bekommt
 einen eigenen Hook auf dasselbe `/api/events`, der auf `update` hört — und der
@@ -228,6 +295,22 @@ Verbindung auf.
 Notes tatsächlich benutzen: `##`/`###`, `**fett**`, `` `code` ``, `-`-Listen,
 Absätze. Alles andere wird als Text ausgegeben, kein rohes HTML, keine neue
 Abhängigkeit. Der Text kommt von GitHub und wird darum wie Fremdtext behandelt.
+
+Zwei Dinge, die erst beim Bauen klar wurden:
+
+- **CRLF.** GitHub-Bodies werden im Web-Textfeld geschrieben und kommen darum
+  üblicherweise mit `\r\n`. Die Überschriften-Regex hat kein `/m`, und `.`
+  matcht kein `\r` — ohne Normalisierung scheiterte **jede** Überschrift und
+  erschien als wörtliches `## …`. Die Zeilenenden werden an einer Stelle beim
+  Aufteilen normalisiert, nicht in jedem Muster einzeln.
+- **Blocktrennung an jeder Überschrift**, nicht nur an Leerzeilen: `## A` direkt
+  gefolgt von `### B` ergibt auf GitHub zwei Überschriften, vorher bei uns eine
+  plus wörtlicher Text.
+
+Die Paarung von `**` bleibt bewusst CommonMark-konform — `**` darf wortintern
+Emphase öffnen, GitHub rendert `O(n**2) not O(n**3)` selbst mit Hervorhebung.
+Dieser Schirm soll zeigen, was der Autor beim Schreiben gesehen hat, nicht was
+wir für gemeint halten.
 
 ## Testbarkeit
 

@@ -61,7 +61,14 @@ Diese gelten für jeden Task und sind verbindlich:
 | Ein einzelner Server-Test | `npx vitest run tests/<datei>.test.ts` |
 | Server-Typen | `npx tsc -b` |
 | Manifest-Tests | `npm --prefix web/manifest test` |
-| Manifest-Typen | `npm --prefix web/manifest exec tsc -b` |
+| Manifest-Typen | `npx tsc -b web/manifest` |
+
+**Nicht** `npm --prefix web/manifest exec tsc -b` benutzen: npm schluckt das
+`-b` als eigene Option („Unknown cli config --b"), `tsc` läuft dann ohne
+Projektangabe, prüft nichts und **meldet Erfolg**. Mit `--` als Trenner ist es
+genauso wertlos, weil `--prefix` die Paketwurzel verschiebt, nicht das
+Arbeitsverzeichnis. Nur `npx tsc -b web/manifest` (oder `cd web/manifest &&
+npx tsc -b`) prüft wirklich — und liefert bei einem Fehler Exit 1.
 
 ---
 
@@ -148,6 +155,26 @@ describe('check-version-tag', () => {
 })
 ```
 
+**Der reine Vergleich reicht nicht.** Die Zeile, die tatsächlich entscheidet,
+ob der Build abbricht, ist der Main-Module-Guard am Ende des Skripts — und
+genau dort saß in der ersten Fassung dieses Plans ein Fehler, den kein Test
+gesehen hat, weil keiner das Skript als Prozess gestartet hat. Also zusätzlich
+ein Test, der `check-version-tag.mjs` per `execFileSync` in einem frisch
+angelegten Git-Repo unter `os.tmpdir()` laufen lässt und den **Exit-Code**
+prüft:
+
+- Version passt zum Tag auf HEAD → Exit 0
+- Version passt nicht → Exit ≠ 0, und stderr nennt beide Zahlen
+- HEAD trägt gar keinen Tag → Exit 0
+
+Die Fixture-Commits brauchen `git -c user.email=… -c user.name=…`, damit der
+Test nicht von der globalen Git-Konfiguration abhängt.
+
+Dazu `tests/version.test.ts` für `src/server/version.ts`: `fromPackageJson`
+liest aus `process.cwd()` — ein Verzeichniswechsel im Test treibt beide Fälle,
+die lesbare `package.json` und den Rückfall auf `'0.0.0'` bei fehlender oder
+kaputter Datei.
+
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/checkVersionTag.test.ts`
@@ -163,7 +190,7 @@ Expected: FAIL — `Cannot find module '../scripts/check-version-tag.mjs'`
 import { execFileSync } from 'child_process'
 import { readFileSync } from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -191,7 +218,11 @@ export function currentTag() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`.replace(/\\/g, '/')) {
+// pathToFileURL, not a hand-built `file://` + slash swap: on Windows the latter
+// produces `file://C:/…` where import.meta.url is `file:///C:/…`, so the guard
+// never fires, the check never runs, and build:exe exits 0 through any
+// mismatch — silently. Measured on Windows 11 / Node 24 before this was fixed.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
   const problem = versionMismatch(pkg.version, currentTag())
   if (problem) {
@@ -272,10 +303,17 @@ console.log(`[tandem] dist/server.cjs gebaut, Version ${pkg.version}`)
 "build:exe": "node scripts/check-version-tag.mjs && node scripts/check-native-binary.mjs && node scripts/build-exe.mjs && node scripts/patch-subsystem.mjs && node scripts/patch-version-info.mjs && node scripts/copy-native-binary.mjs",
 ```
 
-- [ ] **Step 8: Verify the bundle still builds and carries the version**
+- [ ] **Step 8: Verify the bundle still builds**
 
-Run: `npm run build:server && node -e "const s=require('fs').readFileSync('dist/server.cjs','utf8'); console.log(s.includes('\"1.1.0\"') ? 'VERSION IN BUNDLE' : 'MISSING')"`
-Expected: `[tandem] dist/server.cjs gebaut, Version 1.1.0` then `VERSION IN BUNDLE`
+Run: `npm run build:server`
+Expected: `[tandem] dist/server.cjs gebaut, Version 1.1.0`, and `dist/server.cjs`
+is written.
+
+Dass die Zahl auch *im* Bundle landet, lässt sich hier noch nicht prüfen:
+esbuild liest nur Dateien, die vom Einstiegspunkt aus erreichbar sind, und
+`version.ts` importiert bis Task 4 niemand. Der `define` hat also noch nichts
+zu ersetzen. Die Prüfung steht in Task 4, Step 7 — dort importiert
+`routes/update.ts` als erster `APP_VERSION`.
 
 - [ ] **Step 9: Run the whole server suite and the type check**
 
@@ -301,13 +339,15 @@ git commit -m "feat(update): das Programm kennt seine eigene Version"
 - Consumes: `APP_VERSION` (Task 1).
 - Produces:
   ```ts
+  /** GitHub's /releases/latest, or process.env.TANDEM_RELEASE_URL when set. */
   export const RELEASE_URL: string
   export const EXE_NAME = 'tandem.exe'
   export const NATIVE_NAME = 'better_sqlite3.node'
   export interface ReleaseAsset { name: string; url: string; size: number; sha256: string }
   export interface Release { version: string; notes: string; exe: ReleaseAsset; native: ReleaseAsset }
   export type Fetcher = (url: string) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>
-  export function compareVersions(a: string, b: string): number
+  /** null = the two cannot be ranked (a version part this cannot parse). */
+  export function compareVersions(a: string, b: string): number | null
   export function parseRelease(payload: unknown): Release | null
   export function fetchLatestRelease(fetcher?: Fetcher): Promise<Release | null>
   ```
@@ -398,6 +438,24 @@ describe('parseRelease', () => {
   })
 })
 
+describe('RELEASE_URL', () => {
+  it('is GitHub by default', () => {
+    expect(RELEASE_URL).toContain('api.github.com')
+  })
+
+  // The manual staging test (build.md) points a real packaged exe at a fake
+  // release on 127.0.0.1. Without this it would have to edit the source and
+  // remember to change it back before the next build.
+  it('can be pointed elsewhere for the staging test', async () => {
+    vi.stubEnv('TANDEM_RELEASE_URL', 'http://127.0.0.1:8099/latest')
+    vi.resetModules()
+    const fresh = await import('../src/server/update/github')
+    expect(fresh.RELEASE_URL).toBe('http://127.0.0.1:8099/latest')
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
+})
+
 describe('fetchLatestRelease', () => {
   it('asks GitHub for the latest release', async () => {
     const fetcher = vi.fn().mockResolvedValue({
@@ -431,8 +489,13 @@ Expected: FAIL — `Failed to resolve import "../src/server/update/github"`
 - [ ] **Step 3: Write `src/server/update/github.ts`**
 
 ```ts
-export const RELEASE_URL =
+const GITHUB_LATEST =
   'https://api.github.com/repos/MarkusSeiberl/Tandem-Registration/releases/latest'
+
+// Overridable so the manual staging test (build.md) can point a real packaged
+// exe at a fake release on 127.0.0.1 — without editing this file and having to
+// remember to change it back before a build goes out. Unset in every normal run.
+export const RELEASE_URL = process.env.TANDEM_RELEASE_URL || GITHUB_LATEST
 
 // The two files a release must carry. Exactly these names — copy-native-binary
 // and build-exe produce them, and install.ts renames them in place.
@@ -463,11 +526,52 @@ export type Fetcher = (
  * sorts before '9' as a string, and that is the only thing a version compare
  * has to get right here. Missing parts count as zero.
  */
-export function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map((n) => Number(n) || 0)
-  const pb = b.split('.').map((n) => Number(n) || 0)
-  for (let i = 0; i < 3; i++) {
-    const diff = (pa[i] ?? 0) - (pb[i] ?? 0)
+/**
+ * A dotted-version part that is a plain non-negative integer, e.g. "0", "12".
+ * Anything else ("0-beta", "x", "1e3") is not a version this program knows how
+ * to rank — returns null rather than throwing; see compareVersions.
+ */
+function toPart(part: string | undefined): number | null {
+  // A part that is simply absent (the shorter of two dotted strings) is not
+  // malformed, it is just shorter. "1.2" vs "1.2.0" is a legitimate way to
+  // spell the same version, so a missing trailing part counts as zero.
+  if (part === undefined) return 0
+  if (!/^\d+$/.test(part)) return null
+  return Number(part)
+}
+
+/**
+ * Numeric comparison, part by part. Written out rather than pulled in: '10'
+ * sorts before '9' as a string, and that is the only thing a version compare
+ * has to get right here. Missing trailing parts count as zero; the parts are
+ * compared out to the length of the longer operand, so a stray extra segment
+ * (e.g. "1.2.0.5") is never silently dropped.
+ *
+ * Returns `null`, never throws, when either version carries a part it cannot
+ * rank. `null` means here what it means everywhere else in this module —
+ * "nothing I would dare compare" — and putting it in the return type instead
+ * of a thrown error makes the compiler, not a comment, force every caller to
+ * handle it. That matters because `foundRelease` compares this against
+ * APP_VERSION, which is unvalidated input straight out of package.json.
+ */
+export function compareVersions(a: string, b: string): number | null {
+  const pa = a.split('.')
+  const pb = b.split('.')
+  const len = Math.max(pa.length, pb.length)
+  const na: (number | null)[] = []
+  const nb: (number | null)[] = []
+  for (let i = 0; i < len; i++) {
+    na.push(toPart(pa[i]))
+    nb.push(toPart(pb[i]))
+  }
+  // Both operands are validated in full BEFORE anything is compared. An
+  // earlier version returned on the first difference, which meant a malformed
+  // part sitting after it was never reached: compareVersions('2.0.0', '1.x.0')
+  // answered 1 instead of null, and the doc promise above was simply untrue.
+  // A caller cannot compensate for that — the guarantee has to live here.
+  if (na.some((n) => n === null) || nb.some((n) => n === null)) return null
+  for (let i = 0; i < len; i++) {
+    const diff = (na[i] as number) - (nb[i] as number)
     if (diff !== 0) return diff
   }
   return 0
@@ -482,6 +586,32 @@ function asAsset(raw: unknown): ReleaseAsset | null {
   if (!/^[0-9a-f]{64}$/.test(sha256)) return null
   if (typeof a.name !== 'string') return null
   if (typeof a.browser_download_url !== 'string') return null
+  // This URL gets fetched and the result executed in place of the running
+  // program. `fetch` already refuses non-http(s) schemes and the URL comes from
+  // GitHub's TLS-protected API, so this closes no live hole — but a trust
+  // boundary is the place to require the transport we actually expect. TLS for
+  // anything reachable over a network; plain HTTP only on loopback, where the
+  // manual staging test (Task 12) serves a fake release from a throwaway local
+  // server. Requiring TLS there would mean a self-signed certificate that
+  // Node's `fetch` rejects anyway, so the test would simply never be run, and
+  // loopback traffic never leaves the machine — there is no transport there to
+  // downgrade.
+  let downloadUrl: URL
+  try {
+    downloadUrl = new URL(a.browser_download_url)
+  } catch {
+    return null
+  }
+  // WHATWG URL keeps the brackets on an IPv6 host: `new URL('http://[::1]/x')
+  // .hostname` is the literal string "[::1]", not "::1" (measured, Node 24).
+  // Both spellings are accepted in case that ever differs across environments.
+  const isLoopbackHost = downloadUrl.hostname === 'localhost'
+    || downloadUrl.hostname === '127.0.0.1'
+    || downloadUrl.hostname === '::1'
+    || downloadUrl.hostname === '[::1]'
+  const isSecure = downloadUrl.protocol === 'https:'
+  const isLoopbackHttp = downloadUrl.protocol === 'http:' && isLoopbackHost
+  if (!isSecure && !isLoopbackHttp) return null
   if (typeof a.size !== 'number' || a.size <= 0) return null
   return { name: a.name, url: a.browser_download_url, size: a.size, sha256 }
 }
@@ -540,7 +670,8 @@ export async function fetchLatestRelease(fetcher?: Fetcher): Promise<Release | n
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateGithub.test.ts`
-Expected: PASS, 12 tests.
+Expected: PASS, 27 tests (die Liste oben ist der Kern; der Loopback-, Sentinel- und Kurzschluss-Fix aus den Reviews hat sie erweitert).
+Sentinel-Fix aus dem Review hat sie auf 24 erweitert).
 
 - [ ] **Step 5: Commit**
 
@@ -587,7 +718,7 @@ git commit -m "feat(update): das neueste Release abfragen und pruefen"
     foundRelease(release: Release | null, isStartup: boolean): void
     markPromptSeen(): void
     fail(phase: UpdatePhase, message: string): void
-    readonly release: Release | null
+    readonly release: Release | null  // getter, set only by foundRelease
   }
   ```
 
@@ -700,6 +831,19 @@ describe('UpdateState', () => {
     const state = new UpdateState('1.1.0', 'disabled')
     expect(state.get().phase).toBe('disabled')
   })
+
+  // compareVersions answers null for a version part it cannot parse, and
+  // APP_VERSION comes out of package.json unvalidated. A build mistake must not
+  // take the jump day down, and must not leave the state stuck in 'checking' —
+  // the sidebar entry and the dialog both wait on a resolved phase.
+  it('survives an unparsable local version', () => {
+    const state = new UpdateState('1.2.0-beta')
+    state.beginCheck()
+    expect(() => state.foundRelease(release('1.3.0'), true)).not.toThrow()
+    expect(state.get().phase).toBe('check-failed')
+    expect(state.promptPending).toBe(false)
+    expect(state.release).toBeNull()
+  })
 })
 ```
 
@@ -735,8 +879,16 @@ export class UpdateState {
   private status: UpdateStatus
   private listeners: ((s: UpdateStatus) => void)[] = []
   private promptArmed = false
-  /** The release the download and install steps work from. */
-  release: Release | null = null
+  private found: Release | null = null
+
+  /**
+   * The release the download and install steps work from. Read-only from
+   * outside: it is set only by foundRelease, so nothing can point the
+   * downloader at something this class never approved.
+   */
+  get release(): Release | null {
+    return this.found
+  }
 
   constructor(currentVersion: string, phase: UpdatePhase = 'idle') {
     this.status = {
@@ -774,15 +926,41 @@ export class UpdateState {
   foundRelease(release: Release | null, isStartup: boolean): void {
     const checkedAt = new Date().toISOString()
     if (!release) {
+      // Clear the handle too, not just the phase: the download step reads
+      // `release` and does not gate on phase, so a release left over from an
+      // earlier successful check would still be fetchable after a later check
+      // found nothing.
+      this.forget()
       this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
-    if (compareVersions(release.version, this.status.currentVersion) <= 0) {
-      this.release = null
-      this.patch({ phase: 'up-to-date', latestVersion: release.version, checkedAt })
+    // compareVersions answers null when it cannot compare the two. The release
+    // tag is already gated by parseRelease's regex; the other operand is
+    // APP_VERSION out of package.json and is not. A malformed local version is
+    // a build mistake, not something the operator can fix at the landing site,
+    // so it must never take the jump day down or strand the state in
+    // 'checking' — it becomes an ordinary failed check, loud in the log.
+    const newer = compareVersions(release.version, this.status.currentVersion)
+    if (newer === null) {
+      console.error(
+        `[tandem] Versionsvergleich nicht möglich: "${release.version}" gegen ` +
+          `"${this.status.currentVersion}".`,
+      )
+      this.forget()
+      this.patch({ phase: 'check-failed', checkedAt, error: null })
       return
     }
-    this.release = release
+    if (newer <= 0) {
+      this.forget()
+      // error: null as well — a message left over from a failed download would
+      // otherwise sit on an up-to-date status, looking like something the
+      // operator still has to do.
+      this.patch({
+        phase: 'up-to-date', latestVersion: release.version, checkedAt, error: null,
+      })
+      return
+    }
+    this.found = release
     if (isStartup) this.promptArmed = true
     this.patch({
       phase: 'available', latestVersion: release.version, notes: release.notes,
@@ -791,6 +969,17 @@ export class UpdateState {
   }
 
   markPromptSeen(): void {
+    this.promptArmed = false
+  }
+
+  /**
+   * There is nothing installable any more. Drops the handle the downloader
+   * works from AND any armed dialog: leaving the dialog armed while `release`
+   * is gone would open a modal offering a version the download step then
+   * silently refuses to fetch — a dead end with no feedback.
+   */
+  private forget(): void {
+    this.found = null
     this.promptArmed = false
   }
 
@@ -803,7 +992,7 @@ export class UpdateState {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateState.test.ts`
-Expected: PASS, 10 tests.
+Expected: PASS, 14 tests (die Liste oben plus die Tests aus den Reviews: nicht vergleichbare Version, veralteter Release-Griff, alte Fehlermeldung, entschaerfter Dialog).
 
 - [ ] **Step 5: Commit**
 
@@ -818,6 +1007,9 @@ git commit -m "feat(update): Zustand des Updates mit einmaligem Start-Dialog"
 
 **Files:**
 - Create: `src/server/routes/update.ts`
+- Create: `src/server/routes/isLocal.ts` (aus `shutdown.ts` herausgezogen, von
+  beiden benutzt)
+- Modify: `src/server/routes/shutdown.ts` (benutzt jetzt das geteilte `isLocal`)
 - Create: `tests/update-route.test.ts`
 - Modify: `src/server/index.ts` (Import, 8. Parameter, `registerUpdateRoutes`)
 - Modify: `tests/helpers/testServer.ts` (8. Parameter durchreichen)
@@ -868,6 +1060,22 @@ function withUpdate(state = new UpdateState('1.1.0')) {
   }
   return { ...testServer({}, undefined, undefined, undefined, controls), controls, state }
 }
+
+// Die Schranke wird tabellengetrieben geprüft, nicht stichprobenhaft: alle vier
+// POST-Routen gegen alle drei Fälle (lokal erlaubt, LAN → 403, ohne Controls →
+// 501). Geprüft wird die **Nebenwirkung**, nicht nur der Statuscode — eine
+// Route, die 403 antwortet und die Aktion trotzdem ausführt, bestünde eine
+// reine Statusprüfung. Eine an einer Route geprüfte und für die anderen drei
+// angenommene Sicherheitskontrolle ist keine geprüfte Sicherheitskontrolle.
+const ROUTES = [
+  { url: '/api/update/check', code: 202, spy: (c: UpdateControls) => c.check },
+  { url: '/api/update/download', code: 202, spy: (c: UpdateControls) => c.download },
+  { url: '/api/update/install', code: 202, spy: (c: UpdateControls) => c.install },
+  {
+    url: '/api/update/prompt-seen', code: 204,
+    spy: (c: UpdateControls) => vi.spyOn(c.state, 'markPromptSeen'),
+  },
+] as const
 
 test('the status names both versions and is open to every device', async () => {
   const state = new UpdateState('1.1.0')
@@ -973,6 +1181,7 @@ import { FastifyInstance } from 'fastify'
 import type { Database } from 'better-sqlite3'
 import { APP_VERSION } from '../version'
 import { today } from '../day'
+import { isLocal } from './isLocal'
 import type { UpdateState, UpdateStatus } from '../update/state'
 
 /**
@@ -993,12 +1202,13 @@ export interface UpdateStatusResponse extends UpdateStatus {
   openToday: number
 }
 
-// Same reasoning as routes/shutdown.ts: the manifest has no login and every
-// device on the club WLAN can open it, so the server decides. `req.ip` is the
-// socket's peer address — nothing a client can set about itself.
-function isLocal(ip: string): boolean {
-  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
-}
+// isLocal lives in its own module (src/server/routes/isLocal.ts) and is shared
+// with routes/shutdown.ts, which draws the same line for the same reason: the
+// manifest has no login and every device on the club WLAN can open it, so the
+// server decides. `req.ip` is the socket's peer address — nothing a client can
+// set about itself, and the app sets no `trustProxy`, so no request header can
+// influence it. One copy, not two: a loopback form added to one of two
+// byte-identical copies would leave the other silently weaker.
 
 function openToday(db: Database): number {
   const row = db
@@ -1105,14 +1315,23 @@ with `import type { UpdateControls } from '../../src/server/routes/update'` at t
 - [ ] **Step 6: Run test to verify it passes**
 
 Run: `npx vitest run tests/update-route.test.ts`
-Expected: PASS, 7 tests.
+Expected: PASS — die tabellengetriebene Schrankenpruefung plus die Tests fuer Status-Nutzlast, openToday und die Dialog-Abfolge.
 
-- [ ] **Step 7: Run the whole suite — nothing else may move**
+- [ ] **Step 7: Verify the version really lands in the bundle**
+
+`routes/update.ts` ist der erste Importeur von `APP_VERSION`, also erreicht
+esbuild `version.ts` ab jetzt und der `define` aus Task 1 hat etwas zu
+ersetzen. Das ist die Prüfung, die in Task 1 noch nicht möglich war.
+
+Run: `npm run build:server && node -e "const s=require('fs').readFileSync('dist/server.cjs','utf8'); console.log(s.includes('__APP_VERSION__') ? 'FAIL: define not substituted' : s.includes('1.1.0') ? 'VERSION IN BUNDLE' : 'FAIL: version missing')"`
+Expected: `[tandem] dist/server.cjs gebaut, Version 1.1.0` then `VERSION IN BUNDLE`
+
+- [ ] **Step 8: Run the whole suite — nothing else may move**
 
 Run: `npm test && npx tsc -b`
 Expected: all green.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add src/server/routes/update.ts src/server/index.ts tests/update-route.test.ts tests/helpers/testServer.ts
@@ -1276,7 +1495,7 @@ import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import { pipeline } from 'stream/promises'
-import { Readable } from 'stream'
+import { Readable, Transform } from 'stream'
 import { EXE_NAME, NATIVE_NAME } from './github'
 import type { Release, ReleaseAsset } from './github'
 
@@ -1294,8 +1513,23 @@ export interface DownloadDeps {
 }
 
 function defaultFreeBytes(dir: string): number {
-  const st = fs.statfsSync(dir)
-  return Number(st.bsize) * Number(st.bavail)
+  // statfsSync throws (ENOENT for a missing dir, or a native error on a
+  // filesystem that does not implement statfs) rather than returning a
+  // sentinel. Uncaught, that is raw English Node text on the screen of an
+  // operator whose exe has no console.
+  //
+  // Failing closed rather than reading "unknown" as "space is fine": `dir` is
+  // where the running exe already lives, so a probe failure there means
+  // something is wrong with that directory itself — and the same problem
+  // would very likely break the write that follows. Better to refuse at once,
+  // in German, naming the directory, than to spend a landing site's slow link
+  // on a few hundred megabytes that fail for the same reason at the end.
+  try {
+    const st = fs.statfsSync(dir)
+    return Number(st.bsize) * Number(st.bavail)
+  } catch {
+    throw new Error(`Freier Speicherplatz von „${dir}“ konnte nicht ermittelt werden.`)
+  }
 }
 
 export async function defaultFetchStream(url: string): Promise<NodeJS.ReadableStream> {
@@ -1323,19 +1557,33 @@ async function fetchAsset(
   let lastReport = 0
 
   const source = await deps.fetchStream(asset.url)
-  source.on('data', (chunk: Buffer) => {
-    hash.update(chunk)
-    done += chunk.length
-    // Throttled: a 114 MB file would otherwise push thousands of SSE frames
-    // at every connected manifest.
-    const now = Date.now()
-    if (now - lastReport >= 500) {
-      lastReport = now
-      deps.onProgress(done, total)
-    }
+
+  // Hashing happens inside the pipeline as a Transform, not via a parallel
+  // 'data' listener on `source`. Attaching `.on('data', …)` switches a stream
+  // into flowing mode immediately, and whether `pipeline()`'s own consumer is
+  // wired up before the first chunk is emitted is a timing detail of Node's
+  // stream internals, not a guarantee this code can lean on — if it lost that
+  // race, bytes would reach the hash but never the file (or the other way
+  // round), and a truncated file could still pass its own checksum. Routing
+  // every byte through a Transform that both hashes and forwards makes that
+  // impossible by construction: one consumer, and hashing and writing happen
+  // on the same chunk in the same step.
+  const hasher = new Transform({
+    transform(chunk: Buffer, _enc, callback) {
+      hash.update(chunk)
+      done += chunk.length
+      // Throttled: a 114 MB file would otherwise push thousands of SSE frames
+      // at every connected manifest.
+      const now = Date.now()
+      if (now - lastReport >= 500) {
+        lastReport = now
+        deps.onProgress(done, total)
+      }
+      callback(null, chunk)
+    },
   })
 
-  await pipeline(source, fs.createWriteStream(target))
+  await pipeline(source, hasher, fs.createWriteStream(target))
 
   const got = hash.digest('hex')
   if (got !== asset.sha256) {
@@ -1353,6 +1601,14 @@ async function fetchAsset(
  */
 export async function downloadRelease(release: Release, deps: DownloadDeps): Promise<void> {
   const total = release.exe.size + release.native.size
+
+  // Sweep BEFORE probing free space, not after: a run killed mid-download
+  // (process killed, so the catch below never ran) leaves .new files behind,
+  // and those must not survive into this attempt either way. Doing it first
+  // also makes the check more accurate — the stale files are occupying
+  // exactly the space it is about to measure.
+  removePartials(deps.dir)
+
   const free = (deps.freeBytes ?? defaultFreeBytes)(deps.dir)
   // Twice over: the new files sit beside the old ones until the swap is done.
   if (free < total * 2) {
@@ -1362,7 +1618,6 @@ export async function downloadRelease(release: Release, deps: DownloadDeps): Pro
     )
   }
 
-  removePartials(deps.dir)
   try {
     const afterExe = await fetchAsset(release.exe, deps, 0, total)
     await fetchAsset(release.native, deps, afterExe, total)
@@ -1376,7 +1631,7 @@ export async function downloadRelease(release: Release, deps: DownloadDeps): Pro
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateDownload.test.ts`
-Expected: PASS, 8 tests.
+Expected: PASS, 11 tests (die acht unten plus je einer fuer: zweite Datei scheitert nach erfolgreicher erster, fehlgeschlagene Platzmessung, und Reste werden auch bei Platzmangel weggeraeumt).
 
 - [ ] **Step 5: Commit**
 
@@ -1406,6 +1661,7 @@ git commit -m "feat(update): beide Dateien laden und die Pruefsumme pruefen"
     spawnDetached: (exePath: string) => { kill: () => void }
     waitForHealth: (timeoutMs: number) => Promise<boolean>
     exit: (code: number) => void
+    /** Default 90 s — an unsigned 114 MB exe can sit in a Defender scan first. */
     healthTimeoutMs?: number
   }
   export function installUpdate(deps: InstallDeps): Promise<void>
@@ -1614,7 +1870,17 @@ const PAIRS: [live: string, old: string][] = [
  */
 export function cleanupLeftovers(dir: string): void {
   for (const name of [OLD_EXE, OLD_NATIVE, EXE_NAME + NEW_SUFFIX, NATIVE_NAME + NEW_SUFFIX]) {
-    fs.rmSync(path.join(dir, name), { force: true })
+    // Per file, and never throwing: `force: true` suppresses the error for a
+    // file that is *missing*, not one that is *locked*, and on Windows a file
+    // held open by antivirus, a backup agent or the indexer throws EBUSY or
+    // EPERM. This runs at startup, before listen() — a throw here means the
+    // registration server does not come up at all on a jump day, because of a
+    // leftover file. One file that cannot go must not stop the others either.
+    try {
+      fs.rmSync(path.join(dir, name), { force: true })
+    } catch (err) {
+      console.error(`[tandem] ${name} konnte nicht entfernt werden:`, err)
+    }
   }
 }
 
@@ -1630,7 +1896,14 @@ export function takeFailureMarker(dir: string): string | null {
     // A mangled marker is still a marker; the file goes either way so it
     // cannot reappear on every start.
   }
-  fs.rmSync(file, { force: true })
+  // Same reasoning as cleanupLeftovers: a locked marker must not stop the
+  // program from starting. If it cannot go, the reason is simply shown again
+  // on the next start until it can — annoying, and far better than not booting.
+  try {
+    fs.rmSync(file, { force: true })
+  } catch (err) {
+    console.error(`[tandem] ${FAILURE_MARKER} konnte nicht entfernt werden:`, err)
+  }
   return reason
 }
 
@@ -1661,57 +1934,94 @@ export async function installUpdate(deps: InstallDeps): Promise<void> {
     if (!fs.existsSync(file)) throw new Error(`${name + NEW_SUFFIX} fehlt — bitte neu laden.`)
   }
 
-  await deps.closeServer()
-
-  // A leftover from an earlier attempt would make the rename below fail.
-  for (const [, old] of PAIRS) fs.rmSync(path.join(dir, old), { force: true })
-
+  // From here the server is meant to be gone and nothing listening. Every
+  // region below — `closeServer()` included — must end in one of this module's
+  // two defined outcomes: the new version running, or the old one restored and
+  // running. A third outcome, where an unhandled throw leaves this process
+  // alive with a closed (or half-closed) server and no restart, is
+  // indistinguishable from a dead installation for an operator at the landing
+  // site, and the caller cannot even report it — there is no server left to
+  // report through. `closeServer` is a compound teardown (Bonjour, Fastify,
+  // database); a throw in a later step of it leaves exactly that state, which
+  // is why the call sits INSIDE the guard, not before it.
+  let child: { kill: () => void } | undefined
   try {
-    for (const [live, old] of PAIRS) fs.renameSync(path.join(dir, live), path.join(dir, old))
-    for (const [live] of PAIRS) {
-      fs.renameSync(path.join(dir, live + NEW_SUFFIX), path.join(dir, live))
+    await deps.closeServer()
+
+    // A leftover from an earlier attempt would make the rename below fail.
+    for (const [, old] of PAIRS) fs.rmSync(path.join(dir, old), { force: true })
+
+    try {
+      for (const [live, old] of PAIRS) fs.renameSync(path.join(dir, live), path.join(dir, old))
+      for (const [live] of PAIRS) {
+        fs.renameSync(path.join(dir, live + NEW_SUFFIX), path.join(dir, live))
+      }
+    } catch (err) {
+      restore(dir)
+      fs.writeFileSync(
+        path.join(dir, FAILURE_MARKER),
+        JSON.stringify({ reason: `Dateien konnten nicht getauscht werden: „${String(err)}“` }),
+      )
+      deps.spawnDetached(exePath)
+      deps.exit(1)
+      return
     }
-  } catch (err) {
+
+    child = deps.spawnDetached(exePath)
+    // 90 s, not 30: Windows Defender can scan a freshly written, unsigned 114 MB
+    // binary before it is allowed to run. A genuinely broken exe fails in seconds
+    // anyway, so the long wait only ever costs us in the rare real failure.
+    const healthy = await deps.waitForHealth(deps.healthTimeoutMs ?? 90_000)
+
+    if (healthy) {
+      for (const [, old] of PAIRS) fs.rmSync(path.join(dir, old), { force: true })
+      deps.exit(0)
+      return
+    }
+
+    // The new version does not answer. Put everything back and start what we know
+    // works — the operator must never be left with a dead installation.
+    child.kill()
     restore(dir)
     fs.writeFileSync(
       path.join(dir, FAILURE_MARKER),
-      JSON.stringify({ reason: `Dateien konnten nicht getauscht werden: ${String(err)}` }),
+      JSON.stringify({
+        reason:
+          'Die neue Version ist nicht gestartet. Die vorherige Version wurde ' +
+          'wiederhergestellt und läuft weiter.',
+      }),
     )
     deps.spawnDetached(exePath)
     deps.exit(1)
-    return
+  } catch (err) {
+    // Anything unexpected past closeServer — the stale-.old sweep, spawnDetached,
+    // or waitForHealth throwing instead of resolving to false — leaves the new
+    // version's health unknown, and unknown falls back to the version known to
+    // work. Deliberately tolerant of its OWN failures, each step wrapped alone:
+    // if restore() or the marker write also throws, a best-effort restart of
+    // whatever is on disk still beats an unhandled rejection with no server and
+    // nothing running.
+    try { child?.kill() } catch { /* best effort — see comment above */ }
+    try { restore(dir) } catch { /* best effort — see comment above */ }
+    try {
+      fs.writeFileSync(
+        path.join(dir, FAILURE_MARKER),
+        JSON.stringify({
+          reason: `Unerwarteter Fehler bei der Installation: „${String(err)}“. Die vorherige ` +
+            'Version wurde, soweit möglich, wiederhergestellt und gestartet.',
+        }),
+      )
+    } catch { /* best effort — see comment above */ }
+    try { deps.spawnDetached(exePath) } catch { /* best effort — see comment above */ }
+    deps.exit(1)
   }
-
-  const child = deps.spawnDetached(exePath)
-  const healthy = await deps.waitForHealth(deps.healthTimeoutMs ?? 30_000)
-
-  if (healthy) {
-    for (const [, old] of PAIRS) fs.rmSync(path.join(dir, old), { force: true })
-    deps.exit(0)
-    return
-  }
-
-  // The new version does not answer. Put everything back and start what we know
-  // works — the operator must never be left with a dead installation.
-  child.kill()
-  restore(dir)
-  fs.writeFileSync(
-    path.join(dir, FAILURE_MARKER),
-    JSON.stringify({
-      reason:
-        'Die neue Version ist nicht gestartet. Die vorherige Version wurde ' +
-        'wiederhergestellt und läuft weiter.',
-    }),
-  )
-  deps.spawnDetached(exePath)
-  deps.exit(1)
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/updateInstall.test.ts`
-Expected: PASS, 11 tests.
+Expected: PASS, 20 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1860,18 +2170,42 @@ async function runInstall() {
   try {
     await installUpdate({
       dir: installDir,
+      // Each step is guarded on its own so a failure early in the teardown
+      // cannot stop the listener from closing. Bonjour failing to unpublish
+      // must not leave the port held and the swap half-done; installUpdate
+      // catches a rejection from here, but the cleanest outcome is for this
+      // to get as far as it can and let the swap proceed.
       closeServer: async () => {
-        if (bonjour) {
-          await new Promise<void>((resolve) => {
-            bonjour!.unpublishAll(() => bonjour!.destroy(() => resolve()))
-          })
+        try {
+          if (bonjour) {
+            await new Promise<void>((resolve) => {
+              bonjour!.unpublishAll(() => bonjour!.destroy(() => resolve()))
+            })
+          }
+        } catch (err) {
+          console.error('[tandem] Bonjour ließ sich nicht abmelden:', err)
         }
-        await app.close()
-        db.close()
+        try {
+          await app.close()
+        } catch (err) {
+          console.error('[tandem] Server ließ sich nicht sauber schließen:', err)
+        }
+        try {
+          db.close()
+        } catch (err) {
+          console.error('[tandem] Datenbank ließ sich nicht sauber schließen:', err)
+        }
       },
+      // TANDEM_RESTART tells the started process it is a replacement, not a
+      // second copy: on a busy port it must retry the bind instead of deferring
+      // to whatever is answering there (see the EADDRINUSE handler below). This
+      // process may still be holding the port at that instant — if closeServer
+      // threw before its listener unbound — and a child that politely gives up
+      // would leave the landing site with nothing running at all.
       spawnDetached: (exePath) => {
         const child = spawn(exePath, [], {
           detached: true, stdio: 'ignore', cwd: path.dirname(exePath), windowsHide: true,
+          env: { ...process.env, TANDEM_RESTART: '1' },
         })
         child.unref()
         return { kill: () => child.kill() }
@@ -1928,19 +2262,76 @@ Inside the existing `app.listen({...}).then(() => { … })`, after
   }
 ```
 
-- [ ] **Step 8: Verify the dev server still reports itself disabled**
+- [ ] **Step 8: A restart retries the port instead of deferring**
+
+Der vorhandene `EADDRINUSE`-Zweig im `.catch()` von `app.listen(...)` behandelt
+einen belegten Port mit antwortendem Tandem als „läuft schon, Browser
+aufmachen, Ende". Für einen Start aus `installUpdate` heraus ist das falsch:
+dort ist dieser Prozess der *Ersatz*, und was auf dem Port antwortet, ist der
+sterbende Vorgänger. Verabschiedet sich das Kind höflich, bleibt am Landeplatz
+nichts übrig.
+
+`TANDEM_RESTART` (von `spawnDetached` gesetzt) schaltet deshalb auf Wiederholen
+um. Vor dem vorhandenen `EADDRINUSE`-Zweig:
+
+```ts
+  // Started by installUpdate as a replacement: the port is expected to be busy
+  // for a moment, because the process we are replacing is still shutting down.
+  // Retry instead of deferring — deferring would end with nobody serving.
+  if (err.code === 'EADDRINUSE' && process.env.TANDEM_RESTART === '1') {
+    const deadline = Date.now() + 60_000
+    let lastErr: NodeJS.ErrnoException | undefined
+    let bound = false
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 500))
+      try {
+        // ONLY the bind goes in this try. afterListen() does real synchronous
+        // I/O that can throw (extractWeb's fs calls, bonjour.publish) — if it
+        // sat in here, a post-bind failure would be reported as „Port blieb
+        // belegt“ and send the operator hunting for a lingering old process
+        // instead of the actual cause.
+        await app.listen({ port, host: '0.0.0.0' })
+        bound = true
+        break
+      } catch (retryErr) {
+        lastErr = retryErr as NodeJS.ErrnoException
+        if (lastErr.code !== 'EADDRINUSE') break
+      }
+    }
+    if (bound) {
+      afterListen()   // bound after all — carry on as a normal start
+      return
+    }
+    // Say which of the two it actually was: the port never freed, or listen
+    // failed for some other reason entirely.
+    if (lastErr && lastErr.code !== 'EADDRINUSE') {
+      fatal(`[tandem] Neustart nach dem Update fehlgeschlagen: ${lastErr.message}`)
+    }
+    fatal(
+      `[tandem] Neustart nach dem Update fehlgeschlagen: Port ${port} blieb belegt.\n` +
+        `Die vorherige Version läuft möglicherweise noch. Tandem bitte von Hand starten.`,
+    )
+  }
+```
+
+Die Schleife muss dieselbe `then()`-Nachbereitung auslösen wie ein gewöhnlicher
+Start (Bonjour, `extractWeb()`, Banner, Browser). Am einfachsten, indem der
+Erfolgspfad in eine benannte Funktion gezogen und von beiden Stellen gerufen
+wird — nicht durch eine zweite Kopie des Blocks.
+
+- [ ] **Step 9: Verify the dev server still reports itself disabled**
 
 Run: `npm test && npx tsc -b`
 Expected: all green, including `tests/update-route.test.ts`.
 
-- [ ] **Step 9: Boot the dev server and read the status by hand**
+- [ ] **Step 10: Boot the dev server and read the status by hand**
 
 Run: `npm start` in one terminal, then in another:
 `curl -s http://localhost/api/update/status`
 Expected: `{"phase":"disabled", … ,"allowed":false,"promptPending":false,"openToday":0}`
 Then stop the dev server with Strg+C.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add src/server/main.ts src/server/index.ts
@@ -2036,7 +2427,16 @@ import type { ReactNode } from 'react'
  */
 
 // Split on the two inline forms at once so the parts alternate predictably.
+//
+// The pairing is deliberately CommonMark's, not something stricter: `**` may
+// open emphasis inside a word, so `O(n**2) not O(n**3)` renders with the same
+// emphasis GitHub itself produces. This screen shows the author what they wrote
+// on GitHub — diverging "helpfully" would show them something else.
 const INLINE = /(\*\*[^*]+\*\*|`[^`]+`)/g
+
+// Matches an ATX heading line. Only ## and ### are recognised: the screen's own
+// title is an h2, and h1 is reserved for it — never produced here.
+const HEADING = /^(#{2,3})\s+(.*)$/
 
 function inline(text: string, keyPrefix: string): ReactNode[] {
   return text.split(INLINE).map((part, i) => {
@@ -2051,27 +2451,70 @@ function inline(text: string, keyPrefix: string): ReactNode[] {
   })
 }
 
+// GitHub ends a block at every ATX heading, blank line or not — a heading line
+// is never swallowed into the paragraph before or after it. Grouping raw lines
+// on that rule, instead of only splitting on blank lines, means a heading is
+// recognised wherever it appears rather than only as a block's first line.
+function splitBlocks(text: string): string[][] {
+  const blocks: string[][] = []
+  let current: string[] = []
+
+  for (let line of text.split('\n')) {
+    // GitHub release bodies are usually authored in a web textarea and arrive
+    // over HTTP with CRLF, so a split on '\n' leaves a trailing '\r'. HEADING
+    // has no /m flag and '.' never matches '\r', so an unnormalised line makes
+    // every '##' fail to match and render as literal text — visibly different
+    // from how GitHub renders the same body. Normalise once, here, rather than
+    // making each downstream pattern '\r'-tolerant.
+    line = line.replace(/\r$/, '')
+
+    if (line.trim() === '') {
+      if (current.length > 0) {
+        blocks.push(current)
+        current = []
+      }
+      continue
+    }
+    // A heading always starts a fresh block, even mid-paragraph.
+    if (HEADING.test(line) && current.length > 0) {
+      blocks.push(current)
+      current = []
+    }
+    current.push(line)
+  }
+
+  if (current.length > 0) blocks.push(current)
+  return blocks
+}
+
 export function Markdown({ text }: { text: string }): ReactNode {
-  const blocks = text.split(/\n{2,}/).filter((b) => b.trim() !== '')
+  const blocks = splitBlocks(text)
 
   return (
     <>
-      {blocks.map((block, bi) => {
-        const lines = block.split('\n')
-
-        if (lines.every((l) => l.startsWith('- '))) {
+      {blocks.map((lines, bi) => {
+        // A block is a list once its FIRST line opens with "- ". A later line
+        // that doesn't is a lazy continuation of the item above it — that is how
+        // GitHub reads it too — not a reason to fall back to a paragraph and
+        // lose the whole list over one stray line.
+        if (lines[0].startsWith('- ')) {
+          const items: string[] = []
+          for (const line of lines) {
+            if (line.startsWith('- ')) items.push(line.slice(2))
+            else if (items.length > 0) items[items.length - 1] += ` ${line}`
+          }
           return (
             <ul key={bi}>
-              {lines.map((l, li) => (
-                <li key={li}>{inline(l.slice(2), `${bi}-${li}`)}</li>
+              {items.map((item, li) => (
+                <li key={li}>{inline(item, `${bi}-${li}`)}</li>
               ))}
             </ul>
           )
         }
 
-        // A heading is its own block; anything after it in the same block is an
-        // ordinary paragraph, which is how GitHub bodies are written anyway.
-        const heading = /^(#{2,3})\s+(.*)$/.exec(lines[0])
+        // A heading is its own block (see splitBlocks); anything after it in the
+        // same block is an ordinary paragraph.
+        const heading = HEADING.exec(lines[0])
         if (heading) {
           const rest = lines.slice(1).join(' ')
           // ## becomes h3: the screen's own title is the h2.
@@ -2094,7 +2537,7 @@ export function Markdown({ text }: { text: string }): ReactNode {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm --prefix web/manifest test -- markdown`
-Expected: PASS, 7 tests.
+Expected: PASS, 14 tests (sieben aus der Liste, vier fuer Ueberschriften mitten im Block und die nachsichtige Liste, drei fuer CRLF-Zeilenenden).
 
 - [ ] **Step 5: Commit**
 
@@ -2110,7 +2553,13 @@ git commit -m "feat(update): Release-Notes als React-Elemente rendern"
 **Files:**
 - Modify: `web/manifest/src/api.ts`
 - Modify: `web/manifest/src/useEvents.ts`
-- Modify: `web/manifest/src/setupTests.ts`
+- Modify: `web/manifest/src/setupTests.ts` (dazu `eventSourceOpenCount()` und
+  `fireRawEvent()`, siehe unten)
+- Create: `web/manifest/src/useEvents.test.ts` — fünf Tests für
+  `useUpdateEvents`: abgeschaltet öffnet **keine** Verbindung (gezählt, nicht
+  bloß „Callback blieb still"), eingeschaltet genau eine und liefert die
+  geparste Nutzlast, Unmount schließt, Wechsel `true → false` schließt, ein
+  kaputter Frame wirft nicht und ruft nicht auf.
 
 **Interfaces:**
 - Consumes: `UpdateStatusResponse` (Task 4).
@@ -2125,6 +2574,7 @@ git commit -m "feat(update): Release-Notes als React-Elemente rendern"
   export function installUpdate(): Promise<void>
   export function markUpdatePromptSeen(): Promise<void>
   export function serverAlive(): Promise<boolean>
+  export function reloadPage(): void
   // useEvents.ts
   export function useUpdateEvents(enabled: boolean, onStatus: (s: UpdateStatus) => void): void
   // setupTests.ts
@@ -2165,6 +2615,23 @@ Die Typen der `listeners`-Map ziehen entsprechend nach
 /** Simulates the server broadcasting an `update` event with its status payload. */
 export function fireUpdateEvent(status: unknown) {
   FakeEventSource.dispatch('update', status)
+}
+
+/**
+ * How many connections are open right now. Exists so a test can assert that a
+ * tablet opens NONE — without it the only observable is "the callback stayed
+ * silent", which a guard that opens the connection and merely forgets the
+ * listener would also satisfy, leaking exactly the connection this design
+ * forbids. Exported as a function, not a static, so it works regardless of the
+ * conditional install below.
+ */
+export function eventSourceOpenCount(): number {
+  return FakeEventSource.openCount()
+}
+
+/** A frame that is not valid JSON — `dispatch` always stringifies, so it cannot produce one. */
+export function fireRawEvent(type: string, data: string) {
+  FakeEventSource.dispatchRaw(type, data)
 }
 ```
 
@@ -2260,11 +2727,18 @@ export async function serverAlive(): Promise<boolean> {
     return false
   }
 }
+
+// A seam, not a wrapper for its own sake: jsdom makes window.location
+// non-configurable, so a test cannot spy on it. Going through here lets the
+// update screen's restart path be tested like any other api call.
+export function reloadPage(): void {
+  window.location.reload()
+}
 ```
 
 - [ ] **Step 4: Verify types and the existing suite**
 
-Run: `npm --prefix web/manifest exec tsc -b && npm --prefix web/manifest test`
+Run: `npx tsc -b web/manifest && npm --prefix web/manifest test`
 Expected: no type errors; every existing test still passes (the stub change
 touches `List.test.tsx` and `App.test.tsx` indirectly).
 
@@ -2316,6 +2790,7 @@ vi.mock('./api', () => ({
   startUpdateDownload: vi.fn(),
   installUpdate: vi.fn(),
   serverAlive: vi.fn(),
+  reloadPage: vi.fn(),
 }))
 
 const status = (over: Partial<UpdateStatus> = {}): UpdateStatus => ({
@@ -2379,13 +2854,20 @@ describe('Update', () => {
     confirmSpy.mockRestore()
   })
 
+  // jsdom makes window.location non-configurable, so the reload goes through
+  // api.reloadPage — a seam that can be mocked like every other call here.
   it('waits for the restarted server and then reloads', async () => {
     vi.mocked(api.serverAlive).mockResolvedValueOnce(false).mockResolvedValue(true)
-    const reload = vi.fn()
-    vi.spyOn(window, 'location', 'get').mockReturnValue({ reload } as unknown as Location)
     render(<Update status={status({ phase: 'installing' })} onRefresh={vi.fn()} />)
     expect(screen.getByText(/startet neu/)).toBeInTheDocument()
-    await waitFor(() => expect(reload).toHaveBeenCalled(), { timeout: 5000 })
+    await waitFor(() => expect(api.reloadPage).toHaveBeenCalled(), { timeout: 5000 })
+  })
+
+  it('keeps waiting while the new server is still down', async () => {
+    vi.mocked(api.serverAlive).mockResolvedValue(false)
+    render(<Update status={status({ phase: 'installing' })} onRefresh={vi.fn()} />)
+    await waitFor(() => expect(api.serverAlive).toHaveBeenCalled())
+    expect(api.reloadPage).not.toHaveBeenCalled()
   })
 
   it('shows a failed download with a way to try again', async () => {
@@ -2416,7 +2898,7 @@ Expected: FAIL — `Failed to resolve import "./Update"`
 
 ```tsx
 import { useEffect, useState } from 'react'
-import { installUpdate, serverAlive, startUpdateDownload } from './api'
+import { installUpdate, reloadPage, serverAlive, startUpdateDownload } from './api'
 import type { UpdateStatus } from './api'
 import { Markdown } from './markdown'
 
@@ -2437,18 +2919,29 @@ export default function Update({ status, onRefresh }: UpdateProps) {
   useEffect(() => {
     if (status.phase !== 'installing') return
     let stopped = false
+    let timer: number | undefined
     const poll = async () => {
       if (stopped) return
-      if (await serverAlive()) {
-        window.location.reload()
+      const alive = await serverAlive()
+      // The component may have unmounted (or left the `installing` phase)
+      // while that request was in flight; cleanup only cancels the *next*
+      // timer, so re-check here before acting on a stale result — otherwise an
+      // in-flight call reloads a page the operator has already navigated away
+      // from.
+      if (stopped) return
+      if (alive) {
+        reloadPage()
         return
       }
-      window.setTimeout(poll, 1000)
+      timer = window.setTimeout(poll, 1000)
     }
-    const timer = window.setTimeout(poll, 1000)
+    // Poll at once; wait only BETWEEN attempts. Delaying the first check by a
+    // second races @testing-library's 1000 ms waitFor default — and in a real
+    // restart the new server may already be answering by the time we look.
+    void poll()
     return () => {
       stopped = true
-      window.clearTimeout(timer)
+      if (timer !== undefined) window.clearTimeout(timer)
     }
   }, [status.phase])
 
@@ -2483,8 +2976,12 @@ export default function Update({ status, onRefresh }: UpdateProps) {
     void run(installUpdate)
   }
 
+  // Clamped: a transient downloadedBytes above totalBytes must not put
+  // aria-valuenow past 100.
   const percent =
-    status.totalBytes > 0 ? Math.round((status.downloadedBytes / status.totalBytes) * 100) : 0
+    status.totalBytes > 0
+      ? Math.min(100, Math.max(0, Math.round((status.downloadedBytes / status.totalBytes) * 100)))
+      : 0
 
   return (
     <div className="update-screen">
@@ -2499,8 +2996,19 @@ export default function Update({ status, onRefresh }: UpdateProps) {
 
       {(error || status.error) && <p className="error">{error ?? status.error}</p>}
 
+      {/* A tablet may SEE the state — versions, notes, progress, errors — but
+          not act on it. The server refuses its POSTs with 403 anyway and the
+          sidebar entry is hidden from it, so this is the third layer: the
+          screen must not depend on its parent hiding it. The hint is visible
+          text, not just a title: a tablet has no hover. */}
+      {!status.allowed && (
+        <p className="hint">
+          Updates sind nur an dem Rechner möglich, auf dem Tandem läuft.
+        </p>
+      )}
+
       {status.phase === 'available' && (
-        <button type="button" className="btn primary" disabled={busy}
+        <button type="button" className="btn primary" disabled={busy || !status.allowed}
           onClick={() => void run(startUpdateDownload)}>
           Herunterladen
         </button>
@@ -2517,7 +3025,7 @@ export default function Update({ status, onRefresh }: UpdateProps) {
       )}
 
       {status.phase === 'ready' && (
-        <button type="button" className="btn primary" disabled={busy} onClick={handleInstall}>
+        <button type="button" className="btn primary" disabled={busy || !status.allowed} onClick={handleInstall}>
           Jetzt installieren und neu starten
         </button>
       )}
@@ -2525,13 +3033,32 @@ export default function Update({ status, onRefresh }: UpdateProps) {
       {status.phase === 'installing' && <p className="update-restarting">Tandem startet neu…</p>}
 
       {(status.phase === 'download-failed' || status.phase === 'install-failed') && (
-        <button type="button" className="btn secondary" disabled={busy}
+        <button type="button" className="btn secondary" disabled={busy || !status.allowed}
           onClick={() => void run(startUpdateDownload)}>
           Erneut versuchen
         </button>
       )}
 
       {status.phase === 'up-to-date' && <p>Dies ist bereits die aktuellste Version.</p>}
+
+      {/* Every one of the twelve phases says something. The four quiet ones —
+          disabled, idle, checking, check-failed — used to fall through to the
+          version block and nothing else, leaving an operator in front of two
+          numbers and no word about what is happening. check-failed in
+          particular carries error: null on purpose (a landing site without
+          internet is the normal case, not a fault), so without its own line it
+          is indistinguishable from idle. These are informational only: no
+          buttons, and not gated on `allowed`. */}
+      {status.phase === 'checking' && <p>Es wird nach Updates gesucht…</p>}
+      {status.phase === 'check-failed' && (
+        <p>
+          Die Suche nach Updates hat nicht geklappt — meist, weil am Landeplatz
+          keine Internetverbindung besteht. Es wird automatisch erneut versucht.
+        </p>
+      )}
+      {(status.phase === 'idle' || status.phase === 'disabled') && (
+        <p>Es liegt derzeit kein Update vor.</p>
+      )}
 
       {status.notes && (
         <section className="update-notes">
@@ -2590,7 +3117,7 @@ die `.sidebar-bottom` schon befolgt:
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npm --prefix web/manifest test -- Update`
-Expected: PASS, 8 tests.
+Expected: PASS, 24 tests (die neun unten plus die Tests aus den Reviews: allowed-Gate mit sichtbarem Hinweis, Unmount-Rennen des Polls, geklammerter Prozentwert, und je eine Zeile fuer die vier stillen Phasen).
 
 - [ ] **Step 6: Commit**
 
@@ -2847,8 +3374,12 @@ Zustand und Laden, neben dem vorhandenen `shutdownAllowed()`-Effekt:
   }, [])
 
   useUpdateEvents(update?.allowed === true, (status) =>
-    // The pushed frame carries the server's view of the state; `allowed`,
-    // `promptPending` and `openToday` are per-client and stay as fetched.
+    // The broadcast carries only UpdateState's eight fields; `allowed`,
+    // `promptPending` and `openToday` are added per request by the GET handler
+    // and are therefore absent from a frame — that is why they survive the
+    // spread. `allowed` is pinned explicitly anyway: it decides whether a
+    // device may act at all, and it should not depend on what a file in
+    // src/server chooses to broadcast. Tests pin this against a hostile frame.
     setUpdate((prev) => (prev ? { ...prev, ...status, allowed: prev.allowed } : prev)),
   )
 
@@ -2865,16 +3396,21 @@ Zustand und Laden, neben dem vorhandenen `shutdownAllowed()`-Effekt:
     update?.allowed === true && update.promptPending && !promptDismissed &&
     update.latestVersion !== null
 
+  // markUpdatePromptSeen is fire-and-forget on purpose: the dialog is already
+  // closed locally via promptDismissed, so a failed POST costs at most one
+  // extra dialog after the next server start. This feature assumes a landing
+  // site that is often offline — an unhandled rejection in the operator's
+  // browser would be the worse outcome.
   function acceptUpdate() {
     setPromptDismissed(true)
-    void markUpdatePromptSeen()
+    void markUpdatePromptSeen().catch(() => {})
     void startUpdateDownload().then(refreshUpdate).catch(() => {})
     setView('update')
   }
 
   function postponeUpdate() {
     setPromptDismissed(true)
-    void markUpdatePromptSeen()
+    void markUpdatePromptSeen().catch(() => {})
   }
 ```
 
@@ -2931,7 +3467,7 @@ Expected: all green, including the seven new App tests.
 
 - [ ] **Step 9: Type check both halves**
 
-Run: `npm --prefix web/manifest exec tsc -b && npx tsc -b`
+Run: `npx tsc -b web/manifest && npx tsc -b`
 Expected: no errors.
 
 - [ ] **Step 10: Commit**
@@ -2974,9 +3510,13 @@ cp dist/tandem.exe dist/better_sqlite3.node /c/Temp/tandem-updatetest/
 Bump `package.json` to `1.1.1`, run `npm run build:server && npm run build:exe`
 again, and copy that second pair somewhere else — it becomes the "release".
 Serve it, together with a release JSON that carries the real sha256 of both
-files, from a local static server. Point the exe at it by temporarily changing
-`RELEASE_URL` in `src/server/update/github.ts` to `http://127.0.0.1:8099/latest`
-and rebuilding the staged 1.1.0 exe. **Revert that line before committing.**
+files, from a local static server. Point the exe at it through the environment
+— no source edit, nothing to revert:
+
+```
+set TANDEM_RELEASE_URL=http://127.0.0.1:8099/latest
+C:\Temp\tandem-updatetest\tandem.exe
+```
 
 The sha256 of each file:
 
@@ -2999,10 +3539,19 @@ Expected, in order:
 
 - [ ] **Step 4: Prove the rollback**
 
-Repeat with a deliberately broken release: take the 1.1.1 exe and truncate it
-(`head -c 1000000 tandem.exe > broken.exe`), publish that as the release asset,
-and fix the JSON's sha256 to match the truncated file so the download passes and
-the **start** fails.
+**Ein zweiter, noch unangetasteter 1.1.0-Ordner.** Nicht der aus Schritt 3: der
+steht nach einem erfolgreichen Durchgang auf 1.1.1, und das kaputte Release
+trägt ebenfalls `v1.1.1`. `compareVersions` sähe Gleichstand, es würde gar kein
+Update angeboten, und der Rückroll-Test liefe nie — er wäre grün, ohne etwas
+geprüft zu haben.
+
+Dann mit einem absichtlich kaputten Release: das 1.1.1-Exe abschneiden
+(`head -c 1000000 tandem.exe > broken.exe`), als Release-Asset ausliefern und
+den sha256 im JSON auf die abgeschnittene Datei setzen — so besteht der
+Download seine Prüfung und der **Start** scheitert.
+
+Das dauert bis zu 90 Sekunden, bevor aufgegeben wird (Gesundheitsfrist). Wer
+früher abbricht, hält es für einen Hänger.
 
 Expected:
 1. The old process comes back by itself — the manifest is reachable again.
@@ -3045,20 +3594,27 @@ Version aus `package.json` als `__APP_VERSION__` in das Bundle.
 Die Release-Notes werden im Manifest angezeigt. Unterstützt sind `##`/`###`,
 `**fett**`, `` `code` `` und `-`-Listen — alles andere erscheint als Text.
 
+**Gegen ein echtes Release testen, ohne eines zu veröffentlichen:**
+`TANDEM_RELEASE_URL` auf eine lokal ausgelieferte Kopie der GitHub-Antwort
+setzen. Ohne die Variable fragt das Programm immer GitHub.
+
 **Was das Programm beim Start aufräumt:** `tandem.old.exe`,
 `better_sqlite3.old.node` (Rückroll-Kopien eines geglückten Updates),
 `*.new` (abgebrochene Downloads) und `update-failed.json` (der Grund eines
 gescheiterten Versuchs, wird einmal angezeigt).
 ````
 
-- [ ] **Step 6: Make sure the staging edit is gone**
+- [ ] **Step 6: Make sure nothing from the staging run is left**
 
-Run: `git diff src/server/update/github.ts`
-Expected: empty — `RELEASE_URL` points at GitHub again.
+Run: `git status --porcelain src/ scripts/`
+Expected: empty — the staging test ran entirely through
+`TANDEM_RELEASE_URL` and a temp folder, so no source file was touched. Also
+unset the variable in that shell (`set TANDEM_RELEASE_URL=`) before doing
+anything else with a packaged exe.
 
 - [ ] **Step 7: Full suite, both halves, one last time**
 
-Run: `npm test && npx tsc -b && npm --prefix web/manifest test && npm --prefix web/manifest exec tsc -b`
+Run: `npm test && npx tsc -b && npm --prefix web/manifest test && npx tsc -b web/manifest`
 Expected: all green.
 
 - [ ] **Step 8: Commit**
@@ -3075,7 +3631,7 @@ git commit -m "docs(update): Selbstupdate und Release-Checkliste in build.md"
 Diese bleiben nach dem Plan bestehen und sind bewusst nicht gelöst:
 
 - **Das Exe ist nicht signiert.** Defender kann ein frisch geschriebenes
-  114-MB-Binary erst scannen, bevor es startet. Die 30 s in `waitForHealth`
+  114-MB-Binary erst scannen, bevor es startet. Die 90 s in `waitForHealth`
   sind darauf ausgelegt; ein sehr langsamer Rechner kann sie trotzdem reißen und
   einen unnötigen Rückroll auslösen. Falls das in der Praxis passiert, ist die
   Zahl der erste Hebel, eine Code-Signatur der zweite.

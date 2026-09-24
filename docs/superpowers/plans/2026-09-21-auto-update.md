@@ -3539,10 +3539,19 @@ Expected, in order:
 
 - [ ] **Step 4: Prove the rollback**
 
-Repeat with a deliberately broken release: take the 1.1.1 exe and truncate it
-(`head -c 1000000 tandem.exe > broken.exe`), publish that as the release asset,
-and fix the JSON's sha256 to match the truncated file so the download passes and
-the **start** fails.
+**Ein zweiter, noch unangetasteter 1.1.0-Ordner.** Nicht der aus Schritt 3: der
+steht nach einem erfolgreichen Durchgang auf 1.1.1, und das kaputte Release
+trägt ebenfalls `v1.1.1`. `compareVersions` sähe Gleichstand, es würde gar kein
+Update angeboten, und der Rückroll-Test liefe nie — er wäre grün, ohne etwas
+geprüft zu haben.
+
+Dann mit einem absichtlich kaputten Release: das 1.1.1-Exe abschneiden
+(`head -c 1000000 tandem.exe > broken.exe`), als Release-Asset ausliefern und
+den sha256 im JSON auf die abgeschnittene Datei setzen — so besteht der
+Download seine Prüfung und der **Start** scheitert.
+
+Das dauert bis zu 90 Sekunden, bevor aufgegeben wird (Gesundheitsfrist). Wer
+früher abbricht, hält es für einen Hänger.
 
 Expected:
 1. The old process comes back by itself — the manifest is reachable again.

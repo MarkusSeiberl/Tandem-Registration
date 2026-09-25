@@ -595,13 +595,18 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // question — which till the money went into — so a run where no row owes
   // anything has nothing to ask and skips it: the operator would otherwise have
   // to name a Zahlungsart that runCollect() then refuses to write, which reads
-  // as if the fully covered voucher still wanted paying.
+  // as if the fully covered voucher still wanted paying. A single row that
+  // already names its till (cash/card, or a voucher top-up's method) has the
+  // question answered too, and keeps what it says. The bulk run still asks:
+  // there the chosen method deliberately overwrites the whole selection.
   function startCollect(target: 'selection' | number) {
     setCollectError(null)
     const targetRows = target === 'selection'
       ? selectedOpenRows
       : openRows.filter((r) => r.id === target)
-    if (targetRows.length > 0 && targetRows.every((r) => (r.price ?? 0) <= 0)) {
+    const answered = (r: Registration) =>
+      (r.price ?? 0) <= 0 || (target !== 'selection' && collectedVia(r) !== null)
+    if (targetRows.length > 0 && targetRows.every(answered)) {
       void collectSilently(target, targetRows)
       return
     }

@@ -1619,6 +1619,56 @@ describe('List', () => {
       expect(checkbox('Bruno Beispiel')).toBeChecked()
     })
 
+    // The Zahlungsart is already on the row, so the dialog would only ask again
+    // for what the row says. The row keeps it: the PATCH carries paid alone.
+    it('collects a row that already names its Zahlungsart without asking', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({
+        id: 1, first_name: 'Anna', last_name: 'Muster', price: 270, payment_method: 'card',
+      })
+      vi.mocked(api.list).mockResolvedValue([row])
+      vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: '2026-07-09T12:00:00.000Z' })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(rowCollectButton('Anna Muster'))
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      await waitFor(() => expect(api.patch).toHaveBeenCalledWith(1, { paid: true }))
+    })
+
+    it('collects a voucher top-up that already names its Zahlungsart without asking', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({
+        id: 1, first_name: 'Anna', last_name: 'Muster', price: 40,
+        payment_method: 'voucher', voucher_payment_method: 'cash',
+      })
+      vi.mocked(api.list).mockResolvedValue([row])
+      vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: '2026-07-09T12:00:00.000Z' })
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(rowCollectButton('Anna Muster'))
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      await waitFor(() => expect(api.patch).toHaveBeenCalledWith(1, { paid: true }))
+    })
+
+    it('still asks for a voucher top-up whose Zahlungsart is missing', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({
+        id: 1, first_name: 'Anna', last_name: 'Muster', price: 40, payment_method: 'voucher',
+      })
+      vi.mocked(api.list).mockResolvedValue([row])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(rowCollectButton('Anna Muster'))
+
+      expect(within(dialog()).getByLabelText('Zahlungsart')).toBeInTheDocument()
+      expect(api.patch).not.toHaveBeenCalled()
+    })
+
     it('keeps the dialog open with the message when the PATCH fails', async () => {
       const user = userEvent.setup()
       const row = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', price: 270 })

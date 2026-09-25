@@ -535,6 +535,16 @@ h2 {
   font-weight: 600;
 }
 
+.caption-note {
+  margin-left: 12px;
+  font-size: 13px;
+}
+
+.caption-note.warn {
+  color: var(--ember);
+  font-weight: 600;
+}
+
 .manifest-table-paid:hover,
 .manifest-table-paid:focus-within {
   opacity: 1;

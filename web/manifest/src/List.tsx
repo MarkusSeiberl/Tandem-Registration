@@ -31,6 +31,8 @@ const COLUMN_COUNT = 10
 
 interface TableProps {
   caption: string
+  /** A warning shown beside the caption; nothing when null. */
+  captionNote?: string | null
   rows: Registration[]
   emptyText: string
   masterNames: Map<number, string>
@@ -48,12 +50,15 @@ interface TableProps {
 }
 
 function RegistrationTable({
-  caption, rows, emptyText, masterNames, checkedIds, onToggleChecked, onSelect, onCollect,
-  onSetPaid, pendingId, busy, variant,
+  caption, captionNote, rows, emptyText, masterNames, checkedIds, onToggleChecked, onSelect,
+  onCollect, onSetPaid, pendingId, busy, variant,
 }: TableProps) {
   return (
     <table className={`manifest-table manifest-table-${variant}`}>
-      <caption>{caption}</caption>
+      <caption>
+        {caption}
+        {captionNote && <span className="caption-note warn">{captionNote}</span>}
+      </caption>
       <thead>
         <tr>
           <th className="col-checkbox"></th>
@@ -377,10 +382,15 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   useEvents(refresh)
 
   // Refreshed with the list, so a redemption written by the export disappears
-  // from the banner without a reload.
+  // from the note without a reload. Only the shown day counts — the note sits
+  // beside that day's Kassiert table.
   useEffect(() => {
-    pendingRedemptions().then((r) => setPending(r.count)).catch(() => {})
-  }, [rows])
+    let stale = false
+    pendingRedemptions(date)
+      .then((r) => { if (!stale) setPending(r.count) })
+      .catch(() => { if (!stale) setPending(0) })
+    return () => { stale = true }
+  }, [rows, date])
 
   // Highest load number first — that's who boards next; unassigned (null)
   // registrations sort last.
@@ -514,9 +524,6 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
       const result = await exportDay(date)
       const parts = [`Export erstellt: ${result.path} (${result.count} Einträge)`]
       if (result.redemptionsWritten > 0) {
-        // Same count, same wording as the banner two lines below — one of them
-        // saying "1 Einlösungen" while the other says "1 Einlösung" reads as two
-        // different numbers.
         parts.push(result.redemptionsWritten === 1
           ? '1 Einlösung eingetragen'
           : `${result.redemptionsWritten} Einlösungen eingetragen`)
@@ -733,13 +740,6 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
 
   return (
     <div className="list-screen">
-      {pending > 0 && (
-        <p className="hint warn">
-          {pending === 1
-            ? '1 Einlösung noch nicht in die Gutscheinliste geschrieben.'
-            : `${pending} Einlösungen noch nicht in die Gutscheinliste geschrieben.`}
-        </p>
-      )}
       {dayOutdated && (isToday ? (
         <div className="day-outdated">
           <p>
@@ -934,6 +934,9 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
           />
           <RegistrationTable
             caption={`Kassiert (${paidRows.length})`}
+            captionNote={pending === 0 ? null : pending === 1
+              ? '1 Gutschein noch nicht in die Gutscheinliste eingetragen'
+              : `${pending} Gutscheine noch nicht in die Gutscheinliste eingetragen`}
             rows={paidRows}
             emptyText="Noch nichts kassiert."
             masterNames={masterNames}

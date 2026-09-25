@@ -507,16 +507,16 @@ test('the export writes redemptions that could not be written earlier', async ()
   await app.close()
 })
 
-test('the export writes a redemption left over from an earlier day', async () => {
+test('the export leaves another day\'s redemption for that day\'s export', async () => {
   clearVoucherListCache()
   const voucherListPath = await writeVoucherFile([
     { lfdNr: '26-002', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
   ])
   const db = openDb(':memory:')
 
-  // Collected on Saturday while the file was locked. Sunday's banner counts it,
-  // so Sunday's export has to be able to write it off — otherwise the count can
-  // never reach zero and nobody is told to go back and re-export Saturday.
+  // Collected on Saturday while the file was locked. Closing Sunday writes
+  // Sunday; Saturday's Kassiert note keeps counting the row until Saturday is
+  // exported again.
   db.prepare(`INSERT INTO registrations
     (first_name,last_name,payment_method,voucher_number,price,
      created_at,jump_date,paid_at,voucher_redeemed_at)
@@ -527,15 +527,16 @@ test('the export writes a redemption left over from an earlier day', async () =>
   const dir = await makeTmpDir()
   const app = Fastify()
   registerExportRoutes(app, db, makeCfgRef(dir, 'Freistadt', voucherListPath))
+  const row = () => db.prepare('SELECT voucher_redeem_synced_at FROM registrations').get() as any
 
-  const res = await app.inject({ method: 'POST', url: '/api/export?date=2026-08-09' })
+  const sunday = await app.inject({ method: 'POST', url: '/api/export?date=2026-08-09' })
+  expect(sunday.json().redemptionsWritten).toBe(0)
+  expect(sunday.json().redemptionsPending).toBe(0)
+  expect(row().voucher_redeem_synced_at).toBeNull()
 
-  // Sunday has no registrations of its own; the redemption is picked up anyway.
-  expect(res.json().count).toBe(0)
-  expect(res.json().redemptionsWritten).toBe(1)
-  expect(res.json().redemptionsPending).toBe(0)
-  const row = db.prepare('SELECT voucher_redeem_synced_at FROM registrations').get() as any
-  expect(row.voucher_redeem_synced_at).not.toBeNull()
+  const saturday = await app.inject({ method: 'POST', url: '/api/export?date=2026-08-08' })
+  expect(saturday.json().redemptionsWritten).toBe(1)
+  expect(row().voucher_redeem_synced_at).not.toBeNull()
   await app.close()
 })
 

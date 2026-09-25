@@ -760,7 +760,9 @@ test('correcting the voucher number hands the new one back to the export sweep',
   expect(await eingeloestCell(file, 2)).toBeInstanceOf(Date)
   expect(await eingeloestCell(file, 3)).toBeNull()
 
-  const pending = await app.inject({ method: 'GET', url: '/api/voucher/pending' })
+  const pending = await app.inject({
+    method: 'GET', url: `/api/voucher/pending?date=${row().jump_date}`,
+  })
   expect(pending.json().count).toBe(1)
   await app.close()
 })

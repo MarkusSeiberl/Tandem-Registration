@@ -65,20 +65,17 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
     // the file is the club's OneDrive workbook, read whole and written whole,
     // and the till is the wrong moment to find out it is locked.
     //
-    // Deliberately not scoped to `date`: the queue is everything still owed to
-    // the file, whatever day it was collected on. A file locked all Saturday
-    // leaves Saturday's rows outstanding, and the banner counts them on Sunday
-    // too — an export that only retried its own date could never bring that
-    // count back to zero, and nothing would tell the operator to go back and
-    // re-export Saturday. The predicate is otherwise word for word the one the
-    // banner counts (see routes/voucher.ts), so the two cannot disagree about
-    // what "still open" means.
+    // Scoped to `date`, like everything else the export does: the day closed is
+    // the day written. Rows another day still owes the file wait for that day's
+    // export — its Kassiert note keeps counting them until then. The predicate
+    // is word for word the one that note counts (see routes/voucher.ts), so the
+    // two cannot disagree about what "still open" means.
     let redemptionsWritten = 0
     let redemptionsPending = 0
     let redemptionsInvalid = 0
     const owed = db.prepare(`SELECT id, voucher_number FROM registrations
       WHERE voucher_redeemed_at IS NOT NULL AND voucher_redeem_synced_at IS NULL
-        AND voucher_number IS NOT NULL ORDER BY id`).all() as any[]
+        AND voucher_number IS NOT NULL AND jump_date = ? ORDER BY id`).all(date) as any[]
     for (const row of owed) {
       // One unwritable voucher must not cost the club the day's export, which is
       // built below and is what the operator actually asked for. Same reasoning

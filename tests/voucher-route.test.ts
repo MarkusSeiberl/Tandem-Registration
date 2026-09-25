@@ -119,7 +119,7 @@ test('the pending count is what the manifest shows in its banner', async () => {
   const { app, db } = testServer({ voucherListPath })
   db.prepare(PENDING_ROW).run()
 
-  const res = await app.inject({ method: 'GET', url: '/api/voucher/pending' })
+  const res = await app.inject({ method: 'GET', url: '/api/voucher/pending?date=2026-08-10' })
   expect(res.json().count).toBe(1)
   await app.close()
 })
@@ -137,7 +137,7 @@ test('a redemption whose voucher number was cleared is not counted as open', asy
     (first_name,last_name,created_at,jump_date,voucher_redeemed_at)
     VALUES ('A','B','2026-08-10T10:00:00.000Z','2026-08-10','2026-08-10T10:00:00.000Z')`).run()
 
-  const res = await app.inject({ method: 'GET', url: '/api/voucher/pending' })
+  const res = await app.inject({ method: 'GET', url: '/api/voucher/pending?date=2026-08-10' })
   expect(res.json().count).toBe(0)
   await app.close()
 })
@@ -150,7 +150,29 @@ test('an unset path shows no banner, whatever the rows still say', async () => {
   const { app, db } = testServer({ voucherListPath: '' })
   db.prepare(PENDING_ROW).run()
 
-  const res = await app.inject({ method: 'GET', url: '/api/voucher/pending' })
+  const res = await app.inject({ method: 'GET', url: '/api/voucher/pending?date=2026-08-10' })
   expect(res.json().count).toBe(0)
+  await app.close()
+})
+
+test('the pending count covers only the jump day asked about', async () => {
+  clearVoucherListCache()
+  const voucherListPath = await writeVoucherFile([
+    { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
+  ])
+  const { app, db } = testServer({ voucherListPath })
+  // The note sits beside one day's Kassiert table; a redemption from another
+  // day is a row that table does not show.
+  db.prepare(PENDING_ROW).run()
+
+  const res = await app.inject({ method: 'GET', url: '/api/voucher/pending?date=2026-08-11' })
+  expect(res.json().count).toBe(0)
+  await app.close()
+})
+
+test('the pending count needs a date', async () => {
+  const { app } = testServer({ voucherListPath: '' })
+  const res = await app.inject({ method: 'GET', url: '/api/voucher/pending' })
+  expect(res.statusCode).toBe(400)
   await app.close()
 })

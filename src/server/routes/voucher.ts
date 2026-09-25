@@ -4,6 +4,8 @@ import { loadVoucherList, lookupVoucher } from '../voucherList'
 import type { VoucherEntry, VoucherStatus } from '../voucherList'
 import type { Config } from '../config'
 
+const DATE = /^\d{4}-\d{2}-\d{2}$/
+
 export interface VoucherCheck {
   configured: boolean
   readable: boolean
@@ -91,7 +93,7 @@ export function registerVoucherRoutes(
     )
   })
 
-  // What the manifest banner counts: redemptions we recorded that the club's
+  // What the note beside the Kassiert table counts: redemptions we recorded that the club's
   // file has not received — every collected voucher row until the next export,
   // since nothing but the export writes into the file. A voucher the list
   // rejects sits in here too, until that export takes the redemption back.
@@ -101,16 +103,24 @@ export function registerVoucherRoutes(
   // that no export could ever write off: `voucher_number IS NOT NULL` excludes
   // the row whose payment method was corrected away from Gutschein, which
   // clears the number and leaves the redemption behind with nothing to write.
-  app.get('/api/voucher/pending', async () => {
+  //
+  // Counted per jump day: the note sits beside the day's Kassiert table, so a
+  // number that included other days would name rows the screen does not show.
+  // The export of that same day is what writes them off.
+  app.get('/api/voucher/pending', async (req, reply) => {
+    const date = (req.query as any)?.date
+    if (typeof date !== 'string' || !DATE.test(date)) {
+      return reply.code(400).send({ error: 'Datum fehlt oder ist ungültig' })
+    }
     // An empty path is how a club switches the feature off. Without this the
-    // banner would keep counting rows from the days the feature was in use,
+    // note would keep counting rows from the days the feature was in use,
     // while every redemption attempt returns 'disabled' — a warning that can
     // never be acted on and never goes away.
     if (!cfgRef.current.voucherListPath?.trim()) return { count: 0 }
     const row = db.prepare(`SELECT COUNT(*) AS count FROM registrations
       WHERE voucher_redeemed_at IS NOT NULL AND voucher_redeem_synced_at IS NULL
-        AND voucher_number IS NOT NULL`)
-      .get() as { count: number }
+        AND voucher_number IS NOT NULL AND jump_date = ?`)
+      .get(date) as { count: number }
     return { count: row.count }
   })
 }

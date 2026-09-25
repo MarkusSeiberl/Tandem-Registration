@@ -302,8 +302,8 @@ export async function createBackup(): Promise<BackupResult> {
   return asJson<BackupResult>(res)
 }
 
-export async function pendingRedemptions(): Promise<{ count: number }> {
-  const res = await fetch(apiUrl('/api/voucher/pending'))
+export async function pendingRedemptions(date: string): Promise<{ count: number }> {
+  const res = await fetch(apiUrl(`/api/voucher/pending?date=${encodeURIComponent(date)}`))
   if (!res.ok) throw new Error('Offene Einlösungen konnten nicht geladen werden')
   return asJson<{ count: number }>(res)
 }

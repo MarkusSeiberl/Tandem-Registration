@@ -436,7 +436,7 @@ describe('List', () => {
     expect(screen.getByRole('button', { name: 'Heute' })).toBeDisabled()
   })
 
-  it('counts a single written redemption the way the banner counts one', async () => {
+  it('counts a single written redemption in the singular', async () => {
     const user = userEvent.setup()
     // A clean day with nobody named as Betriebsleiter would open the warning
     // panel instead — not what this test is checking.
@@ -451,17 +451,26 @@ describe('List', () => {
 
     await user.click(screen.getByRole('button', { name: 'Tagesabschluss' }))
 
-    // The banner right above gets the singular right; this line has to agree,
-    // or one number reads as two.
     expect(await screen.findByText(/1 Einlösung eingetragen/)).toBeInTheDocument()
     expect(screen.queryByText(/1 Einlösungen/)).not.toBeInTheDocument()
   })
 
-  it('says how many redemptions the club list is still missing', async () => {
+  it('says beside Kassiert how many of the day\'s vouchers the club list is missing', async () => {
+    vi.mocked(api.list).mockResolvedValue([makeRow({ paid_at: '2026-07-09T10:00:00.000Z' })])
     vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 2 })
-    renderList({ onSelect: vi.fn() })
+    renderList({ date: '2026-07-09' })
 
-    expect(await screen.findByText(/2 Einlösungen noch nicht/)).toBeInTheDocument()
+    const note = await screen.findByText(/2 Gutscheine noch nicht in die Gutscheinliste/)
+    expect(note.closest('caption')?.textContent).toContain('Kassiert')
+    expect(api.pendingRedemptions).toHaveBeenCalledWith('2026-07-09')
+  })
+
+  it('shows no voucher note when the day has nothing outstanding', async () => {
+    vi.mocked(api.list).mockResolvedValue([makeRow({ paid_at: '2026-07-09T10:00:00.000Z' })])
+    renderList({ date: '2026-07-09' })
+
+    await screen.findByText(/Kassiert \(1\)/)
+    expect(screen.queryByText(/noch nicht in die Gutscheinliste/)).not.toBeInTheDocument()
   })
 
   // A jump day runs on the price list it was started with. Editing the settings

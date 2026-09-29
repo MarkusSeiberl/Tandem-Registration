@@ -59,7 +59,7 @@ function PathField(props: {
 }
 
 // Where the manifest writes and what it prints on a contract. The amounts it
-// charges and pays out live on the Stammdaten screen, beside the crew.
+// charges and pays out live on the Tarife screen.
 // The three markers the texts carry, in the order the toolbar offers them. The
 // letter is the one the button shows; the key is the shortcut every word
 // processor has trained the operator to reach for.
@@ -236,7 +236,7 @@ export default function Settings() {
     setSaved(false)
     try {
       // The server merges the price and payout blocks, so leaving them out here
-      // keeps whatever the Stammdaten screen saved.
+      // keeps whatever the Tarife screen saved.
       const cfg = await putSettings({
         exportDir, jumpLocation, backupDir, contractText, privacyText, voucherListPath,
       })

@@ -262,12 +262,12 @@ describe('Settings', () => {
     expect(screen.queryByRole('tabpanel', { name: 'Datenschutz' })).not.toBeInTheDocument()
   })
 
-  it('leaves the amounts to the Stammdaten screen', async () => {
+  it('leaves the amounts to the Tarife screen', async () => {
     render(<Settings />)
     await screen.findByLabelText('Export-Verzeichnis')
 
-    // Prices and payout rates belong beside the crew they apply to; a second
-    // editor here would let two screens overwrite each other.
+    // Prices and payout rates have their own screen; a second editor here
+    // would let two screens overwrite each other.
     expect(screen.queryByText('Preise (EUR)')).not.toBeInTheDocument()
     expect(screen.queryByText('Vergütung (EUR)')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Tandemsprung')).not.toBeInTheDocument()

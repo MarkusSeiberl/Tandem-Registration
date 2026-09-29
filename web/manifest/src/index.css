@@ -998,28 +998,32 @@ h2 {
   height: 18px;
 }
 
-/* Stammdaten screen */
-.stammdaten-screen {
+/* Crew screen */
+.crew-screen {
   display: flex;
   gap: 32px;
   flex-wrap: wrap;
 }
 
-.stammdaten-list {
+.crew-list {
   flex: 1;
   min-width: 260px;
 }
 
-.stammdaten-list ul {
+.crew-list .add-row {
+  margin-bottom: 12px;
+}
+
+.crew-list ul {
   list-style: none;
-  margin: 0 0 16px;
+  margin: 0;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel-bg);
 }
 
-.stammdaten-list li {
+.crew-list li {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1027,16 +1031,13 @@ h2 {
   border-bottom: 1px solid var(--border);
 }
 
-.stammdaten-list li:last-child {
+.crew-list li:last-child {
   border-bottom: none;
 }
 
-/* Full width above the two crew lists: the amounts apply to everyone below, and
-   the rule under them is what separates the money from the names. */
+/* Tarife screen: prices, final prices and payouts side by side where the
+   window allows, stacked on a narrow one. */
 .betraege-section {
-  flex-basis: 100%;
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--border);
   display: flex;
   flex-wrap: wrap;
   gap: 32px;
@@ -1052,7 +1053,7 @@ h2 {
   margin-bottom: 12px;
 }
 
-/* The save button belongs to both blocks, so it breaks onto its own row. */
+/* The save button belongs to all blocks, so it breaks onto its own row. */
 .betraege-section .actions,
 .betraege-section > .error,
 .betraege-section > .hint {

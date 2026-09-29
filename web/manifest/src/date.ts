@@ -16,10 +16,10 @@ const KEY = 'manifest.date'
  * The day the manifest is showing.
  *
  * Kept in sessionStorage rather than only in React state: the list used to be
- * unmounted by every trip to Stammdaten, Einstellungen or a registration's
- * detail, and came back on today — so anyone working through yesterday's jumps
- * had to pick the date again after every look at something else. A reload of
- * the window did the same.
+ * unmounted by every trip to Tarife, Crew, Einstellungen or a registration's
+ * detail, and came back on today — so anyone working through yesterday's
+ * jumps had to pick the date again after every look at something else. A
+ * reload of the window did the same.
  *
  * Session, not local: a manifest opened fresh the next morning should start on
  * that morning, not on whatever day was last looked at.

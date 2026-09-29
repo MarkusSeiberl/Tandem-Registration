@@ -48,10 +48,10 @@ async function registerGuest(page: Page, firstName: string) {
   await expect(page.getByRole('heading', { name: 'Vielen Dank!' })).toBeVisible()
 }
 
-// The price table lives under Stammdaten, next to the payout rates.
+// The prices live on the Tarife screen.
 async function setJumpPrice(page: Page, amount: string) {
   await page.goto('/manifest/')
-  await page.getByRole('button', { name: 'Stammdaten' }).click()
+  await page.getByRole('button', { name: 'Tarife' }).click()
   await page.getByLabel('Tandemsprung').fill(amount)
   await page.getByRole('button', { name: 'Beträge speichern' }).click()
   await expect(page.getByText('Gespeichert.')).toBeVisible()

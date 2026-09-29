@@ -3,7 +3,7 @@ export interface TrashIconProps {
 }
 
 // Shared bin glyph for delete affordances (manifest toolbar batch-delete and
-// per-row Stammdaten delete), so both screens speak the same visual language.
+// per-row Crew delete), so both screens speak the same visual language.
 export default function TrashIcon({ size = 18 }: TrashIconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">

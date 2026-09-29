@@ -57,7 +57,7 @@ describe('App', () => {
     expect(dateInput().value).toBe('2026-07-09')
 
     // The list is unmounted here — which is exactly what used to lose the day.
-    await user.click(screen.getByRole('button', { name: 'Stammdaten' }))
+    await user.click(screen.getByRole('button', { name: 'Crew' }))
     await user.click(screen.getByRole('button', { name: 'Manifest' }))
 
     expect(dateInput().value).toBe('2026-07-09')

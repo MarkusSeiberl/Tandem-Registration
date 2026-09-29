@@ -67,7 +67,7 @@ test('the manifest keeps the chosen day, and "Heute" brings it back', async ({ p
   await expect(page.getByText('Keine Registrierungen für dieses Datum.')).toBeVisible()
 
   // Leaving the screen used to be what lost the day: List is unmounted here.
-  await page.getByRole('button', { name: 'Stammdaten' }).click()
+  await page.getByRole('button', { name: 'Crew' }).click()
   await page.getByRole('button', { name: 'Manifest' }).click()
   await expect(dateField()).toHaveValue('2026-07-09')
 

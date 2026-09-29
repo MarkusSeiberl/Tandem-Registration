@@ -1060,13 +1060,19 @@ h2 {
   flex-basis: 100%;
 }
 
+/* Scrolls rather than spilling out: the labels and three nowrap columns are
+   wider than the block's minimum width. */
 .price-matrix {
   flex: 1;
   min-width: 260px;
+  overflow-x: auto;
 }
 
+/* `separate` with no spacing: `collapse` would drop the rounded corners the
+   crew lists beside it have. */
 .price-matrix table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 8px;

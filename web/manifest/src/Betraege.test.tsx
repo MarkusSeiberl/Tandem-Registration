@@ -115,4 +115,42 @@ describe('Beträge', () => {
       .toBeInTheDocument()
     expect(api.putSettings).not.toHaveBeenCalled()
   })
+
+  it('shows the final prices between the prices and the payout rates', async () => {
+    render(<Betraege />)
+    await screen.findByText('Preise (EUR)')
+
+    const headings = screen.getAllByRole('heading').map((h) => h.textContent)
+    expect(headings).toEqual(['Preise (EUR)', 'Endpreise', 'Vergütung (EUR)'])
+    expect(screen.getByRole('rowheader', { name: 'Tandem' }).parentElement).toHaveTextContent(
+      'Tandem270 €310 €330 €'
+    )
+  })
+
+  it('updates the final prices while typing, before saving', async () => {
+    render(<Betraege />)
+    await screen.findByText('Preise (EUR)')
+
+    await userEvent.clear(field('Tandemsprung'))
+    await userEvent.type(field('Tandemsprung'), '300')
+
+    expect(screen.getByRole('rowheader', { name: 'Tandem' }).parentElement).toHaveTextContent(
+      'Tandem300 €340 €360 €'
+    )
+    expect(api.putSettings).not.toHaveBeenCalled()
+  })
+
+  it('blanks the final prices a typo would break', async () => {
+    render(<Betraege />)
+    await screen.findByText('Preise (EUR)')
+
+    await userEvent.clear(field('Video'))
+
+    expect(screen.getByRole('rowheader', { name: 'Tandem + Video' }).parentElement).toHaveTextContent(
+      'Tandem + Video–––'
+    )
+    expect(screen.getByRole('rowheader', { name: 'Tandem' }).parentElement).toHaveTextContent(
+      'Tandem270 €310 €330 €'
+    )
+  })
 })

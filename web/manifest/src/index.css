@@ -1059,6 +1059,35 @@ h2 {
   flex-basis: 100%;
 }
 
+.price-matrix {
+  flex: 1;
+  min-width: 260px;
+}
+
+.price-matrix table {
+  border-collapse: collapse;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.price-matrix th,
+.price-matrix td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.price-matrix th[scope='row'] {
+  text-align: left;
+}
+
+.price-matrix tbody tr:last-child th,
+.price-matrix tbody tr:last-child td {
+  border-bottom: none;
+}
+
 .add-row {
   display: flex;
   gap: 8px;

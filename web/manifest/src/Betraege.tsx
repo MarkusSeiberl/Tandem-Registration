@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getSettings, putSettings } from './api'
 import type { Payouts, Prices } from './api'
+import PriceMatrix from './PriceMatrix'
 
 // Every amount the manifest can charge, in the order the screen shows them.
 // `key` matches the Config.prices field the server validates.
@@ -32,6 +33,13 @@ const EMPTY_PAYOUTS: Payouts = {
 
 type Field<T> = { key: keyof T; label: string }
 
+// null for anything that would silently save as 0 € — empty, not a number, or
+// negative. Shared by saving (which refuses) and the live table (which blanks).
+function parseAmount(raw: string): number | null {
+  const value = Number(raw)
+  return raw.trim() === '' || !Number.isFinite(value) || value < 0 ? null : value
+}
+
 // Turns the typed strings of one block back into numbers, refusing anything that
 // would silently save as 0 €.
 function toAmounts<T extends Record<keyof T, number>>(
@@ -42,9 +50,8 @@ function toAmounts<T extends Record<keyof T, number>>(
 ): T {
   const out = { ...empty }
   for (const { key, label } of fields) {
-    const raw = inputs[key]
-    const value = Number(raw)
-    if (raw.trim() === '' || !Number.isFinite(value) || value < 0) {
+    const value = parseAmount(inputs[key])
+    if (value === null) {
       throw new Error(`${noun} „${label}" ungültig`)
     }
     out[key] = value as T[keyof T]
@@ -58,6 +65,17 @@ function toInputs<T extends Record<keyof T, number>>(
 ): Record<keyof T, string> {
   const out = {} as Record<keyof T, string>
   for (const { key } of fields) out[key] = String(values[key])
+  return out
+}
+
+// The prices as typed right now, minus the ones that do not parse. Feeds the
+// final price table, which shows what saving would charge.
+function livePrices(inputs: Record<keyof Prices, string>): Partial<Prices> {
+  const out: Partial<Prices> = {}
+  for (const { key } of PRICE_FIELDS) {
+    const value = parseAmount(inputs[key])
+    if (value !== null) out[key] = value
+  }
   return out
 }
 
@@ -92,8 +110,8 @@ function AmountFields<T>({ title, hint, fields, inputs, onChange }: AmountFields
 }
 
 // Prices and payout rates, edited together: both are per-jump amounts the club
-// sets once a season, and both live beside the crew they apply to rather than
-// among the directory settings.
+// sets once a season. Lives on the Tarife screen, apart from the directory
+// settings.
 export default function Betraege() {
   const [priceInputs, setPriceInputs] = useState<Record<keyof Prices, string>>({
     jump: '', video: '', video_photo: '', weight_over_90: '', weight_over_100: '',
@@ -151,6 +169,8 @@ export default function Betraege() {
           setSaved(false)
         }}
       />
+
+      <PriceMatrix prices={livePrices(priceInputs)} />
 
       <AmountFields
         title="Vergütung (EUR)"

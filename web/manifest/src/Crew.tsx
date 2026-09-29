@@ -8,18 +8,16 @@ import {
   masters as fetchMasters,
 } from './api'
 import type { StammdatenItem } from './api'
-import Betraege from './Betraege'
 import TrashIcon from './TrashIcon'
 
-interface StammdatenListProps {
+interface CrewListProps {
   title: string
-  addLabel: string
   load: () => Promise<StammdatenItem[]>
   add: (name: string) => Promise<{ id: number }>
   remove: (id: number) => Promise<void>
 }
 
-function StammdatenList({ title, addLabel, load, add, remove }: StammdatenListProps) {
+function CrewList({ title, load, add, remove }: CrewListProps) {
   const [items, setItems] = useState<StammdatenItem[]>([])
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -64,9 +62,21 @@ function StammdatenList({ title, addLabel, load, add, remove }: StammdatenListPr
   }
 
   return (
-    <section className="stammdaten-list">
+    <section className="crew-list">
       <h2>{title}</h2>
       {error && <p className="error">{error}</p>}
+      {/* Above the list: it stays in the same place however long the list grows. */}
+      <div className="add-row">
+        <input
+          type="text"
+          value={name}
+          placeholder="Vorname Nachname"
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button type="button" className="btn primary" onClick={handleAdd} disabled={busy || !name.trim()}>
+          Hinzufügen
+        </button>
+      </div>
       <ul>
         {items.map((item) => (
           <li key={item.id}>
@@ -85,44 +95,15 @@ function StammdatenList({ title, addLabel, load, add, remove }: StammdatenListPr
         ))}
         {items.length === 0 && <li className="hint">Keine Einträge.</li>}
       </ul>
-      <div className="add-row">
-        <input
-          type="text"
-          value={name}
-          placeholder={addLabel}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <button type="button" className="btn primary" onClick={handleAdd} disabled={busy || !name.trim()}>
-          Hinzufügen
-        </button>
-      </div>
     </section>
   )
 }
 
-export default function Stammdaten() {
+export default function Crew() {
   return (
-    <div className="stammdaten-screen">
-      {/*
-        The amounts first: they are what the screen is opened for on a normal
-        day. The crew lists change a few times a season, the prices are looked at
-        before every one of them.
-      */}
-      <Betraege />
-      <StammdatenList
-        title="Tandemmaster"
-        addLabel="Name des Tandemmasters"
-        load={fetchMasters}
-        add={addMaster}
-        remove={deleteMaster}
-      />
-      <StammdatenList
-        title="Kameraflieger"
-        addLabel="Name des Kameraflieger"
-        load={fetchFlyers}
-        add={addFlyer}
-        remove={deleteFlyer}
-      />
+    <div className="crew-screen">
+      <CrewList title="Tandemmaster" load={fetchMasters} add={addMaster} remove={deleteMaster} />
+      <CrewList title="Kameraflieger" load={fetchFlyers} add={addFlyer} remove={deleteFlyer} />
     </div>
   )
 }

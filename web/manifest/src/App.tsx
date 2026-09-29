@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import List from './List'
 import Detail from './Detail'
-import Stammdaten from './Stammdaten'
+import Crew from './Crew'
+import Tarife from './Tarife'
 import Settings from './Settings'
 import Update from './Update'
 import UpdateDialog from './UpdateDialog'
@@ -14,7 +15,7 @@ import type { UpdatePhase, UpdateStatus } from './api'
 import { useUpdateEvents } from './useEvents'
 import { rememberDate, storedDate } from './date'
 
-type View = 'list' | 'detail' | 'stammdaten' | 'settings' | 'update'
+type View = 'list' | 'detail' | 'tarife' | 'crew' | 'settings' | 'update'
 
 function App() {
   const [view, setView] = useState<View>('list')
@@ -180,10 +181,17 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
           </button>
           <button
             type="button"
-            className={view === 'stammdaten' ? 'tab active' : 'tab'}
-            onClick={() => setView('stammdaten')}
+            className={view === 'tarife' ? 'tab active' : 'tab'}
+            onClick={() => setView('tarife')}
           >
-            Stammdaten
+            Tarife
+          </button>
+          <button
+            type="button"
+            className={view === 'crew' ? 'tab active' : 'tab'}
+            onClick={() => setView('crew')}
+          >
+            Crew
           </button>
           <button
             type="button"
@@ -234,7 +242,8 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
           {view === 'detail' && selected && (
             <Detail registration={selected} onBack={closeDetail} onSaved={setSelected} />
           )}
-          {view === 'stammdaten' && <Stammdaten />}
+          {view === 'tarife' && <Tarife />}
+          {view === 'crew' && <Crew />}
           {view === 'settings' && <Settings />}
           {view === 'update' && update && (
             <Update status={update} onRefresh={refreshUpdate} />

@@ -127,6 +127,17 @@ describe('Beträge', () => {
     )
   })
 
+  it('keeps two columns: the final prices under the prices, the payouts beside', async () => {
+    render(<Betraege />)
+    await screen.findByText('Preise (EUR)')
+
+    // Layout is CSS; which column a block lands in is decided by the markup.
+    const column = (text: string) => screen.getByText(text).closest('.price-column')
+    expect(column('Endpreise')).not.toBeNull()
+    expect(column('Endpreise')).toBe(column('Preise (EUR)'))
+    expect(column('Vergütung (EUR)')).toBeNull()
+  })
+
   it('updates the final prices while typing, before saving', async () => {
     render(<Betraege />)
     await screen.findByText('Preise (EUR)')

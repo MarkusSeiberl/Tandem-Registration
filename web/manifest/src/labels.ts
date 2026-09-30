@@ -17,13 +17,12 @@ export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: 'card', label: 'Karte' },
 ]
 
-// The service the guest actually flies. Deliberately worded like the voucher
-// services below, so the manifest can read the subtraction ("Gutschein deckt
-// Sprung+Video, gebucht ist Sprung+Video+Foto") straight off the two fields.
+// What the guest books on top of the jump. The jump itself is implied, so the
+// labels name only the add-on.
 export const EXTRA_BOOKINGS: { value: ExtraBooking; label: string }[] = [
   { value: 'none', label: 'nur Sprung' },
-  { value: 'video', label: 'Sprung+Video' },
-  { value: 'video_photo', label: 'Sprung+Video+Foto' },
+  { value: 'video', label: 'Video' },
+  { value: 'video_photo', label: 'Video + Foto' },
 ]
 
 // The tills money can land in. A voucher is not one of them — it moves no money.

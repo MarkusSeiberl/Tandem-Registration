@@ -92,7 +92,7 @@ function RegistrationTable({
               {/*
                 Only the service actually flown — it already includes whatever
                 the voucher covers, so showing the voucher service too would
-                print "Sprung+Video" beside "Sprung+Video+Foto" for one jump.
+                print "Sprung+Video" beside "Video + Foto" for one jump.
                 Which part was prepaid is a detail-screen question.
               */}
               {row.extra_booking && row.extra_booking !== 'none' && (

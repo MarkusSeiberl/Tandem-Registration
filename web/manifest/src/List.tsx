@@ -27,7 +27,7 @@ function paymentPillClass(method: Registration['payment_method']): string {
   return 'pill'
 }
 
-const COLUMN_COUNT = 10
+const COLUMN_COUNT = 8
 
 interface TableProps {
   caption: string
@@ -62,11 +62,9 @@ function RegistrationTable({
       <thead>
         <tr>
           <th className="col-checkbox"></th>
+          <th>Load</th>
           <th>Name</th>
-          <th>Alter</th>
-          <th>Gewicht (kg)</th>
           <th>Tandemmaster</th>
-          <th>Load-Nr.</th>
           <th>Zusatzbuchung</th>
           <th>Zahlungsart</th>
           <th>Preis</th>
@@ -84,13 +82,12 @@ function RegistrationTable({
                 aria-label={`${row.first_name} ${row.last_name} auswählen`}
               />
             </td>
-            <td>
-              {row.first_name} {row.last_name}
-            </td>
-            <td className="numeral">{row.age}</td>
-            <td className="numeral">{row.weight_kg}</td>
-            <td>{row.tandem_master_id != null ? masterNames.get(row.tandem_master_id) ?? '' : ''}</td>
             <td className="numeral">{row.load_number ?? ''}</td>
+            <td>
+              <span>{row.first_name} {row.last_name}</span>{' '}
+              <span>({row.age} J. - {row.weight_kg} kg)</span>
+            </td>
+            <td>{row.tandem_master_id != null ? masterNames.get(row.tandem_master_id) ?? '' : ''}</td>
             <td>
               {/*
                 Only the service actually flown — it already includes whatever

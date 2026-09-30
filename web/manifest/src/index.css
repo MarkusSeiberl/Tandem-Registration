@@ -499,6 +499,11 @@ h2 {
   border-bottom: 1px solid var(--border);
 }
 
+/* Numbers line up on their last digit; the headers stay left like the rest. */
+.manifest-table td.numeral {
+  text-align: right;
+}
+
 /* `sticky` here pins against the table, not against the page: the
    `overflow: hidden` above (it clips the rows into the rounded corners) makes
    .manifest-table the scrollport for its own cells, and that box never scrolls.

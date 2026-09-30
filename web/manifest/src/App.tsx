@@ -17,9 +17,41 @@ import { rememberDate, storedDate } from './date'
 
 type View = 'list' | 'detail' | 'tarife' | 'crew' | 'settings' | 'update'
 
+// Marks the one history entry the app pushes when it leaves the manifest.
+const AWAY_FROM_LIST = 'tandem-away-from-list'
+
 function App() {
-  const [view, setView] = useState<View>('list')
+  const [view, setViewState] = useState<View>('list')
   const [selected, setSelected] = useState<Registration | null>(null)
+
+  // The browser's back button always leads to the manifest. Leaving the list
+  // pushes a single history entry; moving on between other views replaces it,
+  // so one press of back is enough however many tabs were visited.
+  function setView(next: View) {
+    const away = window.history.state === AWAY_FROM_LIST
+    if (next === 'list') {
+      // Pop our own entry rather than leaving it behind: the popstate handler
+      // below then performs the switch, and back from the list leaves the app.
+      if (away) window.history.back()
+      else { setSelected(null); setViewState('list') }
+      return
+    }
+    if (away) window.history.replaceState(AWAY_FROM_LIST, '')
+    else window.history.pushState(AWAY_FROM_LIST, '')
+    setViewState(next)
+  }
+
+  useEffect(() => {
+    // A reload keeps the history entry but starts on the list again.
+    if (window.history.state === AWAY_FROM_LIST) window.history.replaceState(null, '')
+    function onPopState() {
+      if (window.history.state === AWAY_FROM_LIST) return
+      setSelected(null)
+      setViewState('list')
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
 
   // Stopping the program. Only the machine the server runs on may do it — the
   // manifest has no login and every device on the club WLAN can open it, so the
@@ -138,7 +170,6 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
   }
 
   function closeDetail() {
-    setSelected(null)
     setView('list')
   }
 

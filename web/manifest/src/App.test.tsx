@@ -26,6 +26,19 @@ vi.mock('./api', async (importOriginal) => ({
 
 const dateInput = () => screen.getByLabelText('Datum') as HTMLInputElement
 
+const registration = (): api.Registration => ({
+  id: 1, first_name: 'Anna', last_name: 'Muster', gender: 'female', age: 30,
+  height_cm: 170, weight_kg: 70, street: 'Hauptstraße 1', postal_code: '5020',
+  city: 'Salzburg', email: 'anna@example.com', phone: '0664 1234567',
+  contract_pdf_filename: null, accepted_terms: 1, tandem_master_id: null,
+  load_number: null, price: null, payment_method: null, voucher_payment_method: null,
+  voucher_number: null, voucher_service: null, voucher_topup: 0, voucher_amount: null,
+  extra_booking: null, weight_surcharge: 'none', price_override: 0, camera_flyer_id: null,
+  created_at: `${today()}T10:00:00.000Z`, jump_date: today(), paid_at: null, notes: null,
+  privacy_ack_at: `${today()}T09:59:00.000Z`, voucher_redeemed_at: null,
+  voucher_redeem_synced_at: null,
+})
+
 beforeEach(() => {
   sessionStorage.clear()
   vi.mocked(api.list).mockResolvedValue([])
@@ -129,6 +142,54 @@ describe('App', () => {
 
       expect(await screen.findByText('Beenden fehlgeschlagen')).toBeInTheDocument()
       expect(screen.queryByText(/Tandem wurde beendet/)).not.toBeInTheDocument()
+    })
+  })
+
+  // The browser's back button is what an operator reaches for first; it must
+  // land on the manifest, not leave the app.
+  describe('browser back button', () => {
+    it('returns from a guest\'s detail view to the manifest', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([registration()])
+      render(<App />)
+      await user.click(await screen.findByRole('cell', { name: 'Anna Muster' }))
+      expect(await screen.findByRole('button', { name: '← Zurück' })).toBeInTheDocument()
+
+      window.history.back()
+
+      expect(await screen.findByRole('cell', { name: 'Anna Muster' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '← Zurück' })).toBeNull()
+    })
+
+    it('returns from another tab to the manifest', async () => {
+      const user = userEvent.setup()
+      render(<App />)
+      await screen.findByText('Keine Registrierungen für dieses Datum.')
+
+      await user.click(screen.getByRole('button', { name: 'Crew' }))
+      await user.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      window.history.back()
+
+      // One step back is always enough, however many tabs were visited.
+      expect(await screen.findByText('Keine Registrierungen für dieses Datum.')).toBeInTheDocument()
+    })
+
+    it('leaves no entry behind when the app itself goes back to the manifest', async () => {
+      const user = userEvent.setup()
+      render(<App />)
+      await screen.findByText('Keine Registrierungen für dieses Datum.')
+      const before = window.history.length
+
+      for (let round = 0; round < 3; round++) {
+        await user.click(screen.getByRole('button', { name: 'Crew' }))
+        await user.click(screen.getByRole('button', { name: 'Manifest' }))
+        await screen.findByText('Keine Registrierungen für dieses Datum.')
+        await vi.waitFor(() => expect(window.history.state).toBeNull())
+      }
+
+      // Every trip re-uses the one entry instead of stacking a new one, which
+      // would make back walk through old trips before it leaves the app.
+      expect(window.history.length).toBeLessThanOrEqual(before + 1)
     })
   })
 

@@ -631,9 +631,18 @@ h2 {
   }
 }
 
-/* The back button keeps its own width instead of stretching across the strip. */
-.detail-back {
+/* The back button keeps its own width instead of stretching across the strip.
+   Sticky, because on a desk monitor the detail screen is taller than the
+   window and scrolling back up just to leave costs time on every guest. Opaque
+   and shadowed on purpose: the cards scroll underneath it. `.btn` in the
+   selector outweighs the transparent `.btn.secondary` background. */
+.btn.detail-back {
   align-self: flex-start;
+  position: sticky;
+  top: 12px;
+  z-index: 2;
+  background: var(--panel-bg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 /* The guest strip. One rule of --ember down the left edge is the whole of the

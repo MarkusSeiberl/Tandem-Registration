@@ -152,12 +152,12 @@ describe('App', () => {
       const user = userEvent.setup()
       vi.mocked(api.list).mockResolvedValue([registration()])
       render(<App />)
-      await user.click(await screen.findByRole('cell', { name: 'Anna Muster' }))
+      await user.click(await screen.findByRole('cell', { name: /^Anna Muster \(/ }))
       expect(await screen.findByRole('button', { name: '← Zurück' })).toBeInTheDocument()
 
       window.history.back()
 
-      expect(await screen.findByRole('cell', { name: 'Anna Muster' })).toBeInTheDocument()
+      expect(await screen.findByRole('cell', { name: /^Anna Muster \(/ })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: '← Zurück' })).toBeNull()
     })
 

@@ -160,15 +160,15 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   await page.getByRole('button', { name: /Zurück/ }).click()
 
   // Re-fetch confirms the PATCH actually persisted server-side, not just
-  // local component state. Column order: 0 checkbox, 1 Name, 2 Alter,
-  // 3 Gewicht, 4 Tandemmaster, 5 Load-Nr.
+  // local component state. Column order: 0 checkbox, 1 Load, 2 Name
+  // (with age and weight), 3 Tandemmaster.
   const updatedRow = page.locator('tr.clickable-row', { hasText: fullName })
   await expect(updatedRow).toBeVisible()
   await expect(updatedRow).toContainText('Karte')
   await expect(updatedRow).toContainText('Sprung+Video+Foto')
   await expect(updatedRow).toContainText('ab 90 kg')
   await expect(updatedRow).toContainText('430 €')
-  await expect(updatedRow.locator('td').nth(5)).toHaveText('5')
+  await expect(updatedRow.locator('td').nth(1)).toHaveText('5')
 
   // --- Collect the money: the row moves from the open table to the paid one ---
   const openTable = page.locator('table.manifest-table-open')

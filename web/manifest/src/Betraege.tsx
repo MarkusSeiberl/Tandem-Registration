@@ -159,18 +159,22 @@ export default function Betraege() {
 
   return (
     <section className="betraege-section">
-      <AmountFields
-        title="Preise (EUR)"
-        hint="Gilt ab dem nächsten Sprungtag. Laufende und abgeschlossene Tage behalten ihre Preise."
-        fields={PRICE_FIELDS}
-        inputs={priceInputs}
-        onChange={(key, value) => {
-          setPriceInputs((prev) => ({ ...prev, [key]: value }))
-          setSaved(false)
-        }}
-      />
+      {/* The final prices sit under the inputs they are built from, so the
+          screen stays two columns: what the guest pays, what the club pays. */}
+      <div className="price-column">
+        <AmountFields
+          title="Preise (EUR)"
+          hint="Gilt ab dem nächsten Sprungtag. Laufende und abgeschlossene Tage behalten ihre Preise."
+          fields={PRICE_FIELDS}
+          inputs={priceInputs}
+          onChange={(key, value) => {
+            setPriceInputs((prev) => ({ ...prev, [key]: value }))
+            setSaved(false)
+          }}
+        />
 
-      <PriceMatrix prices={livePrices(priceInputs)} />
+        <PriceMatrix prices={livePrices(priceInputs)} />
+      </div>
 
       <AmountFields
         title="Vergütung (EUR)"

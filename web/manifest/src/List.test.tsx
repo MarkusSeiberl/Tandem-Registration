@@ -330,13 +330,13 @@ describe('List', () => {
 
     renderList()
 
-    expect(await screen.findByText('Sprung+Video+Foto')).toBeInTheDocument()
+    expect(await screen.findByText('Video + Foto')).toBeInTheDocument()
     expect(screen.getByText('ab 100 kg')).toBeInTheDocument()
   })
 
   it('does not repeat the voucher service beside the flown service', async () => {
     // A jump+video voucher upgraded to video+photo is ONE jump. Rendering the
-    // voucher service too printed "Sprung+Video" next to "Sprung+Video+Foto",
+    // voucher service too printed "Sprung+Video" next to "Video + Foto",
     // which read like two bookings.
     vi.mocked(api.list).mockResolvedValue([
       makeRow({
@@ -348,7 +348,7 @@ describe('List', () => {
 
     renderList()
 
-    expect(await screen.findByText('Sprung+Video+Foto')).toBeInTheDocument()
+    expect(await screen.findByText('Video + Foto')).toBeInTheDocument()
     expect(screen.queryByText('Sprung+Video')).not.toBeInTheDocument()
   })
 

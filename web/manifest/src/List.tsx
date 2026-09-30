@@ -62,7 +62,7 @@ function RegistrationTable({
       <thead>
         <tr>
           <th className="col-checkbox"></th>
-          <th>Load</th>
+          <th className="col-load">Load</th>
           <th>Name</th>
           <th>Tandemmaster</th>
           <th>Zusatzbuchung</th>
@@ -82,7 +82,7 @@ function RegistrationTable({
                 aria-label={`${row.first_name} ${row.last_name} auswählen`}
               />
             </td>
-            <td className="numeral">{row.load_number ?? ''}</td>
+            <td className="numeral col-load">{row.load_number ?? ''}</td>
             <td>
               <span>{row.first_name} {row.last_name}</span>{' '}
               <span>({row.age} J. - {row.weight_kg} kg)</span>
@@ -92,7 +92,7 @@ function RegistrationTable({
               {/*
                 Only the service actually flown — it already includes whatever
                 the voucher covers, so showing the voucher service too would
-                print "Sprung+Video" beside "Sprung+Video+Foto" for one jump.
+                print "Sprung+Video" beside "Video + Foto" for one jump.
                 Which part was prepaid is a detail-screen question.
               */}
               {row.extra_booking && row.extra_booking !== 'none' && (

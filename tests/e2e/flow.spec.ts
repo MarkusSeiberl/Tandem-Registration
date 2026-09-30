@@ -165,7 +165,7 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   const updatedRow = page.locator('tr.clickable-row', { hasText: fullName })
   await expect(updatedRow).toBeVisible()
   await expect(updatedRow).toContainText('Karte')
-  await expect(updatedRow).toContainText('Sprung+Video+Foto')
+  await expect(updatedRow).toContainText('Video + Foto')
   await expect(updatedRow).toContainText('ab 90 kg')
   await expect(updatedRow).toContainText('430 €')
   await expect(updatedRow.locator('td').nth(1)).toHaveText('5')

@@ -478,6 +478,12 @@ h2 {
   text-align: right;
 }
 
+/* Load numbers stay in two digits, so the column shrinks to its header. */
+.col-load {
+  width: 1%;
+  white-space: nowrap;
+}
+
 .col-checkbox input[type='checkbox'] {
   width: 18px;
   height: 18px;

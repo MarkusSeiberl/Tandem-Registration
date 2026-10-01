@@ -59,6 +59,20 @@ function RegistrationTable({
         {caption}
         {captionNote && <span className="caption-note warn">{captionNote}</span>}
       </caption>
+      {/*
+        Both tables size their columns from these, not from their own rows, so
+        Offen and Kassiert line up column for column.
+      */}
+      <colgroup>
+        <col className="col-checkbox" />
+        <col className="col-load" />
+        <col className="col-name" />
+        <col />
+        <col />
+        <col />
+        <col className="col-price" />
+        <col className="col-action" />
+      </colgroup>
       <thead>
         <tr>
           <th className="col-checkbox"></th>

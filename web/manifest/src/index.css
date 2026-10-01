@@ -484,12 +484,26 @@ h2 {
   white-space: nowrap;
 }
 
+/* Column widths for the fixed table layout. Each fits its widest content
+   plus the 14px cell padding on both sides: the action column the
+   "✓ Kassiert" button, the price column a four-digit amount. */
+col.col-checkbox { width: 48px; }
+col.col-load { width: 72px; }
+col.col-name { width: 30%; }
+col.col-price { width: 110px; }
+col.col-action { width: 140px; }
+
 .col-checkbox input[type='checkbox'] {
   width: 18px;
   height: 18px;
 }
 
+/* The Offen and Kassiert tables are separate tables, so auto layout would size
+   each from its own rows and their columns would drift apart. Fixed layout
+   takes the widths from the shared <col> classes above instead;
+   the unsized columns split what is left evenly. */
 .manifest-table {
+  table-layout: fixed;
   width: 100%;
   border-collapse: collapse;
   background: var(--panel-bg);
@@ -508,6 +522,11 @@ h2 {
 /* Numbers line up on their last digit; the headers stay left like the rest. */
 .manifest-table td.numeral {
   text-align: right;
+}
+
+/* Load numbers sit centered under their header instead. */
+.manifest-table .col-load {
+  text-align: center;
 }
 
 /* `sticky` here pins against the table, not against the page: the

@@ -12,6 +12,7 @@ import {
 import type { Config } from '../config'
 import { dayIsFrozen, repriceDay, startDay, tablesForDay } from '../dayTables'
 import { today } from '../day'
+import { refreshVoucherFlag, refreshVoucherFlags } from '../voucherFlag'
 
 function safeNamePart(s: string): string {
   return s.trim().replace(/[\\/:*?"<>|]/g, '')
@@ -132,8 +133,14 @@ export function registerRegistrationRoutes(
 
   app.get('/api/registrations', async (req) => {
     const date = (req.query as any)?.date || today()
-    return db.prepare('SELECT * FROM registrations WHERE jump_date = ? ORDER BY id')
-      .all(date)
+    const rows = db.prepare('SELECT * FROM registrations WHERE jump_date = ? ORDER BY id')
+      .all(date) as any[]
+    // Every new registration reaches the manifest through this load (the SSE
+    // 'changed' event makes it reload), so checking here is what puts the ⚠ on
+    // a guest's voucher as soon as they arrive — and takes it off again when
+    // the club enters a payment mid-day.
+    return refreshVoucherFlags(db, cfgRef.current, rows, (err) =>
+      app.log.error({ err }, 'Gutscheinliste konnte nicht gelesen werden'))
   })
 
   app.get('/api/registrations/:id/contract.pdf', async (req, reply) => {
@@ -354,6 +361,19 @@ export function registerRegistrationRoutes(
         // fail the operator's save. The catch does nothing beyond logging —
         // keeping the save intact is the whole point.
         app.log.error({ err, id }, 'Gutschein-Einlösung konnte nicht vermerkt werden')
+      }
+
+      // A new number needs a new verdict, and collecting fixes the verdict the
+      // row keeps from then on — the list load stops re-checking collected
+      // rows. Best-effort for the same reason as above.
+      if (('voucher_number' in body && body.voucher_number !== current.voucher_number) ||
+          (paid === true && !current.paid_at)) {
+        try {
+          const number = 'voucher_number' in body ? body.voucher_number : current.voucher_number
+          await refreshVoucherFlag(db, cfgRef.current, id, number)
+        } catch (err) {
+          app.log.error({ err, id }, 'Gutschein konnte nicht geprüft werden')
+        }
       }
 
       // The UPDATE above has already committed, so a throw from here on must

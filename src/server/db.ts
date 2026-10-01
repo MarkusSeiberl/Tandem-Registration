@@ -25,7 +25,8 @@ export function openDb(path: string, nativeBinding?: string): Database.Database 
       camera_flyer_id INTEGER,
       created_at TEXT, jump_date TEXT,
       paid_at TEXT, notes TEXT, privacy_ack_at TEXT,
-      voucher_redeemed_at TEXT, voucher_redeem_synced_at TEXT
+      voucher_redeemed_at TEXT, voucher_redeem_synced_at TEXT,
+      voucher_check_status TEXT, voucher_check_detail TEXT
     );
     CREATE TABLE IF NOT EXISTS tandem_masters (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, active INTEGER DEFAULT 1);
@@ -91,6 +92,10 @@ function migrate(db: Database.Database): void {
     // the club ate that rise, which is exactly how it worked until now.
     ['voucher_topup', 'INTEGER DEFAULT 0'],
     ['voucher_amount', 'REAL'],
+    // The club list's verdict on the number, for the ⚠ in the manifest list.
+    // NULL on a migrated row: the next list load checks it if it is still open.
+    ['voucher_check_status', 'TEXT'],
+    ['voucher_check_detail', 'TEXT'],
   ]
   for (const [name, type] of added) {
     if (!existing.has(name)) db.exec(`ALTER TABLE registrations ADD COLUMN ${name} ${type}`)

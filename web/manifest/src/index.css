@@ -510,6 +510,11 @@ h2 {
   text-align: right;
 }
 
+/* Load numbers sit centered under their header instead. */
+.manifest-table .col-load {
+  text-align: center;
+}
+
 /* `sticky` here pins against the table, not against the page: the
    `overflow: hidden` above (it clips the rows into the rounded corners) makes
    .manifest-table the scrollport for its own cells, and that box never scrolls.

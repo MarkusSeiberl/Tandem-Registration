@@ -38,21 +38,32 @@ export function voucherStatusText(check: VoucherCheck): StatusLine | null {
   if (!check.readable) {
     return { text: check.error ?? 'Gutscheinliste nicht lesbar.', tone: 'muted' }
   }
-  switch (check.status) {
-    case 'ok':
-      return { text: `Bezahlt am ${formatDate(check.paidAt)}, noch nicht eingelöst.`, tone: 'ok' }
+  if (check.status === 'ok') {
+    return { text: `Bezahlt am ${formatDate(check.paidAt)}, noch nicht eingelöst.`, tone: 'ok' }
+  }
+  if (check.status === null) return null
+  const detail = check.status === 'cancelled' ? check.paidText : check.redeemedAt
+  return { text: voucherWarningText(check.status, detail), tone: 'warn' }
+}
+
+// Shared by the detail screen's status line and the ⚠ in the list, so the two
+// never word the same verdict differently. `detail` is the cancellation text
+// for 'cancelled' and the ISO redemption date for 'redeemed'.
+export function voucherWarningText(
+  status: Exclude<VoucherStatus, 'ok'>,
+  detail: string | null
+): string {
+  switch (status) {
     case 'unpaid':
-      return { text: 'Nicht bezahlt — Gutschein ist nicht gültig.', tone: 'warn' }
+      return 'Nicht bezahlt — Gutschein ist nicht gültig.'
     case 'cancelled':
-      return { text: `Storniert („${check.paidText}").`, tone: 'warn' }
+      return `Storniert („${detail ?? ''}").`
     case 'redeemed':
-      return { text: `Bereits eingelöst am ${formatDate(check.redeemedAt)}.`, tone: 'warn' }
+      return `Bereits eingelöst am ${formatDate(detail)}.`
     case 'ambiguous':
-      return { text: 'Mehrere Gutscheine passen zu dieser Nummer.', tone: 'warn' }
+      return 'Mehrere Gutscheine passen zu dieser Nummer.'
     case 'not_found':
-      return { text: 'Nummer nicht in der Gutscheinliste.', tone: 'warn' }
-    default:
-      return null
+      return 'Nummer nicht in der Gutscheinliste.'
   }
 }
 

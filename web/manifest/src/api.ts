@@ -3,7 +3,7 @@
 // The optional apiBase (hidden operator setting) is prepended so the manifest PC can be
 // pointed at a different server without a rebuild. Mirrors web/guest/src/api.ts.
 
-import type { VoucherCheck } from './voucher'
+import type { VoucherCheck, VoucherStatus } from './voucher'
 export type { VoucherCheck } from './voucher'
 
 const API_BASE_KEY = 'apiBase'
@@ -100,6 +100,10 @@ export interface Registration {
   // in der Gutscheinliste des Vereins angekommen ist.
   voucher_redeemed_at: string | null
   voucher_redeem_synced_at: string | null
+  // What the club's voucher list says about the number, when there is something
+  // to warn about; the detail is the redemption date or the cancellation text.
+  voucher_check_status: Exclude<VoucherStatus, 'ok'> | null
+  voucher_check_detail: string | null
 }
 
 export interface StammdatenItem {

@@ -37,6 +37,8 @@ const registration = (): api.Registration => ({
   created_at: `${today()}T10:00:00.000Z`, jump_date: today(), paid_at: null, notes: null,
   privacy_ack_at: `${today()}T09:59:00.000Z`, voucher_redeemed_at: null,
   voucher_redeem_synced_at: null,
+  voucher_check_status: null,
+  voucher_check_detail: null,
 })
 
 beforeEach(() => {

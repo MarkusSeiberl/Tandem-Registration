@@ -67,6 +67,8 @@ function makeRow(overrides: Partial<Registration>): Registration {
     privacy_ack_at: '2026-07-09T09:59:00.000Z',
     voucher_redeemed_at: null,
     voucher_redeem_synced_at: null,
+    voucher_check_status: null,
+    voucher_check_detail: null,
     ...overrides,
   }
 }
@@ -218,6 +220,25 @@ describe('List', () => {
 
     // header row + 2 data rows
     expect(within(openTable()).getAllByRole('row')).toHaveLength(3)
+  })
+
+  it('marks a voucher the club list rejects, with the reason as tooltip', async () => {
+    vi.mocked(api.list).mockResolvedValue([
+      makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', voucher_check_status: 'unpaid' }),
+      makeRow({
+        id: 2, first_name: 'Bruno', last_name: 'Beispiel',
+        voucher_check_status: 'redeemed', voucher_check_detail: '2026-07-12',
+        paid_at: '2026-07-09T12:00:00.000Z',
+      }),
+      makeRow({ id: 3, first_name: 'Clara', last_name: 'Gut' }),
+    ])
+
+    renderList()
+
+    const unpaid = await within(openTable()).findByLabelText('Nicht bezahlt — Gutschein ist nicht gültig.')
+    expect(unpaid).toHaveAttribute('title', 'Nicht bezahlt — Gutschein ist nicht gültig.')
+    expect(within(paidTable()).getByLabelText('Bereits eingelöst am 12.07.2026.')).toBeInTheDocument()
+    expect(screen.getAllByText('⚠')).toHaveLength(2)
   })
 
   it('keeps uncollected tandems above and collected ones below', async () => {

@@ -8,6 +8,7 @@ import { useEvents } from './useEvents'
 import { extraBookingLabel, paymentLabel, weightSurchargeLabel } from './labels'
 import { collectedVia, formatEuro } from './pricing'
 import { today } from './date'
+import { voucherWarningText } from './voucher'
 import CollectDialog from './CollectDialog'
 import SelectionBar from './SelectionBar'
 
@@ -98,6 +99,15 @@ function RegistrationTable({
             </td>
             <td className="numeral col-load">{row.load_number ?? ''}</td>
             <td>
+              {row.voucher_check_status && (
+                <span
+                  className="voucher-flag"
+                  title={voucherWarningText(row.voucher_check_status, row.voucher_check_detail)}
+                  aria-label={voucherWarningText(row.voucher_check_status, row.voucher_check_detail)}
+                >
+                  ⚠
+                </span>
+              )}
               <span>{row.first_name} {row.last_name}</span>{' '}
               <span>({row.age} J. - {row.weight_kg} kg)</span>
             </td>

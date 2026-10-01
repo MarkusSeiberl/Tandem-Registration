@@ -11,6 +11,8 @@
   --accent-contrast: #ffffff;
   --error: #b3261e;
   --row-hover: rgba(30, 158, 91, 0.08);
+  --row-warn: rgba(255, 106, 61, 0.14);
+  --row-warn-hover: rgba(255, 106, 61, 0.24);
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
 
@@ -34,6 +36,8 @@
     --accent: #34c77b;
     --accent-contrast: #06150d;
     --row-hover: rgba(52, 199, 123, 0.1);
+    --row-warn: rgba(255, 106, 61, 0.18);
+    --row-warn-hover: rgba(255, 106, 61, 0.28);
   }
 }
 
@@ -588,6 +592,18 @@ col.col-action { width: 140px; }
 
 .clickable-row:hover {
   background: var(--row-hover);
+}
+
+/* The whole row is tinted rather than edged: on a wide table a stripe at the
+   left edge is easy to miss while scanning across. Hover deepens the same tint
+   instead of swapping to the green one, so the warning never disappears under
+   the pointer. */
+.voucher-flagged {
+  background: var(--row-warn);
+}
+
+.clickable-row.voucher-flagged:hover {
+  background: var(--row-warn-hover);
 }
 
 /* The club's list rejects this row's voucher — same warning tone as the status

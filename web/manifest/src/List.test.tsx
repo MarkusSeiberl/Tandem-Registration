@@ -239,6 +239,8 @@ describe('List', () => {
     expect(unpaid).toHaveAttribute('title', 'Nicht bezahlt — Gutschein ist nicht gültig.')
     expect(within(paidTable()).getByLabelText('Bereits eingelöst am 12.07.2026.')).toBeInTheDocument()
     expect(screen.getAllByText('⚠')).toHaveLength(2)
+    expect(unpaid.closest('tr')).toHaveClass('voucher-flagged')
+    expect(screen.getByText('Clara Gut').closest('tr')).not.toHaveClass('voucher-flagged')
   })
 
   it('keeps uncollected tandems above and collected ones below', async () => {

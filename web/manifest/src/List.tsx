@@ -88,7 +88,11 @@ function RegistrationTable({
       </thead>
       <tbody>
         {rows.map((row) => (
-          <tr key={row.id} className="clickable-row" onClick={() => onSelect(row)}>
+          <tr
+            key={row.id}
+            className={row.voucher_check_status ? 'clickable-row voucher-flagged' : 'clickable-row'}
+            onClick={() => onSelect(row)}
+          >
             <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
               <input
                 type="checkbox"

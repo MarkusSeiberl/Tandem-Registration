@@ -590,6 +590,15 @@ col.col-action { width: 140px; }
   background: var(--row-hover);
 }
 
+/* The club's list rejects this row's voucher — same warning tone as the status
+   line in the detail screen. The reason is the tooltip. */
+.voucher-flag {
+  color: var(--ember);
+  font-weight: 700;
+  margin-right: 6px;
+  cursor: help;
+}
+
 /* Status pills: a booking's payment method and extras at a glance, modeled
    on the same red/green dispatch-light language as the guest kiosk's CTA —
    a colored dot plus the label, not just plain text in a cell. */

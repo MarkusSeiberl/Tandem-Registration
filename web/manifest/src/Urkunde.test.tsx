@@ -39,6 +39,8 @@ function makeRegistration(overrides: Partial<Registration> = {}): Registration {
     privacy_ack_at: '2026-07-09T09:59:00.000Z',
     voucher_redeemed_at: null,
     voucher_redeem_synced_at: null,
+    voucher_check_status: null,
+    voucher_check_detail: null,
     ...overrides,
   }
 }

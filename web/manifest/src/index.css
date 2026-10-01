@@ -524,8 +524,10 @@ col.col-action { width: 140px; }
   text-align: right;
 }
 
-/* Load numbers sit centered under their header instead. */
-.manifest-table .col-load {
+/* Load numbers sit centered under their header instead. The `td` keeps this
+   as specific as the numeral rule above, so coming later is what wins. */
+.manifest-table th.col-load,
+.manifest-table td.col-load {
   text-align: center;
 }
 

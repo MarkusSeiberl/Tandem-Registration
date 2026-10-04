@@ -5,6 +5,7 @@ import { registerRegistrationRoutes } from './routes/registrations'
 import { registerStammdatenRoutes } from './routes/stammdaten'
 import { registerExportRoutes } from './routes/export'
 import { registerDayManagerRoutes } from './routes/dayManager'
+import { registerCalendarRoutes } from './routes/calendar'
 import { registerShutdownRoutes } from './routes/shutdown'
 import { registerUpdateRoutes } from './routes/update'
 import type { UpdateControls } from './routes/update'
@@ -39,6 +40,7 @@ export function buildServer(
   registerStammdatenRoutes(app, db)
   registerExportRoutes(app, db, cfgRef)
   registerDayManagerRoutes(app, db)
+  registerCalendarRoutes(app, db)
   registerBackupRoutes(app, db, cfgRef)
   registerSettingsRoutes(app, cfgRef, persist)
   registerVoucherRoutes(app, db, cfgRef)

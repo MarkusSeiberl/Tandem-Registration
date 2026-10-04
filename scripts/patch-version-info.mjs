@@ -33,6 +33,7 @@
 import { openSync, readSync, writeSync, closeSync, statSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { waitUntilWritable } from './wait-writable.mjs';
 
 /** Version strings to overwrite. Keys absent here keep their Node value. */
 export const VERSION_STRINGS = {
@@ -166,12 +167,17 @@ export function patchVersionStrings(buf, replacements) {
   return before;
 }
 
-function main() {
+async function main() {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const exePath = path.join(path.resolve(__dirname, '..'), 'dist', 'tandem.exe');
 
   let fd;
   try {
+    // patch-subsystem.mjs has just rewritten the whole file, and Windows
+    // Defender scans it again — the wait in build-exe.mjs only covered the
+    // first scan, after pkg. A running tandem.exe holds the lock for good and
+    // ends in the timeout message below.
+    await waitUntilWritable(exePath, { timeoutMs: 30_000 });
     fd = openSync(exePath, 'r+');
   } catch (err) {
     if (err.code === 'ENOENT') {
@@ -219,5 +225,5 @@ function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main();
+  await main();
 }

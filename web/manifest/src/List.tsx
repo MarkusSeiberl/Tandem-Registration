@@ -828,9 +828,11 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
             onBlur={() => { void saveManager() }}
           />
         </label>
+        {/* Filled, unlike the other day controls: it is the one step the day
+            must not end without, and as a grey outline it was easy to forget. */}
         <button
           type="button"
-          className="btn secondary"
+          className="btn primary"
           onClick={handleExport}
           disabled={collecting || exporting}
         >

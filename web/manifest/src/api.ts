@@ -429,3 +429,16 @@ export async function serverAlive(): Promise<boolean> {
 export function reloadPage(): void {
   window.location.reload()
 }
+
+// How many tandems each day of one month had, for the calendar on the
+// Übersicht. `month` is YYYY-MM; days without a registration are left out.
+export interface CalendarDay {
+  date: string
+  count: number
+}
+
+export async function calendar(month: string): Promise<CalendarDay[]> {
+  const res = await fetch(apiUrl(`/api/calendar/${encodeURIComponent(month)}`))
+  if (!res.ok) throw new Error(await errorMessage(res, 'Kalender konnte nicht geladen werden'))
+  return (await asJson<{ days: CalendarDay[] }>(res)).days
+}

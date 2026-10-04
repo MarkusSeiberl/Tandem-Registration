@@ -70,6 +70,8 @@ test('a jump costs what its day costs, on every screen', async ({ page }) => {
 
   await registerGuest(page, 'Erste')
   await page.goto('/manifest/')
+  // The app opens on the Übersicht.
+  await page.getByRole('button', { name: 'Manifest' }).click()
   await expect(guestRow(page, 'Erste Preistag')).toContainText('270 €')
 
   // The club raises the price while the day is running.
@@ -81,6 +83,8 @@ test('a jump costs what its day costs, on every screen', async ({ page }) => {
   // …and not a guest who signs after the change.
   await registerGuest(page, 'Zweite')
   await page.goto('/manifest/')
+  // The app opens on the Übersicht.
+  await page.getByRole('button', { name: 'Manifest' }).click()
   await expect(guestRow(page, 'Zweite Preistag')).toContainText('270 €')
 
   // The detail screen agrees with the list — this is what it got wrong before.

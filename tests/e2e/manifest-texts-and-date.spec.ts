@@ -58,6 +58,8 @@ test('the guest reads the contract with the bold passages, not the markers', asy
 
 test('the manifest keeps the chosen day, and "Heute" brings it back', async ({ page }) => {
   await page.goto('/manifest/')
+  // The app opens on the Übersicht.
+  await page.getByRole('button', { name: 'Manifest' }).click()
   const dateField = () => page.getByLabel('Datum')
   const today = localToday()
 
@@ -73,9 +75,19 @@ test('the manifest keeps the chosen day, and "Heute" brings it back', async ({ p
 
   // And so did a reload of the window.
   await page.reload()
+  await page.getByRole('button', { name: 'Manifest' }).click()
   await expect(dateField()).toHaveValue('2026-07-09')
 
   await page.getByRole('button', { name: 'Heute' }).click()
   await expect(dateField()).toHaveValue(today)
   await expect(page.getByRole('button', { name: 'Heute' })).toBeDisabled()
+})
+
+test('the app opens on the Übersicht, and "Neuer Tandemtag" starts today', async ({ page }) => {
+  await page.goto('/manifest/')
+  await expect(page.getByRole('heading', { name: 'Übersicht' })).toBeVisible()
+  await expect(page.locator('.calendar-day.today')).toHaveCount(1)
+
+  await page.getByRole('button', { name: 'Neuer Tandemtag' }).click()
+  await expect(page.getByLabel('Datum')).toHaveValue(localToday())
 })

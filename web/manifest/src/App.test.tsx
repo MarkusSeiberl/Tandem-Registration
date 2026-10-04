@@ -13,6 +13,7 @@ import { eventSourceOpenCount, fireUpdateEvent } from './setupTests'
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof api>()),
   list: vi.fn(),
+  calendar: vi.fn(),
   masters: vi.fn(),
   pendingRedemptions: vi.fn(),
   shutdownAllowed: vi.fn(),
@@ -23,6 +24,13 @@ vi.mock('./api', async (importOriginal) => ({
   installUpdate: vi.fn(),
   markUpdatePromptSeen: vi.fn(),
 }))
+
+// The app opens on the Übersicht; most tests here are about the manifest.
+async function renderOnManifest() {
+  const result = render(<App />)
+  await userEvent.click(screen.getByRole('button', { name: 'Manifest' }))
+  return result
+}
 
 const dateInput = () => screen.getByLabelText('Datum') as HTMLInputElement
 
@@ -44,6 +52,7 @@ const registration = (): api.Registration => ({
 beforeEach(() => {
   sessionStorage.clear()
   vi.mocked(api.list).mockResolvedValue([])
+  vi.mocked(api.calendar).mockResolvedValue([])
   vi.mocked(api.masters).mockResolvedValue([])
   vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 0 })
   vi.mocked(api.shutdownAllowed).mockResolvedValue({ allowed: true })
@@ -56,15 +65,45 @@ beforeEach(() => {
 })
 
 describe('App', () => {
-  it('starts on today', async () => {
+  it('opens on the Übersicht', async () => {
     render(<App />)
+    expect(await screen.findByRole('heading', { name: 'Übersicht' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Übersicht' })).toHaveClass('active')
+  })
+
+  it('"Neuer Tandemtag" opens the manifest on today', async () => {
+    const user = userEvent.setup()
+    sessionStorage.setItem('manifest.date', '2026-07-09')
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: 'Neuer Tandemtag' }))
+
+    await screen.findByText('Keine Registrierungen für dieses Datum.')
+    expect(dateInput().value).toBe(today())
+    expect(api.list).toHaveBeenLastCalledWith(today())
+  })
+
+  it('a click on a calendar day opens the manifest on that day', async () => {
+    const user = userEvent.setup()
+    const month = today().slice(0, 7)
+    vi.mocked(api.calendar).mockResolvedValue([{ date: `${month}-01`, count: 16 }])
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /^1\..*16 Tandems$/ }))
+
+    await screen.findByText('Keine Registrierungen für dieses Datum.')
+    expect(dateInput().value).toBe(`${month}-01`)
+  })
+
+  it('starts the manifest on today', async () => {
+    await renderOnManifest()
     await screen.findByText('Keine Registrierungen für dieses Datum.')
     expect(dateInput().value).toBe(today())
   })
 
   it('keeps a chosen day across a trip to another tab', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    await renderOnManifest()
     await screen.findByText('Keine Registrierungen für dieses Datum.')
 
     await user.clear(dateInput())
@@ -81,14 +120,14 @@ describe('App', () => {
 
   it('remembers the day for the next reload of the window', async () => {
     const user = userEvent.setup()
-    const { unmount } = render(<App />)
+    const { unmount } = await renderOnManifest()
     await screen.findByText('Keine Registrierungen für dieses Datum.')
 
     await user.clear(dateInput())
     await user.type(dateInput(), '2026-07-09')
 
     unmount()
-    render(<App />)
+    await renderOnManifest()
     await screen.findAllByText('Keine Registrierungen für dieses Datum.')
     expect(dateInput().value).toBe('2026-07-09')
   })
@@ -101,7 +140,7 @@ describe('App', () => {
     it('asks before stopping the server', async () => {
       const user = userEvent.setup()
       vi.mocked(window.confirm).mockReturnValue(false)
-      render(<App />)
+      await renderOnManifest()
       await screen.findByText('Keine Registrierungen für dieses Datum.')
 
       await user.click(button())
@@ -113,7 +152,7 @@ describe('App', () => {
     it('stops the server once the question is answered with yes', async () => {
       const user = userEvent.setup()
       vi.mocked(window.confirm).mockReturnValue(true)
-      render(<App />)
+      await renderOnManifest()
       await screen.findByText('Keine Registrierungen für dieses Datum.')
 
       await user.click(button())
@@ -126,7 +165,7 @@ describe('App', () => {
 
     it('is not offered on a device that may not stop the server', async () => {
       vi.mocked(api.shutdownAllowed).mockResolvedValue({ allowed: false })
-      render(<App />)
+      await renderOnManifest()
       await screen.findByText('Keine Registrierungen für dieses Datum.')
 
       await vi.waitFor(() => expect(button()).toBeDisabled())
@@ -137,7 +176,7 @@ describe('App', () => {
       const user = userEvent.setup()
       vi.mocked(window.confirm).mockReturnValue(true)
       vi.mocked(api.shutdownApp).mockRejectedValue(new Error('Beenden fehlgeschlagen'))
-      render(<App />)
+      await renderOnManifest()
       await screen.findByText('Keine Registrierungen für dieses Datum.')
 
       await user.click(button())
@@ -153,7 +192,7 @@ describe('App', () => {
     it('returns from a guest\'s detail view to the manifest', async () => {
       const user = userEvent.setup()
       vi.mocked(api.list).mockResolvedValue([registration()])
-      render(<App />)
+      await renderOnManifest()
       await user.click(await screen.findByRole('cell', { name: /^Anna Muster \(/ }))
       expect(await screen.findByRole('button', { name: '← Zurück' })).toBeInTheDocument()
 
@@ -165,7 +204,7 @@ describe('App', () => {
 
     it('returns from another tab to the manifest', async () => {
       const user = userEvent.setup()
-      render(<App />)
+      await renderOnManifest()
       await screen.findByText('Keine Registrierungen für dieses Datum.')
 
       await user.click(screen.getByRole('button', { name: 'Crew' }))
@@ -178,7 +217,7 @@ describe('App', () => {
 
     it('leaves no entry behind when the app itself goes back to the manifest', async () => {
       const user = userEvent.setup()
-      render(<App />)
+      await renderOnManifest()
       await screen.findByText('Keine Registrierungen für dieses Datum.')
       const before = window.history.length
 
@@ -197,7 +236,7 @@ describe('App', () => {
 
   it('"Heute" brings the operator back to the running day', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    await renderOnManifest()
     await screen.findByText('Keine Registrierungen für dieses Datum.')
 
     await user.clear(dateInput())
@@ -278,9 +317,9 @@ describe('App und das Update', () => {
       updateStatus({ phase: 'idle', latestVersion: null }),
     )
     render(<App />)
-    await screen.findByText('Keine Registrierungen für dieses Datum.')
+    await screen.findByRole('heading', { name: 'Übersicht' })
     // The first GET has landed and the update channel is open next to the
-    // list's own one.
+    // Übersicht's own one.
     await vi.waitFor(() => expect(eventSourceOpenCount()).toBe(2))
     expect(screen.queryByRole('dialog')).toBeNull()
 

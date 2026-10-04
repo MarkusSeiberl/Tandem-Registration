@@ -13,6 +13,8 @@
   --row-hover: rgba(30, 158, 91, 0.08);
   --row-warn: rgba(255, 106, 61, 0.14);
   --row-warn-hover: rgba(255, 106, 61, 0.24);
+  /* Ember darkened for small text on a light panel; plain ember is too faint. */
+  --warn-text: #c2410c;
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
 
@@ -38,6 +40,7 @@
     --row-hover: rgba(52, 199, 123, 0.1);
     --row-warn: rgba(255, 106, 61, 0.18);
     --row-warn-hover: rgba(255, 106, 61, 0.28);
+    --warn-text: #ff8a63;
   }
 }
 
@@ -1550,8 +1553,8 @@ col.col-action { width: 140px; }
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: space-between;
   min-height: 78px;
+  gap: 2px;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1589,6 +1592,8 @@ col.col-action { width: 140px; }
 }
 
 .calendar-count {
+  /* Count and marker sit at the foot of the cell, the day number at its head. */
+  margin-top: auto;
   font-size: 13px;
   font-weight: 600;
   color: var(--accent);
@@ -1598,4 +1603,10 @@ col.col-action { width: 140px; }
   font-size: 20px;
   line-height: 1;
   padding: 4px 12px;
+}
+
+.calendar-unclosed {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warn-text);
 }

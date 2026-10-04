@@ -41,8 +41,8 @@ describe('Overview', () => {
 
   it('marks the days tandems were jumped with their count', async () => {
     vi.mocked(api.calendar).mockResolvedValue([
-      { date: '2026-10-03', count: 16 },
-      { date: '2026-10-11', count: 1 },
+      { date: '2026-10-03', count: 16, exported: true },
+      { date: '2026-10-11', count: 1, exported: true },
     ])
     render(<Overview onOpenDay={() => {}} />)
 
@@ -51,6 +51,22 @@ describe('Overview', () => {
     expect(busy).toHaveTextContent('16 Tandems')
     expect(screen.getByRole('button', { name: '11.10.2026, 1 Tandem' })).toHaveClass('jumped')
     expect(screen.getByRole('button', { name: '5.10.2026' })).not.toHaveClass('jumped')
+  })
+
+  it('flags the days whose Tagesabschluss is missing, today included', async () => {
+    vi.mocked(api.calendar).mockResolvedValue([
+      { date: '2026-10-02', count: 5, exported: true },
+      { date: '2026-10-03', count: 16, exported: false },
+      { date: '2026-10-04', count: 2, exported: false },
+    ])
+    render(<Overview onOpenDay={() => {}} />)
+
+    const open = await screen.findByRole('button', { name: '3.10.2026, 16 Tandems, Abschluss fehlt' })
+    expect(open).toHaveTextContent('Abschluss fehlt')
+    expect(screen.getByRole('button', { name: '4.10.2026, 2 Tandems, Abschluss fehlt' }))
+      .toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '2.10.2026, 5 Tandems' }))
+      .not.toHaveTextContent('Abschluss fehlt')
   })
 
   it('"Neuer Tandemtag" opens today', async () => {

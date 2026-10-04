@@ -44,6 +44,13 @@ export function openDb(path: string, nativeBinding?: string): Database.Database 
       jump_date TEXT PRIMARY KEY,
       name TEXT NOT NULL
     );
+    -- When a day's Tagesabschluss last went through. Recorded by the export
+    -- route itself rather than read off the xlsx files: those get cleared out
+    -- of the export folder after a while, and the day stays closed regardless.
+    CREATE TABLE IF NOT EXISTS day_exports (
+      jump_date TEXT PRIMARY KEY,
+      exported_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS day_tables (
       jump_date TEXT PRIMARY KEY,
       prices TEXT NOT NULL,

@@ -15,6 +15,8 @@
   --row-warn-hover: rgba(255, 106, 61, 0.24);
   /* Ember darkened for small text on a light panel; plain ember is too faint. */
   --warn-text: #c2410c;
+  /* A divider meant to be seen, where --border is meant to recede. */
+  --rule: #8a94a3;
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
 
@@ -41,6 +43,7 @@
     --row-warn: rgba(255, 106, 61, 0.18);
     --row-warn-hover: rgba(255, 106, 61, 0.28);
     --warn-text: #ff8a63;
+    --rule: #5d6878;
   }
 }
 
@@ -409,7 +412,7 @@ h2 {
   /* A rule between the open sum and the tills, so "Offen" and "Kassiert"
      read as two separate figures rather than one run of amounts. */
   padding-left: 14px;
-  border-left: 1px solid var(--border);
+  border-left: 2px solid var(--rule);
 }
 
 /* The row-level centring above would centre each line within the column and

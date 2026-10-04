@@ -86,7 +86,7 @@ describe('App', () => {
   it('a click on a calendar day opens the manifest on that day', async () => {
     const user = userEvent.setup()
     const month = today().slice(0, 7)
-    vi.mocked(api.calendar).mockResolvedValue([{ date: `${month}-01`, count: 16 }])
+    vi.mocked(api.calendar).mockResolvedValue([{ date: `${month}-01`, count: 16, exported: true }])
     render(<App />)
 
     await user.click(await screen.findByRole('button', { name: /^1\..*16 Tandems$/ }))

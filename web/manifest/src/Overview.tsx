@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { calendar } from './api'
+import type { CalendarDay } from './api'
 import { today } from './date'
 import { useEvents } from './useEvents'
 
@@ -53,7 +54,7 @@ function tandemLabel(count: number): string {
 export default function Overview({ onOpenDay }: OverviewProps) {
   const currentMonth = today().slice(0, 7)
   const [month, setMonth] = useState(currentMonth)
-  const [counts, setCounts] = useState<Map<string, number>>(new Map())
+  const [days, setDays] = useState<Map<string, CalendarDay>>(new Map())
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(() => {
@@ -61,7 +62,7 @@ export default function Overview({ onOpenDay }: OverviewProps) {
     calendar(month)
       .then((days) => {
         if (stale) return
-        setCounts(new Map(days.map((d) => [d.date, d.count])))
+        setDays(new Map(days.map((d) => [d.date, d])))
         setError(null)
       })
       .catch((err: unknown) => {
@@ -123,7 +124,9 @@ export default function Overview({ onOpenDay }: OverviewProps) {
           ))}
           {monthCells(month).map((date, i) => {
             if (!date) return <div key={`pad-${i}`} className="calendar-pad" />
-            const count = counts.get(date) ?? 0
+            const count = days.get(date)?.count ?? 0
+            // Today included: the day is not closed until Tagesabschluss ran.
+            const unclosed = count > 0 && !days.get(date)?.exported
             const classes = ['calendar-day']
             if (count > 0) classes.push('jumped')
             if (date === todayIso) classes.push('today')
@@ -134,10 +137,15 @@ export default function Overview({ onOpenDay }: OverviewProps) {
                 className={classes.join(' ')}
                 onClick={() => onOpenDay(date)}
                 aria-current={date === todayIso ? 'date' : undefined}
-                aria-label={`${Number(date.slice(8))}.${m}.${year}${count > 0 ? `, ${tandemLabel(count)}` : ''}`}
+                aria-label={`${Number(date.slice(8))}.${m}.${year}${count > 0 ? `, ${tandemLabel(count)}` : ''}${unclosed ? ', Abschluss fehlt' : ''}`}
               >
                 <span className="calendar-day-number">{Number(date.slice(8))}</span>
                 {count > 0 && <span className="calendar-count">{tandemLabel(count)}</span>}
+                {unclosed && (
+                  <span className="calendar-unclosed" title="Tagesabschluss fehlt">
+                    Abschluss fehlt
+                  </span>
+                )}
               </button>
             )
           })}

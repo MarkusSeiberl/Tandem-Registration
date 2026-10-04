@@ -151,6 +151,12 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
     await fs.mkdir(dir, { recursive: true })
     const filePath = path.join(dir, `Tandem_${date}.xlsx`)
     await fs.writeFile(filePath, buf)
+    // Only once the sheet is on disk: a Tagesabschluss that threw anywhere above
+    // did not close the day, and the Übersicht must keep saying so.
+    db.prepare(
+      `INSERT INTO day_exports (jump_date, exported_at) VALUES (?, ?)
+       ON CONFLICT(jump_date) DO UPDATE SET exported_at=excluded.exported_at`
+    ).run(date, new Date().toISOString())
     return reply.send({
       path: filePath, count: rows.length,
       redemptionsWritten, redemptionsPending, redemptionsInvalid,

@@ -430,11 +430,13 @@ export function reloadPage(): void {
   window.location.reload()
 }
 
-// How many tandems each day of one month had, for the calendar on the
-// Übersicht. `month` is YYYY-MM; days without a registration are left out.
+// How many tandems each day of one month had, and whether its Tagesabschluss
+// went through, for the calendar on the Übersicht. `month` is YYYY-MM; days
+// without a registration are left out.
 export interface CalendarDay {
   date: string
   count: number
+  exported: boolean
 }
 
 export async function calendar(month: string): Promise<CalendarDay[]> {

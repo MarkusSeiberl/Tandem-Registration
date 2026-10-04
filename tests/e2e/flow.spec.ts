@@ -94,6 +94,8 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
 
   // --- Manifest PC: list shows the new row ---
   await page.goto('/manifest/')
+  // The app opens on the Übersicht.
+  await page.getByRole('button', { name: 'Manifest' }).click()
 
   const fullName = `${GUEST.firstName} ${GUEST.lastName}`
   const row = page.locator('tr.clickable-row', { hasText: fullName })

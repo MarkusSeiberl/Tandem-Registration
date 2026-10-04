@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import List from './List'
+import Overview from './Overview'
 import Detail from './Detail'
 import Crew from './Crew'
 import Tarife from './Tarife'
@@ -15,13 +16,14 @@ import type { UpdatePhase, UpdateStatus } from './api'
 import { useUpdateEvents } from './useEvents'
 import { rememberDate, storedDate } from './date'
 
-type View = 'list' | 'detail' | 'tarife' | 'crew' | 'settings' | 'update'
+type View = 'overview' | 'list' | 'detail' | 'tarife' | 'crew' | 'settings' | 'update'
 
 // Marks the one history entry the app pushes when it leaves the manifest.
 const AWAY_FROM_LIST = 'tandem-away-from-list'
 
 function App() {
-  const [view, setViewState] = useState<View>('list')
+  // The app opens on the Übersicht, where a jump day starts.
+  const [view, setViewState] = useState<View>('overview')
   const [selected, setSelected] = useState<Registration | null>(null)
 
   // The browser's back button always leads to the manifest. Leaving the list
@@ -42,7 +44,7 @@ function App() {
   }
 
   useEffect(() => {
-    // A reload keeps the history entry but starts on the list again.
+    // A reload keeps the history entry but starts on the Übersicht again.
     if (window.history.state === AWAY_FROM_LIST) window.history.replaceState(null, '')
     function onPopState() {
       if (window.history.state === AWAY_FROM_LIST) return
@@ -164,6 +166,13 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
     rememberDate(next)
   }
 
+  // From the Übersicht: "Neuer Tandemtag" and a click on a calendar day both
+  // land on the manifest of that day.
+  function openDay(next: string) {
+    chooseDate(next)
+    setView('list')
+  }
+
   function openDetail(registration: Registration) {
     setSelected(registration)
     setView('detail')
@@ -203,6 +212,13 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
             <BrandMark size={26} />
             Tandem Manifest
           </div>
+          <button
+            type="button"
+            className={view === 'overview' ? 'tab active' : 'tab'}
+            onClick={() => setView('overview')}
+          >
+            Übersicht
+          </button>
           <button
             type="button"
             className={view === 'list' || view === 'detail' ? 'tab active' : 'tab'}
@@ -269,6 +285,7 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
         </nav>
 
         <main className={view === 'list' ? 'view' : 'view view-wide'}>
+          {view === 'overview' && <Overview onOpenDay={openDay} />}
           {view === 'list' && <List onSelect={openDetail} date={date} onDateChange={chooseDate} />}
           {view === 'detail' && selected && (
             <Detail registration={selected} onBack={closeDetail} onSaved={setSelected} />

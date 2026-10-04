@@ -406,6 +406,10 @@ h2 {
   align-items: flex-start;
   gap: 2px;
   align-self: center;
+  /* A rule between the open sum and the tills, so "Offen" and "Kassiert"
+     read as two separate figures rather than one run of amounts. */
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
 }
 
 /* The row-level centring above would centre each line within the column and

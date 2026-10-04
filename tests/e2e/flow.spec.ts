@@ -179,22 +179,22 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
 
   await updatedRow.getByRole('button', { name: /Kassiert/ }).click()
 
-  // The row button asks for the Zahlungsart the money actually came in as,
-  // through the same dialog the selection bar's Kassieren uses.
-  const collectDialog = page.getByRole('dialog')
-  await expect(collectDialog.getByRole('heading', { name: '1 Tandem kassieren' })).toBeVisible()
-  // Karte, the way this guest paid at the desk — the sheet below reads it back.
-  await collectDialog.getByLabel('Zahlungsart').selectOption('card')
-  await collectDialog.getByRole('button', { name: 'Kassieren' }).click()
+  // The row already names its till (Karte, set on the detail screen above), so
+  // the row button collects it without asking for a Zahlungsart again.
+  await expect(page.getByRole('dialog')).toHaveCount(0)
 
   await expect(paidTable.locator('tr.clickable-row', { hasText: fullName })).toBeVisible()
   await expect(openTable.locator('tr.clickable-row', { hasText: fullName })).toHaveCount(0)
 
   // The move survives a reload, so it was stored and not just held in the page.
   await page.reload()
+  await page.getByRole('button', { name: 'Manifest' }).click()
   await expect(paidTable.locator('tr.clickable-row', { hasText: fullName })).toBeVisible()
 
   // --- Export the day and verify the real xlsx on disk ---
+  // A day without a Betriebsleiter stops Tagesabschluss at a warning panel
+  // instead of exporting, so the day gets one first.
+  await page.getByLabel('Betriebsleiter').fill('Max Muster')
   const [exportResponse] = await Promise.all([
     page.waitForResponse(
       (r) => r.url().includes('/api/export') && r.request().method() === 'POST'

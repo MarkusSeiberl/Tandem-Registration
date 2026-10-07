@@ -45,7 +45,7 @@ function fontBytes(weight: FontWeight): Buffer {
 // previously saved document already carries. A contract re-stamped several
 // times therefore accumulates one small subset per stamp; at a few kB each that
 // is not worth the risk of pruning font resources out of a signed PDF.
-async function embedFont(doc: PDFDocument, weight: FontWeight): Promise<PDFFont> {
+export async function embedFont(doc: PDFDocument, weight: FontWeight): Promise<PDFFont> {
   doc.registerFontkit(fontkit)
   return doc.embedFont(fontBytes(weight), { subset: true })
 }

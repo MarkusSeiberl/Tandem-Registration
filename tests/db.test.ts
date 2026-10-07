@@ -199,3 +199,30 @@ test('a migrated database has the same column set as a fresh one', async () => {
   migrated.close()
   fresh.close()
 })
+
+test('creates camera_flyers with an email column', () => {
+  const db = openDb(':memory:')
+  const names = (db.pragma('table_info(camera_flyers)') as Array<{ name: string }>).map(c => c.name)
+  expect(names).toEqual(['id', 'name', 'active', 'email'])
+  db.close()
+})
+
+test('migration adds email to an existing camera_flyers table, existing flyers stay without one', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'tandem-db-test-'))
+  tmpDirs.push(dir)
+  const file = path.join(dir, 'tandem.db')
+  // The camera_flyers schema shipped before the email column existed.
+  const legacy = new Database(file)
+  legacy.exec(`CREATE TABLE camera_flyers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, active INTEGER DEFAULT 1)`)
+  legacy.prepare("INSERT INTO camera_flyers (name,active) VALUES ('Peter',1)").run()
+  legacy.close()
+
+  const db = openDb(file)
+  const names = (db.pragma('table_info(camera_flyers)') as Array<{ name: string }>).map(c => c.name)
+  expect(names).toContain('email')
+  expect(db.prepare("SELECT email FROM camera_flyers WHERE name='Peter'").get()).toEqual({ email: null })
+  db.close()
+  // Second open must be a no-op, not a "duplicate column" error.
+  openDb(file).close()
+})

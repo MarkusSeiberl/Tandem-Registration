@@ -31,7 +31,8 @@ export function openDb(path: string, nativeBinding?: string): Database.Database 
     CREATE TABLE IF NOT EXISTS tandem_masters (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, active INTEGER DEFAULT 1);
     CREATE TABLE IF NOT EXISTS camera_flyers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, active INTEGER DEFAULT 1);
+      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, active INTEGER DEFAULT 1,
+      email TEXT);
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
     -- The price list and payout rates one jump day runs on, frozen by that day's
     -- first registration. What a jump costs is a fact of the day it was flown,
@@ -114,4 +115,10 @@ function migrate(db: Database.Database): void {
   // created one.
   if (existing.has('address')) db.exec('ALTER TABLE registrations DROP COLUMN address')
   if (existing.has('signature_png')) db.exec('ALTER TABLE registrations DROP COLUMN signature_png')
+
+  // Where a flyer gets the contacts of the guests they filmed. NULL on a
+  // migrated row: flyers added before this column existed have no email yet.
+  const flyerColumns = new Set(
+    (db.pragma('table_info(camera_flyers)') as { name: string }[]).map(c => c.name))
+  if (!flyerColumns.has('email')) db.exec('ALTER TABLE camera_flyers ADD COLUMN email TEXT')
 }

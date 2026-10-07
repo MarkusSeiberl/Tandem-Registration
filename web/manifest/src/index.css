@@ -1111,6 +1111,59 @@ col.col-action { width: 140px; }
   border-bottom: none;
 }
 
+/* Name, email field and button no longer fit one line in a narrow list. */
+.crew-list .add-row {
+  flex-wrap: wrap;
+}
+
+.crew-list .add-row input {
+  min-width: 140px;
+}
+
+.crew-entry {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.crew-email {
+  font-size: 13px;
+  opacity: 0.7;
+  overflow-wrap: anywhere;
+}
+
+.crew-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.crew-list li.crew-edit {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.crew-edit-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.crew-edit-fields input {
+  font: inherit;
+  padding: 8px 10px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text);
+}
+
+.crew-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* Tarife screen: two columns where the window allows — prices with the final
    prices under them, payouts beside — stacked on a narrow one. */
 .betraege-section {

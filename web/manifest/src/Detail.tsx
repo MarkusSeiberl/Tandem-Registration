@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   checkVoucher, dayTables, patch, remove, flyers as fetchFlyers, masters as fetchMasters,
-  contractPdfUrl,
+  contractPdfUrl, urkundePdfUrl,
 } from './api'
 import type {
   CollectedVia, DayTables, ExtraBooking, PaymentMethod, Prices, Registration, StammdatenItem,
@@ -654,15 +654,18 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
           Vertrag öffnen
         </a>
         {/*
-          The Urkunde print sheet for `registration` is rendered by App.tsx (see
-          Urkunde.tsx / urkunde.css) as a sibling of the app shell, not here — it
-          must sit outside the `.no-print` subtree so `@media print` can hide the
-          app UI without also hiding the sheet. This button only has to trigger
-          the browser print dialog.
+          Opens the filled certificate in the browser's PDF viewer, where it is
+          printed like the contract. The whole page comes from the server, so
+          plain paper is enough.
         */}
-        <button type="button" className="btn secondary" onClick={() => window.print()}>
+        <a
+          className="btn secondary"
+          href={urkundePdfUrl(registration.id)}
+          target="_blank"
+          rel="noreferrer"
+        >
           Urkunde drucken
-        </button>
+        </a>
         <button type="button" className="btn primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Speichert…' : 'Speichern'}
         </button>

@@ -101,6 +101,7 @@ if (nativeBinding && !fs.existsSync(nativeBinding)) {
 }
 
 const contractTemplate = fs.readFileSync(assetPath('Befoerderungsvertrag.pdf'))
+const urkundeTemplate = fs.readFileSync(assetPath('Urkunde.pdf'))
 
 // The fonts the contract is drawn with are only opened when the first guest
 // signs. A missing one would surface there as a failed registration in front of
@@ -141,7 +142,7 @@ const updateControls: UpdateControls | undefined = isPackaged
 // The manifest's "Programm beenden" button ends up here — the same orderly
 // shutdown as Strg+C, so Bonjour is unpublished and the database closes cleanly
 // instead of the operator killing the console window.
-const app = buildServer(db, cfgRef, contractTemplate, (c) => saveConfig(dir, c), notify, pickPath,
+const app = buildServer(db, cfgRef, contractTemplate, urkundeTemplate, (c) => saveConfig(dir, c), notify, pickPath,
   () => { void shutdown('Beenden über das Manifest') }, updateControls)
 
 app.get('/api/contract', async () => ({ text: cfgRef.current.contractText }))

@@ -311,6 +311,10 @@ export function contractPdfUrl(id: number): string {
   return apiUrl(`/api/registrations/${id}/contract.pdf`)
 }
 
+export function urkundePdfUrl(id: number): string {
+  return apiUrl(`/api/registrations/${id}/urkunde.pdf`)
+}
+
 export async function exportDay(date: string): Promise<ExportResult> {
   const res = await fetch(apiUrl(`/api/export?date=${encodeURIComponent(date)}`), {
     method: 'POST',

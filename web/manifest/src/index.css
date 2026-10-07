@@ -1144,8 +1144,11 @@ col.col-action { width: 140px; }
   gap: 6px;
 }
 
-/* Fields on the left, cancel/save where pencil/bin were — same row shape. */
+/* Fields on the left, cancel/save where pencil/bin were — same row shape.
+   Pinned to the top: centred, they would drop down beside the taller
+   name + email fields of a camera flyer. */
 .crew-list li.crew-edit {
+  align-items: flex-start;
   gap: 12px;
 }
 

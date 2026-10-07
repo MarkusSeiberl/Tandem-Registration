@@ -109,6 +109,8 @@ export interface Registration {
 export interface StammdatenItem {
   id: number
   name: string
+  // Camera flyers only; null when none was entered.
+  email?: string | null
 }
 
 export interface Settings {
@@ -203,14 +205,28 @@ async function listKind(kind: StammdatenKind): Promise<StammdatenItem[]> {
   return asJson<StammdatenItem[]>(res)
 }
 
-async function addKind(kind: StammdatenKind, name: string): Promise<{ id: number }> {
+async function addKind(kind: StammdatenKind, name: string, email?: string): Promise<{ id: number }> {
   const res = await fetch(apiUrl(`/api/${kind}`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(email === undefined ? { name } : { name, email }),
   })
   if (!res.ok) throw new Error(await errorMessage(res, 'Anlegen fehlgeschlagen'))
   return asJson<{ id: number }>(res)
+}
+
+async function updateKind(
+  kind: StammdatenKind,
+  id: number,
+  fields: { name: string; email?: string },
+): Promise<StammdatenItem> {
+  const res = await fetch(apiUrl(`/api/${kind}/${id}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  })
+  if (!res.ok) throw new Error(await errorMessage(res, 'Speichern fehlgeschlagen'))
+  return asJson<StammdatenItem>(res)
 }
 
 async function removeKind(kind: StammdatenKind, id: number): Promise<void> {
@@ -220,10 +236,13 @@ async function removeKind(kind: StammdatenKind, id: number): Promise<void> {
 
 export const masters = () => listKind('masters')
 export const addMaster = (name: string) => addKind('masters', name)
+export const updateMaster = (id: number, name: string) => updateKind('masters', id, { name })
 export const deleteMaster = (id: number) => removeKind('masters', id)
 
 export const flyers = () => listKind('flyers')
-export const addFlyer = (name: string) => addKind('flyers', name)
+export const addFlyer = (name: string, email?: string) => addKind('flyers', name, email)
+export const updateFlyer = (id: number, name: string, email: string) =>
+  updateKind('flyers', id, { name, email })
 export const deleteFlyer = (id: number) => removeKind('flyers', id)
 
 export async function getSettings(): Promise<Settings> {

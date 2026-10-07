@@ -11,6 +11,9 @@ import type { UpdateControls } from '../../src/server/routes/update'
 const templateBytes = fs.readFileSync(
   path.join(__dirname, '..', '..', 'assets', 'Befoerderungsvertrag.pdf')
 )
+const urkundeBytes = fs.readFileSync(
+  path.join(__dirname, '..', '..', 'assets', 'Urkunde.pdf')
+)
 
 export function testServer(
   cfgOverrides: Partial<Config> = {},
@@ -34,7 +37,7 @@ export function testServer(
   }
   const db = openDb(':memory:')
   return {
-    app: buildServer(db, cfgRef, templateBytes, undefined, notify, pickPath, shutdown, update),
+    app: buildServer(db, cfgRef, templateBytes, urkundeBytes, undefined, notify, pickPath, shutdown, update),
     cfgRef,
     db,
   }

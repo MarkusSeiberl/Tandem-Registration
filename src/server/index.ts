@@ -15,12 +15,14 @@ import { registerVoucherRoutes } from './routes/voucher'
 import { registerPickPathRoutes } from './routes/pickPath'
 import { registerPathRoutes } from './routes/paths'
 import type { PickPath } from './routes/pickPath'
+import { registerUrkundeRoutes } from './routes/urkunde'
 import type { Config } from './config'
 
 export function buildServer(
   db: Database,
   cfgRef: { current: Config },
   contractTemplate: Buffer,
+  urkundeTemplate: Buffer,
   persist?: (c: Config) => void,
   notify?: (guestName: string) => void,
   pickPath?: PickPath,
@@ -37,6 +39,7 @@ export function buildServer(
   // that build a server without main.ts can reach it.
   app.get('/api/privacy', async () => ({ text: cfgRef.current.privacyText }))
   registerRegistrationRoutes(app, db, sse, cfgRef, contractTemplate, notify)
+  registerUrkundeRoutes(app, db, urkundeTemplate)
   registerStammdatenRoutes(app, db)
   registerExportRoutes(app, db, cfgRef)
   registerDayManagerRoutes(app, db)

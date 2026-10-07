@@ -24,12 +24,22 @@ interface CrewListProps {
   remove: (id: number) => Promise<void>
 }
 
-// The row currently being edited. Only one at a time: opening another row
-// discards the unsaved values of the first.
+// The row currently being edited. One per list (Tandemmaster and Kameraflieger
+// each have their own): opening another row in the same list discards the
+// unsaved values of the first.
 interface Draft {
   id: number
   name: string
   email: string
+}
+
+// Mirrors the server check in src/server/routes/stammdaten.ts.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// An empty email is valid (it is optional); a non-empty one must match.
+function isEmailValid(value: string): boolean {
+  const trimmed = value.trim()
+  return trimmed === '' || EMAIL_PATTERN.test(trimmed)
 }
 
 function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps) {
@@ -39,6 +49,9 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
   const [draft, setDraft] = useState<Draft | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  const addEmailInvalid = withEmail && !isEmailValid(email)
+  const draftEmailInvalid = withEmail && draft !== null && !isEmailValid(draft.email)
 
   const refresh = useCallback(() => {
     load().then(setItems).catch((err: unknown) => setError(err instanceof Error ? err.message : 'Fehler'))
@@ -50,7 +63,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
 
   async function handleAdd() {
     const trimmed = name.trim()
-    if (!trimmed) return
+    if (!trimmed || addEmailInvalid) return
     const trimmedEmail = email.trim()
     setBusy(true)
     setError(null)
@@ -72,7 +85,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
   }
 
   async function handleSave() {
-    if (!draft || !draft.name.trim()) return
+    if (busy || !draft || !draft.name.trim() || draftEmailInvalid) return
     setBusy(true)
     setError(null)
     try {
@@ -88,6 +101,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
   }
 
   function handleDraftKey(e: KeyboardEvent<HTMLInputElement>) {
+    if (busy) return
     if (e.key === 'Enter') handleSave()
     else if (e.key === 'Escape') setDraft(null)
   }
@@ -123,10 +137,11 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
             type="email"
             value={email}
             placeholder="E-Mail (optional)"
+            aria-invalid={addEmailInvalid}
             onChange={(e) => setEmail(e.target.value)}
           />
         )}
-        <button type="button" className="btn primary" onClick={handleAdd} disabled={busy || !name.trim()}>
+        <button type="button" className="btn primary" onClick={handleAdd} disabled={busy || !name.trim() || addEmailInvalid}>
           Hinzufügen
         </button>
       </div>
@@ -148,6 +163,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
                     type="email"
                     aria-label="E-Mail"
                     placeholder="keine E-Mail"
+                    aria-invalid={draftEmailInvalid}
                     value={draft.email}
                     onChange={(e) => setDraft({ ...draft, email: e.target.value })}
                     onKeyDown={handleDraftKey}
@@ -162,7 +178,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
                   type="button"
                   className="btn primary"
                   onClick={handleSave}
-                  disabled={busy || !draft.name.trim()}
+                  disabled={busy || !draft.name.trim() || draftEmailInvalid}
                 >
                   Speichern
                 </button>

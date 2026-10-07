@@ -134,6 +134,56 @@ describe('Crew', () => {
     expect(api.updateMaster).toHaveBeenCalledWith(1, 'Hans Maier', '')
   })
 
+  it('disables adding a flyer while the email is malformed', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await screen.findByText('Peter')
+
+    await user.type(screen.getAllByPlaceholderText('Vorname Nachname')[1], 'Max Muster')
+    await user.type(screen.getByPlaceholderText('E-Mail (optional)'), 'peter.example.at')
+
+    const addButton = screen.getAllByRole('button', { name: 'Hinzufügen' })[1]
+    expect(addButton).toBeDisabled()
+    await user.click(addButton)
+    expect(api.addFlyer).not.toHaveBeenCalled()
+  })
+
+  it('disables saving and ignores Enter while the edited email is malformed', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await user.click(await screen.findByRole('button', { name: 'Peter bearbeiten' }))
+
+    const email = screen.getByRole('textbox', { name: 'E-Mail' })
+    await user.clear(email)
+    await user.type(email, 'kaputt')
+
+    expect(email).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled()
+    await user.type(email, '{Enter}')
+    expect(api.updateFlyer).not.toHaveBeenCalled()
+  })
+
+  it('disables saving when the name is cleared', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await user.click(await screen.findByRole('button', { name: 'Peter bearbeiten' }))
+
+    await user.clear(screen.getByRole('textbox', { name: 'Name' }))
+
+    expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled()
+  })
+
+  it('closes the row on Escape without saving', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await user.click(await screen.findByRole('button', { name: 'Peter bearbeiten' }))
+
+    await user.type(screen.getByRole('textbox', { name: 'Name' }), '{Escape}')
+
+    expect(api.updateFlyer).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Speichern' })).not.toBeInTheDocument()
+  })
+
   it('keeps the row in edit mode when saving fails', async () => {
     vi.mocked(api.updateFlyer).mockRejectedValue(new Error('E-Mail ungültig'))
     const user = userEvent.setup()

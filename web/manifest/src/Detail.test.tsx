@@ -13,6 +13,7 @@ vi.mock('./api', () => ({
   flyers: vi.fn(),
   getSettings: vi.fn(),
   contractPdfUrl: vi.fn(() => '/api/registrations/1/contract.pdf'),
+  urkundePdfUrl: vi.fn(() => '/api/registrations/1/urkunde.pdf'),
   getApiBase: vi.fn(() => ''),
   checkVoucher: vi.fn(),
   dayTables: vi.fn(),
@@ -829,7 +830,8 @@ describe('Detail', () => {
 
     const actions = within(bar as HTMLElement)
     expect(actions.getByRole('link', { name: 'Vertrag öffnen' })).toBeInTheDocument()
-    expect(actions.getByRole('button', { name: 'Urkunde drucken' })).toBeInTheDocument()
+    expect(actions.getByRole('link', { name: 'Urkunde drucken' }))
+      .toHaveAttribute('href', '/api/registrations/1/urkunde.pdf')
     expect(actions.getByRole('button', { name: 'Speichern' })).toBeInTheDocument()
     // Set apart from the rest so it is never the button next to Speichern.
     expect(actions.getByRole('button', { name: /Registrierung löschen/ }))

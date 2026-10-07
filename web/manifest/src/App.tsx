@@ -8,7 +8,6 @@ import Settings from './Settings'
 import Update from './Update'
 import UpdateDialog from './UpdateDialog'
 import BrandMark from './BrandMark'
-import Urkunde from './Urkunde'
 import type { Registration } from './api'
 import { shutdownAllowed, shutdownApp } from './api'
 import { getUpdateStatus, markUpdatePromptSeen, startUpdateDownload } from './api'
@@ -197,16 +196,7 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
 
   return (
     <>
-      {/*
-        The Urkunde print sheet lives OUTSIDE `.app-root` on purpose: `.app-root`
-        carries `no-print` below, which under `@media print` is forced to
-        `display: none`. A `display: none` ancestor hides its descendants
-        unconditionally, so the print sheet must sit as a sibling, not a child,
-        of the hidden app shell (see urkunde.css).
-      */}
-      {selected && <Urkunde registration={selected} />}
-
-      <div className="app-root no-print">
+      <div className="app-root">
         <nav className="sidebar">
           <div className="brand">
             <BrandMark size={26} />

@@ -92,6 +92,43 @@ describe('Crew', () => {
     expect(api.addFlyer).toHaveBeenCalledWith('Max Muster', undefined)
   })
 
+  it('adds a tandem master with Enter in the name field', async () => {
+    vi.mocked(api.addMaster).mockResolvedValue({ id: 2 })
+    const user = userEvent.setup()
+    render(<Crew />)
+    await screen.findByText('Hans')
+
+    const name = screen.getAllByPlaceholderText('Vorname Nachname')[0]
+    await user.type(name, 'Eva Berger{Enter}')
+
+    expect(api.addMaster).toHaveBeenCalledWith('Eva Berger', undefined)
+    expect(name).toHaveValue('')
+  })
+
+  it('adds a flyer with Enter in the email field', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await screen.findByText('Peter')
+
+    await user.type(screen.getAllByPlaceholderText('Vorname Nachname')[1], 'Max Muster')
+    await user.type(screen.getByPlaceholderText('E-Mail (optional)'), 'max@example.at{Enter}')
+
+    expect(api.addFlyer).toHaveBeenCalledWith('Max Muster', 'max@example.at')
+  })
+
+  it('ignores Enter in the add fields while the name is empty or the email malformed', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await screen.findByText('Peter')
+
+    const name = screen.getAllByPlaceholderText('Vorname Nachname')[1]
+    await user.type(name, '{Enter}')
+    await user.type(name, 'Max Muster')
+    await user.type(screen.getByPlaceholderText('E-Mail (optional)'), 'max@{Enter}')
+
+    expect(api.addFlyer).not.toHaveBeenCalled()
+  })
+
   it('edits a flyer inline and reloads the list', async () => {
     const user = userEvent.setup()
     render(<Crew />)

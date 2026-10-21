@@ -65,7 +65,8 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
 
   async function handleAdd() {
     const trimmed = name.trim()
-    if (!trimmed || addEmailInvalid) return
+    // busy too: Enter can be pressed again while the first add is in flight.
+    if (busy || !trimmed || addEmailInvalid) return
     const trimmedEmail = email.trim()
     setBusy(true)
     setError(null)
@@ -102,6 +103,10 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
     }
   }
 
+  function handleAddKey(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') handleAdd()
+  }
+
   function handleDraftKey(e: KeyboardEvent<HTMLInputElement>) {
     if (busy) return
     if (e.key === 'Enter') handleSave()
@@ -133,6 +138,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
           value={name}
           placeholder="Vorname Nachname"
           onChange={(e) => setName(e.target.value)}
+          onKeyDown={handleAddKey}
         />
         {withEmail && (
           <input
@@ -141,6 +147,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
             placeholder="E-Mail (optional)"
             aria-invalid={addEmailInvalid}
             onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={handleAddKey}
           />
         )}
         <button type="button" className="btn primary" onClick={handleAdd} disabled={busy || !name.trim() || addEmailInvalid}>

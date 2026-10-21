@@ -1,4 +1,4 @@
-# Auto-Update: Handtest-Runbook (Task 12)
+# Auto-Update: Handtest-Runbook
 
 Dieser Handtest prüft den einen Schritt, den kein Unit-Test abdeckt: ein
 laufendes 114-MB-`tandem.exe`, das sich selbst ersetzt und neu startet — und

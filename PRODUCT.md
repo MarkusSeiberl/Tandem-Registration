@@ -56,7 +56,7 @@ It is built around how a small club drop zone really works: the club's own contr
 ## Evidence on Hand
 
 - Real club documents: `assets/Befoerderungsvertrag.pdf`, `assets/Urkunde.pdf`, and a sample voucher list (`Beispiel Tandemliste.xlsx`, gitignored, local only).
-- Design and implementation history: `docs/superpowers/specs/` and `docs/superpowers/plans/`.
+- Design and implementation history: `docs/superpowers/specs/` and git history.
 - No testimonials, usage numbers, or other clubs using it exist. Do not invent any.
 
 ## Product Principles

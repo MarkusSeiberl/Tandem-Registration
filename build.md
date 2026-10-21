@@ -288,7 +288,7 @@ fragt. Ohne die Variable fragt das Programm immer GitHub. `asAsset`
 (`github.ts`) lässt für `browser_download_url` neben `https:` ausdrücklich
 auch reines `http://` auf `localhost`/`127.0.0.1`/`::1` zu — genau diese
 Ausnahme macht den lokalen Testaufbau ohne selbstsigniertes Zertifikat
-möglich; siehe `docs/superpowers/plans/2026-09-21-auto-update-handtest.md`
+möglich; siehe `auto-update-handtest.md`
 für den vollständigen Handtest-Ablauf.
 
 ### pkg config (pkg.config.json)

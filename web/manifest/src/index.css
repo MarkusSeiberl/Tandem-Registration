@@ -1097,6 +1097,8 @@ col.col-action { width: 140px; }
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel-bg);
+  /* Keeps the hover tint of the first and last row inside the rounded corners. */
+  overflow: hidden;
 }
 
 .crew-list li {
@@ -1109,6 +1111,11 @@ col.col-action { width: 140px; }
 
 .crew-list li:last-child {
   border-bottom: none;
+}
+
+/* Not on the row being edited or on the empty-list hint. */
+.crew-list li:not(.crew-edit):not(.hint):hover {
+  background: var(--row-hover);
 }
 
 /* Name, email field and button no longer fit one line in a narrow list. */
@@ -1137,13 +1144,17 @@ col.col-action { width: 140px; }
   gap: 6px;
 }
 
+/* Fields on the left, cancel/save where pencil/bin were — same row shape.
+   Pinned to the top: centred, they would drop down beside the taller
+   name + email fields of a camera flyer. */
 .crew-list li.crew-edit {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .crew-edit-fields {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1156,12 +1167,6 @@ col.col-action { width: 140px; }
   border-radius: 8px;
   background: var(--panel-bg);
   color: var(--text);
-}
-
-.crew-edit-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 
 /* Tarife screen: two columns where the window allows — prices with the final

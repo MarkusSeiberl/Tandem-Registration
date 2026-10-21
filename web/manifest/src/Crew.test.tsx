@@ -109,6 +109,22 @@ describe('Crew', () => {
     expect(screen.queryByRole('button', { name: 'Speichern' })).not.toBeInTheDocument()
   })
 
+  it('swaps edit and delete for cancel and save icons in the same place', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await user.click(await screen.findByRole('button', { name: 'Peter bearbeiten' }))
+
+    const cancel = screen.getByRole('button', { name: 'Abbrechen' })
+    const save = screen.getByRole('button', { name: 'Speichern' })
+    for (const button of [cancel, save]) {
+      expect(button).toHaveClass('btn-icon')
+      expect(button).toHaveTextContent('')
+    }
+    expect(save).toHaveClass('primary')
+    // Cancel where the pencil was, save where the bin was.
+    expect(cancel.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('cancelling the edit keeps the entry unchanged', async () => {
     const user = userEvent.setup()
     render(<Crew />)

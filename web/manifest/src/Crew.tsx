@@ -11,6 +11,8 @@ import {
   updateMaster,
 } from './api'
 import type { StammdatenItem } from './api'
+import CheckIcon from './CheckIcon'
+import CloseIcon from './CloseIcon'
 import PencilIcon from './PencilIcon'
 import TrashIcon from './TrashIcon'
 
@@ -170,17 +172,27 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
                   />
                 )}
               </div>
-              <div className="crew-edit-actions">
-                <button type="button" className="btn secondary" onClick={() => setDraft(null)} disabled={busy}>
-                  Abbrechen
+              {/* Same slots as pencil and bin, so the row barely moves when editing. */}
+              <div className="crew-actions">
+                <button
+                  type="button"
+                  className="btn secondary btn-icon"
+                  onClick={() => setDraft(null)}
+                  disabled={busy}
+                  aria-label="Abbrechen"
+                  title="Abbrechen"
+                >
+                  <CloseIcon />
                 </button>
                 <button
                   type="button"
-                  className="btn primary"
+                  className="btn primary btn-icon"
                   onClick={handleSave}
                   disabled={busy || !draft.name.trim() || draftEmailInvalid}
+                  aria-label="Speichern"
+                  title="Speichern"
                 >
-                  Speichern
+                  <CheckIcon />
                 </button>
               </div>
             </li>

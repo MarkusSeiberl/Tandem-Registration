@@ -1304,19 +1304,38 @@ col.col-action { width: 140px; }
   min-width: 260px;
 }
 
-/* The final-price table needs more width than the payout fields beside it,
-   which stop at 340 px: three columns of amounts with cents ("410,50 €") would
-   otherwise scroll inside an even half. */
+/* The price column holds its fields and the final-price table side by side,
+   so the table that shows what an edit would charge stays in view while the
+   edit is made. Its basis is what both need on one line, and it does not grow
+   past it: on a wide screen the payouts follow it instead of drifting to the
+   far edge. The payout column beside it needs only its fields. */
 .betraege-section .price-column {
-  flex: 3;
+  flex: 0 1 760px;
 }
 
 .betraege-section > .amount-block {
-  flex: 2;
+  flex: 1 1 240px;
+}
+
+.amount-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 32px;
+}
+
+/* Amounts are three or four digits; a field sized for them keeps the number
+   near its label instead of 300 px to the right of it. */
+.amount-fields {
+  width: 200px;
+}
+
+/* Wide enough for "Tandemmaster Zuschlag ab 100 kg" on one line. */
+.betraege-section > .amount-block .amount-fields {
+  width: 250px;
 }
 
 .betraege-section .field {
-  max-width: 340px;
   margin-bottom: 12px;
 }
 
@@ -1377,8 +1396,12 @@ col.col-action { width: 140px; }
 
 /* Scrolls rather than spilling out: the labels and three nowrap columns are
    wider than the column's minimum width. */
+/* Beside the price fields it wraps under them before it shrinks: flex-wrap
+   measures it at its full width. The scroll is only the last resort of a
+   window narrower than the table itself. */
 .price-matrix {
-  margin-top: 12px;
+  flex: 0 1 auto;
+  min-width: 0;
   overflow-x: auto;
 }
 
@@ -1414,6 +1437,13 @@ col.col-action { width: 140px; }
 .price-matrix td.changed {
   background: var(--row-warn);
   font-weight: 700;
+}
+
+/* The price before the edit, struck through under the new one. */
+.price-was {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .add-row {
@@ -1513,6 +1543,12 @@ col.col-action { width: 140px; }
   text-transform: uppercase;
   color: var(--text);
   opacity: 0.7;
+}
+
+/* A field reached with Tab is scrolled into view above the sticky save bar,
+   not under it, where its cursor, error and old value would be hidden. */
+html:has(.save-bar) {
+  scroll-padding-bottom: 96px;
 }
 
 /* The one control that commits the screen, always at the bottom edge and always

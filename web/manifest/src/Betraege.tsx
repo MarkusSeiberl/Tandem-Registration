@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { getSettings, putSettings } from './api'
 import type { Payouts, Prices } from './api'
 import PriceMatrix from './PriceMatrix'
@@ -24,19 +25,31 @@ const PAYOUT_FIELDS: { key: keyof Payouts; label: string }[] = [
   { key: 'weight_over_100', label: 'Tandemmaster Zuschlag ab 100 kg' },
 ]
 
-const AMOUNT_MESSAGE = 'Bitte einen Betrag ab 0 eingeben, z. B. 280 oder 12,50.'
-
 type Field<T> = { key: keyof T; label: string }
 type Inputs<T> = Record<keyof T, string>
 
-// Whole euros, or euros and cents with a comma or a point. Anything else —
-// empty, letters, a minus, a third decimal — is null rather than a guess: it
-// would otherwise save as 0 € or as an amount nobody typed. Shared by saving
-// (which refuses), the fields (which say so) and the live table (which blanks).
-function parseAmount(raw: string): number | null {
+const AMOUNT = /^\d+(?:[.,]\d{1,2})?$/
+
+// What is wrong with a typed amount, in the words the field shows, or null
+// when it is a valid one. Named per rule: "ungültig" alone leaves the operator
+// guessing whether the minus, the third decimal or the euro sign was the issue.
+function amountProblem(raw: string): string | null {
   const text = raw.trim()
-  if (!/^\d+(?:[.,]\d{1,2})?$/.test(text)) return null
-  return Number(text.replace(',', '.'))
+  if (AMOUNT.test(text)) return null
+  if (text === '') return 'Betrag fehlt.'
+  if (text.startsWith('-')) return 'Kein Minus – Beträge ab 0.'
+  // "1.000" is a thousands point to some and a third decimal to the parser;
+  // either way it is not an amount this field takes.
+  if (/^\d+[.,]\d{3,}$/.test(text)) return 'Höchstens zwei Nachkommastellen.'
+  return 'Nur Ziffern, z. B. 280 oder 12,50.'
+}
+
+// Whole euros, or euros and cents with a comma or a point. Anything else is
+// null rather than a guess: it would otherwise save as 0 € or as an amount
+// nobody typed. Shared by saving (which refuses), the fields (which say why)
+// and the live table (which blanks).
+function parseAmount(raw: string): number | null {
+  return amountProblem(raw) === null ? Number(raw.trim().replace(',', '.')) : null
 }
 
 // The way the price list writes an amount: "270", or "12,50" with cents.
@@ -86,54 +99,62 @@ interface AmountFieldsProps<T> {
   onChange: (key: keyof T, value: string) => void
   onLeave: (key: keyof T) => void
   inputRef: (key: keyof T, el: HTMLInputElement | null) => void
+  // Shown beside the fields, under the block's heading: the final prices next
+  // to the prices they are built from.
+  aside?: ReactNode
 }
 
 function AmountFields<T>({
-  title, hint, fields, inputs, saved, shownInvalid, onChange, onLeave, inputRef,
+  title, hint, fields, inputs, saved, shownInvalid, onChange, onLeave, inputRef, aside,
 }: AmountFieldsProps<T>) {
   const ids = useId()
   return (
     <section className="amount-block">
       <h3>{title}</h3>
       <p className="amount-hint">{hint}</p>
-      {fields.map(({ key, label }) => {
-        const invalid = shownInvalid.has(key)
-        const previous = parseAmount(saved[key])
-        const changed = isChanged(inputs[key], saved[key]) && previous !== null
-        const errorId = `${ids}-${String(key)}-error`
-        const previousId = `${ids}-${String(key)}-previous`
-        const inputId = `${ids}-${String(key)}`
-        const describedBy = [invalid && errorId, changed && previousId].filter(Boolean).join(' ')
-        // A div with a label pointing at the input, not a wrapping label: the
-        // label's text is the field's name, and the € sign, the error and the
-        // old amount below it are not part of that name.
-        return (
-          <div className="field" key={String(key)}>
-            <label htmlFor={inputId}>{label}</label>
-            <span className="amount-input">
-              {/* Text with a decimal keypad, not type="number": a number field
-                  turns a scroll of the mouse wheel or an arrow key into a new
-                  price, silently, on a page that has to be scrolled. */}
-              <input
-                id={inputId}
-                ref={(el) => inputRef(key, el)}
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                className="numeral"
-                value={inputs[key]}
-                aria-invalid={invalid}
-                aria-describedby={describedBy || undefined}
-                onChange={(e) => onChange(key, e.target.value)}
-                onBlur={() => onLeave(key)}
-              />
-              <span className="amount-unit" aria-hidden="true">€</span>
-            </span>
-            {invalid && <span className="field-error" id={errorId}>{AMOUNT_MESSAGE}</span>}
-            {changed && <span className="field-hint" id={previousId}>vorher {formatEuro(previous)}</span>}
-          </div>
-        )
-      })}
+      <div className="amount-body">
+        <div className="amount-fields">
+          {fields.map(({ key, label }) => {
+            const invalid = shownInvalid.has(key)
+            const previous = parseAmount(saved[key])
+            const changed = isChanged(inputs[key], saved[key]) && previous !== null
+            const errorId = `${ids}-${String(key)}-error`
+            const previousId = `${ids}-${String(key)}-previous`
+            const inputId = `${ids}-${String(key)}`
+            const describedBy = [invalid && errorId, changed && previousId].filter(Boolean).join(' ')
+            // A div with a label pointing at the input, not a wrapping label: the
+            // label's text is the field's name, and the € sign, the error and the
+            // old amount below it are not part of that name.
+            return (
+              <div className="field" key={String(key)}>
+                <label htmlFor={inputId}>{label}</label>
+                <span className="amount-input">
+                  {/* Text with a decimal keypad, not type="number": a number field
+                      turns a scroll of the mouse wheel or an arrow key into a new
+                      price, silently, on a page that has to be scrolled. */}
+                  <input
+                    id={inputId}
+                    ref={(el) => inputRef(key, el)}
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    className="numeral"
+                    value={inputs[key]}
+                    aria-invalid={invalid}
+                    aria-describedby={describedBy || undefined}
+                    onChange={(e) => onChange(key, e.target.value)}
+                    onBlur={() => onLeave(key)}
+                  />
+                  <span className="amount-unit" aria-hidden="true">€</span>
+                </span>
+                {invalid && <span className="field-error" id={errorId}>{amountProblem(inputs[key])}</span>}
+                {changed && <span className="field-hint" id={previousId}>vorher {formatEuro(previous)}</span>}
+              </div>
+            )
+          })}
+        </div>
+        {aside}
+      </div>
     </section>
   )
 }
@@ -242,6 +263,12 @@ export default function Betraege({ onDirtyChange }: BetraegeProps) {
   }
 
   function discard() {
+    // Verwerfen disappears with the changes; the cursor goes back to where the
+    // first of them was rather than falling out of the page.
+    const price = PRICE_FIELDS.find(({ key }) => isChanged(priceInputs[key], savedPrices[key]))
+    const payout = PAYOUT_FIELDS.find(({ key }) => isChanged(payoutInputs[key], savedPayouts[key]))
+    const first = price ? `prices.${String(price.key)}` : payout ? `payouts.${String(payout.key)}` : null
+    if (first) fieldRefs.current.get(first)?.focus()
     setPriceInputs(savedPrices)
     setPayoutInputs(savedPayouts)
     setLeftFields(new Set())
@@ -293,11 +320,12 @@ export default function Betraege({ onDirtyChange }: BetraegeProps) {
             setSaved(false)
           }}
           {...blockProps('prices')}
-        />
-
-        <PriceMatrix
-          prices={liveAmounts(PRICE_FIELDS, priceInputs)}
-          before={dirty ? liveAmounts(PRICE_FIELDS, savedPrices) : undefined}
+          aside={
+            <PriceMatrix
+              prices={liveAmounts(PRICE_FIELDS, priceInputs)}
+              before={dirty ? liveAmounts(PRICE_FIELDS, savedPrices) : undefined}
+            />
+          }
         />
       </div>
 

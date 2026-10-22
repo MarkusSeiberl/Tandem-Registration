@@ -65,11 +65,19 @@ export default function PriceMatrix({ prices, before }: PriceMatrixProps) {
                 const needs = [...row.needs, ...col.needs]
                 const now = priceOf(prices, row.booking, col.surcharge, needs)
                 const then = before ? priceOf(before, row.booking, col.surcharge, needs) : null
-                const changed = before !== undefined && then !== null && now !== then
+                // A blanked cell is not a new price; its field says what is wrong.
+                const changed = now !== null && then !== null && now !== then
                 return (
                   <td key={col.surcharge} className={changed ? 'numeral changed' : 'numeral'}>
                     {now === null ? '–' : formatEuro(now)}
-                    {changed && <span className="visually-hidden">, vorher {formatEuro(then)}</span>}
+                    {changed && (
+                      // The old price struck through under the new one; "vorher"
+                      // is only read out, the strike says it to the eye.
+                      <span className="price-was">
+                        <span className="visually-hidden">, vorher </span>
+                        <s>{formatEuro(then)}</s>
+                      </span>
+                    )}
                   </td>
                 )
               })}

@@ -23,7 +23,6 @@ const CONFIG: SettingsType = {
   },
 }
 
-const AMOUNT_MESSAGE = 'Bitte einen Betrag ab 0 eingeben, z. B. 280 oder 12,50.'
 
 const field = (label: string) => screen.getByLabelText(label) as HTMLInputElement
 const save = () => screen.getByRole('button', { name: 'Beträge speichern' })
@@ -140,7 +139,33 @@ describe('Beträge', () => {
     const changed = within(row('Tandem + Video')).getAllByRole('cell')
     expect(changed[0]).toHaveClass('changed')
     expect(changed[0]).toHaveTextContent('380 €, vorher 370 €')
+    // Shown, not only read out: the old amount struck through under the new one.
+    expect(within(changed[0]).getByText('370 €').tagName).toBe('S')
     for (const cell of within(row('Tandem')).getAllByRole('cell')) expect(cell).not.toHaveClass('changed')
+  })
+
+  it('does not mark a final price as changed when a typo blanks it', async () => {
+    const user = userEvent.setup()
+    render(<Betraege />)
+    await screen.findByText('Preise (EUR)')
+
+    await user.clear(field('Video'))
+
+    for (const cell of within(row('Tandem + Video')).getAllByRole('cell')) {
+      expect(cell).not.toHaveClass('changed')
+    }
+  })
+
+  it('puts the cursor back on the first changed field after Verwerfen', async () => {
+    const user = userEvent.setup()
+    render(<Betraege />)
+    await screen.findByText('Preise (EUR)')
+
+    await user.type(field('Video'), '5')
+    await user.type(field('Kameraflieger Video'), '5')
+    await user.click(screen.getByRole('button', { name: 'Verwerfen' }))
+
+    expect(field('Video')).toHaveFocus()
   })
 
   it('discards unsaved changes on Verwerfen', async () => {
@@ -182,22 +207,33 @@ describe('Beträge', () => {
     expect(api.putSettings).not.toHaveBeenCalled()
     for (const label of ['Video', 'Kameraflieger Video']) {
       expect(field(label)).toHaveAttribute('aria-invalid', 'true')
-      expect(field(label)).toHaveAccessibleDescription(expect.stringContaining(AMOUNT_MESSAGE))
     }
+    expect(field('Video')).toHaveAccessibleDescription(expect.stringContaining('Betrag fehlt.'))
+    expect(field('Kameraflieger Video'))
+      .toHaveAccessibleDescription(expect.stringContaining('Kein Minus – Beträge ab 0.'))
     expect(field('Video')).toHaveFocus()
     expect(screen.getByRole('status')).toHaveTextContent('Bitte die markierten Beträge prüfen.')
   })
 
-  it('refuses letters, negative amounts and more than two decimals', async () => {
+  it('names the rule an amount breaks', async () => {
     const user = userEvent.setup()
     render(<Betraege />)
     await screen.findByText('Preise (EUR)')
 
-    for (const bad of ['abc', '-5', '12,505']) {
-      await user.clear(field('Tandemmaster Zuschlag ab 90 kg'))
-      await user.type(field('Tandemmaster Zuschlag ab 90 kg'), bad)
+    const cases: [string, string][] = [
+      ['abc', 'Nur Ziffern, z. B. 280 oder 12,50.'],
+      ['-5', 'Kein Minus – Beträge ab 0.'],
+      ['12,505', 'Höchstens zwei Nachkommastellen.'],
+      ['1.000', 'Höchstens zwei Nachkommastellen.'],
+      ['12 €', 'Nur Ziffern, z. B. 280 oder 12,50.'],
+    ]
+    const bonus = field('Tandemmaster Zuschlag ab 90 kg')
+    for (const [bad, message] of cases) {
+      await user.clear(bonus)
+      await user.type(bonus, bad)
       await user.click(save())
-      expect(field('Tandemmaster Zuschlag ab 90 kg')).toHaveAttribute('aria-invalid', 'true')
+      expect(bonus).toHaveAttribute('aria-invalid', 'true')
+      expect(bonus).toHaveAccessibleDescription(expect.stringContaining(message))
     }
     expect(api.putSettings).not.toHaveBeenCalled()
   })

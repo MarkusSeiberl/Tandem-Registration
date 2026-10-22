@@ -201,6 +201,81 @@ describe('Crew', () => {
     expect(api.addFlyer).not.toHaveBeenCalled()
   })
 
+  it('says why a malformed email blocks adding, right under the field', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await screen.findByText('Peter')
+
+    const email = screen.getByPlaceholderText('E-Mail (optional)')
+    expect(screen.queryByText('Keine gültige E-Mail-Adresse.')).not.toBeInTheDocument()
+    await user.type(email, 'test@foo')
+
+    expect(email).toHaveAccessibleDescription('Keine gültige E-Mail-Adresse.')
+    await user.clear(email)
+    expect(screen.queryByText('Keine gültige E-Mail-Adresse.')).not.toBeInTheDocument()
+  })
+
+  it('says why a malformed email blocks saving an edit', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await user.click(await screen.findByRole('button', { name: 'Peter bearbeiten' }))
+
+    const email = screen.getByRole('textbox', { name: 'E-Mail' })
+    await user.clear(email)
+    await user.type(email, 'kaputt')
+
+    expect(email).toHaveAccessibleDescription('Keine gültige E-Mail-Adresse.')
+  })
+
+  it('refuses a name that is already in the list, whatever its case and spacing', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await screen.findByText('Hans')
+
+    const name = screen.getAllByPlaceholderText('Vorname Nachname')[0]
+    await user.type(name, '  HANS {Enter}')
+
+    expect(api.addMaster).not.toHaveBeenCalled()
+    expect(name).toHaveAccessibleDescription('„Hans“ ist schon in der Liste.')
+    expect(screen.getAllByRole('button', { name: 'Hinzufügen' })[0]).toBeDisabled()
+  })
+
+  it('refuses renaming someone to a name another entry already has', async () => {
+    vi.mocked(api.masters).mockResolvedValue([{ id: 1, name: 'Hans' }, { id: 2, name: 'Eva' }])
+    const user = userEvent.setup()
+    render(<Crew />)
+    await user.click(await screen.findByRole('button', { name: 'Eva bearbeiten' }))
+
+    const name = screen.getByRole('textbox', { name: 'Name' })
+    await user.clear(name)
+    await user.type(name, 'HANS{Enter}')
+
+    expect(api.updateMaster).not.toHaveBeenCalled()
+    expect(name).toHaveAccessibleDescription(expect.stringContaining('„Hans“ ist schon in der Liste.'))
+    expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled()
+  })
+
+  it('lets an entry keep its own name when only the case changes', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await user.click(await screen.findByRole('button', { name: 'Hans bearbeiten' }))
+
+    const name = screen.getByRole('textbox', { name: 'Name' })
+    await user.clear(name)
+    await user.type(name, 'HANS{Enter}')
+
+    expect(api.updateMaster).toHaveBeenCalledWith(1, 'HANS', '')
+  })
+
+  it('tells the editor a new name also applies to past jump days', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await user.click(await screen.findByRole('button', { name: 'Hans bearbeiten' }))
+
+    expect(screen.getByRole('textbox', { name: 'Name' }))
+      .toHaveAccessibleDescription('Der neue Name gilt auch für frühere Sprungtage.')
+  })
+
   it('disables saving and ignores Enter while the edited email is malformed', async () => {
     const user = userEvent.setup()
     render(<Crew />)

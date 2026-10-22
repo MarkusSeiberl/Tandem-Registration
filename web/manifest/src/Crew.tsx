@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import {
   addFlyer,
@@ -44,6 +44,15 @@ function isEmailValid(value: string): boolean {
   return trimmed === '' || EMAIL_PATTERN.test(trimmed)
 }
 
+const EMAIL_MESSAGE = 'Keine gültige E-Mail-Adresse.'
+
+// Two entries with the same name cannot be told apart in the manifest's picker,
+// and the payouts are split between them. Case and spacing do not make a
+// different person.
+function nameKey(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('de')
+}
+
 function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps) {
   const [items, setItems] = useState<StammdatenItem[]>([])
   const [name, setName] = useState('')
@@ -54,6 +63,20 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
 
   const addEmailInvalid = withEmail && !isEmailValid(email)
   const draftEmailInvalid = withEmail && draft !== null && !isEmailValid(draft.email)
+
+  // The entry already carrying this name, if any. The row being edited does not
+  // count against itself, so correcting only the case of a name still saves.
+  const duplicateOf = (value: string, exceptId?: number) =>
+    nameKey(value) === '' ? undefined : items.find((i) => i.id !== exceptId && nameKey(i.name) === nameKey(value))
+  const addDuplicate = duplicateOf(name)
+  const draftDuplicate = draft ? duplicateOf(draft.name, draft.id) : undefined
+
+  const ids = useId()
+  const addNameMessageId = `${ids}-add-name`
+  const addEmailMessageId = `${ids}-add-email`
+  const draftNameMessageId = `${ids}-edit-name`
+  const draftEmailMessageId = `${ids}-edit-email`
+  const renameNoteId = `${ids}-rename`
 
   const refresh = useCallback(() => {
     load().then(setItems).catch((err: unknown) => setError(err instanceof Error ? err.message : 'Fehler'))
@@ -66,7 +89,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
   async function handleAdd() {
     const trimmed = name.trim()
     // busy too: Enter can be pressed again while the first add is in flight.
-    if (busy || !trimmed || addEmailInvalid) return
+    if (busy || !trimmed || addEmailInvalid || addDuplicate) return
     const trimmedEmail = email.trim()
     setBusy(true)
     setError(null)
@@ -88,7 +111,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
   }
 
   async function handleSave() {
-    if (busy || !draft || !draft.name.trim() || draftEmailInvalid) return
+    if (busy || !draft || !draft.name.trim() || draftEmailInvalid || draftDuplicate) return
     setBusy(true)
     setError(null)
     try {
@@ -137,6 +160,8 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
           type="text"
           value={name}
           placeholder="Vorname Nachname"
+          aria-invalid={addDuplicate !== undefined}
+          aria-describedby={addDuplicate ? addNameMessageId : undefined}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={handleAddKey}
         />
@@ -146,14 +171,29 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
             value={email}
             placeholder="E-Mail (optional)"
             aria-invalid={addEmailInvalid}
+            aria-describedby={addEmailInvalid ? addEmailMessageId : undefined}
             onChange={(e) => setEmail(e.target.value)}
             onKeyDown={handleAddKey}
           />
         )}
-        <button type="button" className="btn primary" onClick={handleAdd} disabled={busy || !name.trim() || addEmailInvalid}>
+        <button type="button" className="btn primary" onClick={handleAdd} disabled={busy || !name.trim() || addEmailInvalid || addDuplicate !== undefined}>
           Hinzufügen
         </button>
       </div>
+      {(addDuplicate || addEmailInvalid) && (
+        <div className="crew-add-messages">
+          {addDuplicate && (
+            <p className="field-error" id={addNameMessageId} role="alert">
+              „{addDuplicate.name}“ ist schon in der Liste.
+            </p>
+          )}
+          {addEmailInvalid && (
+            <p className="field-error" id={addEmailMessageId} role="alert">
+              {EMAIL_MESSAGE}
+            </p>
+          )}
+        </div>
+      )}
       <ul>
         {items.map((item) =>
           draft?.id === item.id ? (
@@ -163,6 +203,8 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
                   type="text"
                   aria-label="Name"
                   value={draft.name}
+                  aria-invalid={draftDuplicate !== undefined}
+                  aria-describedby={draftDuplicate ? `${draftNameMessageId} ${renameNoteId}` : renameNoteId}
                   autoFocus
                   onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                   onKeyDown={handleDraftKey}
@@ -173,11 +215,28 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
                     aria-label="E-Mail"
                     placeholder="keine E-Mail"
                     aria-invalid={draftEmailInvalid}
+                    aria-describedby={draftEmailInvalid ? draftEmailMessageId : undefined}
                     value={draft.email}
                     onChange={(e) => setDraft({ ...draft, email: e.target.value })}
                     onKeyDown={handleDraftKey}
                   />
                 )}
+                {draftDuplicate && (
+                  <p className="field-error" id={draftNameMessageId} role="alert">
+                    „{draftDuplicate.name}“ ist schon in der Liste.
+                  </p>
+                )}
+                {draftEmailInvalid && (
+                  <p className="field-error" id={draftEmailMessageId} role="alert">
+                    {EMAIL_MESSAGE}
+                  </p>
+                )}
+                {/* Payouts and exports look names up when they are built, so a
+                    rename reaches back into earlier days: it is for typos, not
+                    for handing an entry to somebody else. */}
+                <p className="crew-rename-note" id={renameNoteId}>
+                  Der neue Name gilt auch für frühere Sprungtage.
+                </p>
               </div>
               {/* Same slots as pencil and bin, so the row barely moves when editing. */}
               <div className="crew-actions">
@@ -195,7 +254,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
                   type="button"
                   className="btn primary btn-icon"
                   onClick={handleSave}
-                  disabled={busy || !draft.name.trim() || draftEmailInvalid}
+                  disabled={busy || !draft.name.trim() || draftEmailInvalid || draftDuplicate !== undefined}
                   aria-label="Speichern"
                   title="Speichern"
                 >

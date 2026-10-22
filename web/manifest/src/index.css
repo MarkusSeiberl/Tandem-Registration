@@ -7,10 +7,22 @@
   --bg: #f3f5f8;
   --panel-bg: #ffffff;
   --border: #dde2e8;
-  --accent: #1e9e5b;
+  /* Edges of things you type into or press. --border recedes on purpose; a
+     control outline has to hold 3:1 against the panel, outdoors included. */
+  --control-border: #848e9c;
+  /* Dark enough for white button text and for green text on every light
+     surface (>= 4.5:1, hover tint included): the manifest is read in sunlight. */
+  --accent: #137a45;
   --accent-contrast: #ffffff;
   --error: #b3261e;
-  --row-hover: rgba(30, 158, 91, 0.08);
+  /* Red as text or outline. The same red in light; in dark, --error stays the
+     fill behind white text, and only a lighter red reads on the dark panel. */
+  --error-text: #b3261e;
+  /* A disabled button turns neutral instead of fading its own colour, so in
+     bright light "not yet" never reads as a weaker "go". */
+  --disabled-bg: #dde2e8;
+  --disabled-text: #5f6773;
+  --row-hover: rgba(19, 122, 69, 0.08);
   --row-warn: rgba(255, 106, 61, 0.14);
   --row-warn-hover: rgba(255, 106, 61, 0.24);
   /* Ember darkened for small text on a light panel; plain ember is too faint. */
@@ -37,6 +49,7 @@
     --bg: #12161d;
     --panel-bg: #1b212c;
     --border: #2b323d;
+    --control-border: #687384;
     --accent: #34c77b;
     --accent-contrast: #06150d;
     --row-hover: rgba(52, 199, 123, 0.1);
@@ -44,6 +57,9 @@
     --row-warn-hover: rgba(255, 106, 61, 0.28);
     --warn-text: #ff8a63;
     --rule: #5d6878;
+    --error-text: #f2766b;
+    --disabled-bg: #2b323d;
+    --disabled-text: #9aa3b2;
   }
 }
 
@@ -179,7 +195,13 @@ h2 {
   color: var(--accent-contrast);
 }
 
-.btn.primary:disabled,
+.btn.primary:disabled {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bg);
+  color: var(--disabled-text);
+  cursor: not-allowed;
+}
+
 .btn.secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -188,7 +210,7 @@ h2 {
 .btn.secondary {
   background: transparent;
   color: var(--text);
-  border-color: var(--border);
+  border-color: var(--control-border);
 }
 
 .actions {
@@ -207,7 +229,7 @@ h2 {
 }
 
 .error {
-  color: var(--error);
+  color: var(--error-text);
 }
 
 /* Numeric/tabular data (ages, weights, load numbers, prices) reads like a
@@ -238,7 +260,7 @@ h2 {
 .manager-field input {
   font: inherit;
   padding: 8px 10px;
-  border: 2px solid var(--border);
+  border: 2px solid var(--control-border);
   border-radius: 8px;
   background: var(--panel-bg);
   color: var(--text);
@@ -262,8 +284,8 @@ h2 {
    available, not as the obvious next step beside Speichern. */
 .btn.danger {
   background: transparent;
-  color: var(--error);
-  border-color: var(--error);
+  color: var(--error-text);
+  border-color: var(--error-text);
   gap: 8px;
 }
 
@@ -782,7 +804,7 @@ col.col-action { width: 140px; }
 .text-body textarea {
   font: inherit;
   padding: 8px 10px;
-  border: 2px solid var(--border);
+  border: 2px solid var(--control-border);
   border-radius: 8px;
   background: var(--panel-bg);
   color: var(--text);
@@ -1047,7 +1069,7 @@ col.col-action { width: 140px; }
   font: inherit;
   height: 40px;
   padding: 8px 10px;
-  border: 2px solid var(--border);
+  border: 2px solid var(--control-border);
   border-radius: 8px;
   background: var(--panel-bg);
   color: var(--text);
@@ -1127,6 +1149,39 @@ col.col-action { width: 140px; }
   min-width: 140px;
 }
 
+/* Sits in the add row's bottom margin, so the list only moves down while there
+   is something to say. */
+.crew-list .crew-add-messages {
+  margin: -6px 0 12px;
+}
+
+.crew-list .add-row input[aria-invalid='true'],
+.crew-edit-fields input[aria-invalid='true'] {
+  border-color: var(--error-text);
+}
+
+/* The field is usually still focused when it turns invalid; the browser's own
+   ring would cover the red edge and hide the very state being reported. */
+.crew-list .add-row input[aria-invalid='true']:focus,
+.crew-edit-fields input[aria-invalid='true']:focus {
+  outline: 2px solid var(--error-text);
+  outline-offset: 1px;
+}
+
+.field-error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--error-text);
+}
+
+.crew-rename-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  opacity: 0.7;
+}
+
 .crew-entry {
   display: flex;
   flex-direction: column;
@@ -1163,7 +1218,7 @@ col.col-action { width: 140px; }
 .crew-edit-fields input {
   font: inherit;
   padding: 8px 10px;
-  border: 2px solid var(--border);
+  border: 2px solid var(--control-border);
   border-radius: 8px;
   background: var(--panel-bg);
   color: var(--text);
@@ -1238,7 +1293,7 @@ col.col-action { width: 140px; }
   flex: 1;
   font: inherit;
   padding: 8px 10px;
-  border: 2px solid var(--border);
+  border: 2px solid var(--control-border);
   border-radius: 8px;
   background: var(--panel-bg);
   color: var(--text);
@@ -1639,7 +1694,7 @@ col.col-action { width: 140px; }
 }
 
 .calendar-day.jumped:hover {
-  background: rgba(30, 158, 91, 0.16);
+  background: rgba(19, 122, 69, 0.16);
 }
 
 .calendar-day.today {

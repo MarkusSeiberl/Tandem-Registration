@@ -57,7 +57,7 @@ describe('Crew', () => {
     render(<Crew />)
     await screen.findByText('Hans')
 
-    const emailInputs = screen.getAllByPlaceholderText('E-Mail (optional)')
+    const emailInputs = screen.getAllByLabelText('E-Mail (optional)')
     expect(emailInputs).toHaveLength(1)
     const flyerHeading = screen.getByRole('heading', { name: 'Kameraflieger' })
     expect(flyerHeading.compareDocumentPosition(emailInputs[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -75,7 +75,7 @@ describe('Crew', () => {
     await screen.findByText('Peter')
 
     await user.type(screen.getAllByPlaceholderText('Vorname Nachname')[1], 'Max Muster')
-    await user.type(screen.getByPlaceholderText('E-Mail (optional)'), 'max@example.at')
+    await user.type(screen.getByLabelText('E-Mail (optional)'), 'max@example.at')
     await user.click(screen.getAllByRole('button', { name: 'Hinzufügen' })[1])
 
     expect(api.addFlyer).toHaveBeenCalledWith('Max Muster', 'max@example.at')
@@ -111,7 +111,7 @@ describe('Crew', () => {
     await screen.findByText('Peter')
 
     await user.type(screen.getAllByPlaceholderText('Vorname Nachname')[1], 'Max Muster')
-    await user.type(screen.getByPlaceholderText('E-Mail (optional)'), 'max@example.at{Enter}')
+    await user.type(screen.getByLabelText('E-Mail (optional)'), 'max@example.at{Enter}')
 
     expect(api.addFlyer).toHaveBeenCalledWith('Max Muster', 'max@example.at')
   })
@@ -124,7 +124,7 @@ describe('Crew', () => {
     const name = screen.getAllByPlaceholderText('Vorname Nachname')[1]
     await user.type(name, '{Enter}')
     await user.type(name, 'Max Muster')
-    await user.type(screen.getByPlaceholderText('E-Mail (optional)'), 'max@{Enter}')
+    await user.type(screen.getByLabelText('E-Mail (optional)'), 'max@{Enter}')
 
     expect(api.addFlyer).not.toHaveBeenCalled()
   })
@@ -134,9 +134,9 @@ describe('Crew', () => {
     render(<Crew />)
     await user.click(await screen.findByRole('button', { name: 'Peter bearbeiten' }))
 
-    const name = screen.getByRole('textbox', { name: 'Name' })
+    const name = screen.getByRole('textbox', { name: 'Name ändern' })
     expect(name).toHaveValue('Peter')
-    expect(screen.getByRole('textbox', { name: 'E-Mail' })).toHaveValue('peter@example.at')
+    expect(screen.getByRole('textbox', { name: 'E-Mail ändern' })).toHaveValue('peter@example.at')
     await user.clear(name)
     await user.type(name, 'Peter Huber')
     await user.click(screen.getByRole('button', { name: 'Speichern' }))
@@ -167,7 +167,7 @@ describe('Crew', () => {
     render(<Crew />)
     await user.click(await screen.findByRole('button', { name: 'Peter bearbeiten' }))
 
-    await user.type(screen.getByRole('textbox', { name: 'Name' }), ' Huber')
+    await user.type(screen.getByRole('textbox', { name: 'Name ändern' }), ' Huber')
     await user.click(screen.getByRole('button', { name: 'Abbrechen' }))
 
     expect(api.updateFlyer).not.toHaveBeenCalled()
@@ -179,39 +179,55 @@ describe('Crew', () => {
     render(<Crew />)
     await user.click(await screen.findByRole('button', { name: 'Hans bearbeiten' }))
 
-    expect(screen.queryByRole('textbox', { name: 'E-Mail' })).not.toBeInTheDocument()
-    const name = screen.getByRole('textbox', { name: 'Name' })
+    expect(screen.queryByRole('textbox', { name: 'E-Mail ändern' })).not.toBeInTheDocument()
+    const name = screen.getByRole('textbox', { name: 'Name ändern' })
     await user.clear(name)
     await user.type(name, 'Hans Maier{Enter}')
 
     expect(api.updateMaster).toHaveBeenCalledWith(1, 'Hans Maier', '')
   })
 
-  it('disables adding a flyer while the email is malformed', async () => {
+  it('explains a malformed email when Hinzufügen is clicked instead of ignoring the click', async () => {
     const user = userEvent.setup()
     render(<Crew />)
     await screen.findByText('Peter')
 
     await user.type(screen.getAllByPlaceholderText('Vorname Nachname')[1], 'Max Muster')
-    await user.type(screen.getByPlaceholderText('E-Mail (optional)'), 'peter.example.at')
+    const email = screen.getByLabelText('E-Mail (optional)')
+    await user.type(email, 'peter.example.at')
 
     const addButton = screen.getAllByRole('button', { name: 'Hinzufügen' })[1]
-    expect(addButton).toBeDisabled()
+    expect(addButton).toBeEnabled()
     await user.click(addButton)
     expect(api.addFlyer).not.toHaveBeenCalled()
+    expect(email).toHaveAccessibleDescription('Keine gültige E-Mail-Adresse.')
+    expect(email).toHaveFocus()
   })
 
-  it('says why a malformed email blocks adding, right under the field', async () => {
+  it('does not call an email malformed while it is still being typed', async () => {
     const user = userEvent.setup()
     render(<Crew />)
     await screen.findByText('Peter')
 
-    const email = screen.getByPlaceholderText('E-Mail (optional)')
+    const email = screen.getByLabelText('E-Mail (optional)')
+    await user.type(email, 'max@')
+
     expect(screen.queryByText('Keine gültige E-Mail-Adresse.')).not.toBeInTheDocument()
+    expect(email).toHaveAttribute('aria-invalid', 'false')
+  })
+
+  it('checks the email on leaving the field and clears the message once it is fixed', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await screen.findByText('Peter')
+
+    const email = screen.getByLabelText('E-Mail (optional)')
     await user.type(email, 'test@foo')
+    await user.tab()
 
     expect(email).toHaveAccessibleDescription('Keine gültige E-Mail-Adresse.')
-    await user.clear(email)
+    expect(email).toHaveAttribute('aria-invalid', 'true')
+    await user.type(email, '.at')
     expect(screen.queryByText('Keine gültige E-Mail-Adresse.')).not.toBeInTheDocument()
   })
 
@@ -220,10 +236,13 @@ describe('Crew', () => {
     render(<Crew />)
     await user.click(await screen.findByRole('button', { name: 'Peter bearbeiten' }))
 
-    const email = screen.getByRole('textbox', { name: 'E-Mail' })
+    const email = screen.getByRole('textbox', { name: 'E-Mail ändern' })
     await user.clear(email)
     await user.type(email, 'kaputt')
+    expect(screen.queryByText('Keine gültige E-Mail-Adresse.')).not.toBeInTheDocument()
 
+    await user.click(screen.getByRole('button', { name: 'Speichern' }))
+    expect(api.updateFlyer).not.toHaveBeenCalled()
     expect(email).toHaveAccessibleDescription('Keine gültige E-Mail-Adresse.')
   })
 
@@ -246,7 +265,7 @@ describe('Crew', () => {
     render(<Crew />)
     await user.click(await screen.findByRole('button', { name: 'Eva bearbeiten' }))
 
-    const name = screen.getByRole('textbox', { name: 'Name' })
+    const name = screen.getByRole('textbox', { name: 'Name ändern' })
     await user.clear(name)
     await user.type(name, 'HANS{Enter}')
 
@@ -260,7 +279,7 @@ describe('Crew', () => {
     render(<Crew />)
     await user.click(await screen.findByRole('button', { name: 'Hans bearbeiten' }))
 
-    const name = screen.getByRole('textbox', { name: 'Name' })
+    const name = screen.getByRole('textbox', { name: 'Name ändern' })
     await user.clear(name)
     await user.type(name, 'HANS{Enter}')
 
@@ -272,23 +291,71 @@ describe('Crew', () => {
     render(<Crew />)
     await user.click(await screen.findByRole('button', { name: 'Hans bearbeiten' }))
 
-    expect(screen.getByRole('textbox', { name: 'Name' }))
+    expect(screen.getByRole('textbox', { name: 'Name ändern' }))
       .toHaveAccessibleDescription('Der neue Name gilt auch für frühere Sprungtage.')
   })
 
-  it('disables saving and ignores Enter while the edited email is malformed', async () => {
+  it('does not save on Enter while the edited email is malformed, and says why', async () => {
     const user = userEvent.setup()
     render(<Crew />)
     await user.click(await screen.findByRole('button', { name: 'Peter bearbeiten' }))
 
-    const email = screen.getByRole('textbox', { name: 'E-Mail' })
+    const email = screen.getByRole('textbox', { name: 'E-Mail ändern' })
     await user.clear(email)
-    await user.type(email, 'kaputt')
+    await user.type(email, 'kaputt{Enter}')
 
-    expect(email).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled()
-    await user.type(email, '{Enter}')
     expect(api.updateFlyer).not.toHaveBeenCalled()
+    expect(email).toHaveAttribute('aria-invalid', 'true')
+    expect(email).toHaveAccessibleDescription('Keine gültige E-Mail-Adresse.')
+  })
+
+  it('labels the add fields visibly and names each list after its heading', async () => {
+    render(<Crew />)
+    await screen.findByText('Hans')
+
+    const masters = screen.getByRole('region', { name: 'Tandemmaster' })
+    expect(within(masters).getByLabelText('Name')).toHaveAttribute('placeholder', 'Vorname Nachname')
+    const flyers = screen.getByRole('region', { name: 'Kameraflieger' })
+    expect(within(flyers).getByLabelText('Name')).toBeInTheDocument()
+    expect(within(flyers).getByLabelText('E-Mail (optional)')).toBeInTheDocument()
+  })
+
+  it('returns focus to the row after saving an edit', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await user.click(await screen.findByRole('button', { name: 'Hans bearbeiten' }))
+
+    await user.type(screen.getByRole('textbox', { name: 'Name ändern' }), ' Maier{Enter}')
+
+    expect(api.updateMaster).toHaveBeenCalled()
+    expect(await screen.findByRole('button', { name: 'Hans bearbeiten' })).toHaveFocus()
+  })
+
+  it('returns focus to the row after cancelling with Escape', async () => {
+    const user = userEvent.setup()
+    render(<Crew />)
+    await user.click(await screen.findByRole('button', { name: 'Peter bearbeiten' }))
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.getByRole('button', { name: 'Peter bearbeiten' })).toHaveFocus()
+  })
+
+  it('moves focus to the next row after deleting, and to the add field when the list is empty', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.mocked(api.masters).mockResolvedValue([{ id: 1, name: 'Hans' }, { id: 2, name: 'Eva' }])
+    vi.mocked(api.deleteMaster).mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<Crew />)
+
+    vi.mocked(api.masters).mockResolvedValue([{ id: 2, name: 'Eva' }])
+    await user.click(await screen.findByRole('button', { name: 'Hans entfernen' }))
+    expect(screen.getByRole('button', { name: 'Eva bearbeiten' })).toHaveFocus()
+
+    vi.mocked(api.masters).mockResolvedValue([])
+    await user.click(screen.getByRole('button', { name: 'Eva entfernen' }))
+    const masters = screen.getByRole('region', { name: 'Tandemmaster' })
+    expect(within(masters).getByLabelText('Name')).toHaveFocus()
   })
 
   it('disables saving when the name is cleared', async () => {
@@ -296,7 +363,7 @@ describe('Crew', () => {
     render(<Crew />)
     await user.click(await screen.findByRole('button', { name: 'Peter bearbeiten' }))
 
-    await user.clear(screen.getByRole('textbox', { name: 'Name' }))
+    await user.clear(screen.getByRole('textbox', { name: 'Name ändern' }))
 
     expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled()
   })
@@ -306,7 +373,7 @@ describe('Crew', () => {
     render(<Crew />)
     await user.click(await screen.findByRole('button', { name: 'Peter bearbeiten' }))
 
-    await user.type(screen.getByRole('textbox', { name: 'Name' }), '{Escape}')
+    await user.type(screen.getByRole('textbox', { name: 'Name ändern' }), '{Escape}')
 
     expect(api.updateFlyer).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: 'Speichern' })).not.toBeInTheDocument()

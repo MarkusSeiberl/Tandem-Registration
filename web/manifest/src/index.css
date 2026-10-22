@@ -1145,8 +1145,26 @@ col.col-action { width: 140px; }
   flex-wrap: wrap;
 }
 
-.crew-list .add-row input {
+/* Labels sit above their fields; the button lines up with the fields, not the labels. */
+.crew-list .add-row {
+  align-items: flex-end;
+}
+
+/* The label pattern of .field on Detail and Settings, laid out in a row. */
+.crew-field {
+  flex: 1;
   min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crew-field > span {
+  font-size: 14px;
+}
+
+.crew-field input {
+  flex: none;
 }
 
 /* Sits in the add row's bottom margin, so the list only moves down while there

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import {
   addFlyer,
@@ -60,9 +60,24 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
   const [draft, setDraft] = useState<Draft | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // An email is only called malformed once its field was left or an add/save
+  // was attempted: "max@" is not wrong yet, it is unfinished. Once the message
+  // is showing it follows every keystroke, so it goes as soon as the address
+  // is right.
+  const [addEmailChecked, setAddEmailChecked] = useState(false)
+  const [draftEmailChecked, setDraftEmailChecked] = useState(false)
+  // Where the keyboard goes once the row it was on closes or disappears: a
+  // row's pencil (by entry id) or the name field of the add row.
+  const [focusTarget, setFocusTarget] = useState<number | 'add' | null>(null)
+  const pencils = useRef(new Map<number, HTMLButtonElement>())
+  const addNameInput = useRef<HTMLInputElement>(null)
+  const addEmailInput = useRef<HTMLInputElement>(null)
+  const draftEmailInput = useRef<HTMLInputElement>(null)
 
   const addEmailInvalid = withEmail && !isEmailValid(email)
   const draftEmailInvalid = withEmail && draft !== null && !isEmailValid(draft.email)
+  const showAddEmailError = addEmailChecked && addEmailInvalid
+  const showDraftEmailError = draftEmailChecked && draftEmailInvalid
 
   // The entry already carrying this name, if any. The row being edited does not
   // count against itself, so correcting only the case of a name still saves.
@@ -72,6 +87,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
   const draftDuplicate = draft ? duplicateOf(draft.name, draft.id) : undefined
 
   const ids = useId()
+  const headingId = `${ids}-heading`
   const addNameMessageId = `${ids}-add-name`
   const addEmailMessageId = `${ids}-add-email`
   const draftNameMessageId = `${ids}-edit-name`
@@ -86,10 +102,24 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
     refresh()
   }, [refresh])
 
+  // Runs after the commit that re-enabled the buttons (they are disabled while
+  // busy, and a disabled button cannot take focus).
+  useEffect(() => {
+    if (focusTarget === null || busy) return
+    const target = focusTarget === 'add' ? addNameInput.current : pencils.current.get(focusTarget)
+    target?.focus()
+    setFocusTarget(null)
+  }, [focusTarget, busy, items, draft])
+
   async function handleAdd() {
     const trimmed = name.trim()
     // busy too: Enter can be pressed again while the first add is in flight.
-    if (busy || !trimmed || addEmailInvalid || addDuplicate) return
+    if (busy || !trimmed || addDuplicate) return
+    if (addEmailInvalid) {
+      setAddEmailChecked(true)
+      addEmailInput.current?.focus()
+      return
+    }
     const trimmedEmail = email.trim()
     setBusy(true)
     setError(null)
@@ -97,6 +127,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
       await add(trimmed, withEmail && trimmedEmail ? trimmedEmail : undefined)
       setName('')
       setEmail('')
+      setAddEmailChecked(false)
       refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Anlegen fehlgeschlagen')
@@ -107,16 +138,27 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
 
   function startEdit(item: StammdatenItem) {
     setError(null)
+    setDraftEmailChecked(false)
     setDraft({ id: item.id, name: item.name, email: item.email ?? '' })
   }
 
+  function closeEdit() {
+    if (draft) setFocusTarget(draft.id)
+    setDraft(null)
+  }
+
   async function handleSave() {
-    if (busy || !draft || !draft.name.trim() || draftEmailInvalid || draftDuplicate) return
+    if (busy || !draft || !draft.name.trim() || draftDuplicate) return
+    if (draftEmailInvalid) {
+      setDraftEmailChecked(true)
+      draftEmailInput.current?.focus()
+      return
+    }
     setBusy(true)
     setError(null)
     try {
       await update(draft.id, draft.name.trim(), draft.email.trim())
-      setDraft(null)
+      closeEdit()
       refresh()
     } catch (err) {
       // The row stays open so the entry can be corrected and saved again.
@@ -133,15 +175,20 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
   function handleDraftKey(e: KeyboardEvent<HTMLInputElement>) {
     if (busy) return
     if (e.key === 'Enter') handleSave()
-    else if (e.key === 'Escape') setDraft(null)
+    else if (e.key === 'Escape') closeEdit()
   }
 
   async function handleRemove(item: StammdatenItem) {
     if (!window.confirm(`"${item.name}" entfernen?`)) return
+    // The row below takes the removed one's place; at the end of the list the
+    // one above, and with nothing left the add field.
+    const index = items.findIndex((i) => i.id === item.id)
+    const next = items[index + 1] ?? items[index - 1]
     setBusy(true)
     setError(null)
     try {
       await remove(item.id)
+      setFocusTarget(next ? next.id : 'add')
       refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Löschen fehlgeschlagen')
@@ -151,43 +198,56 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
   }
 
   return (
-    <section className="crew-list">
-      <h2>{title}</h2>
+    // A region named after its heading: both lists have a "Name" field and a
+    // "Hinzufügen" button, and a screen reader has to tell which list it is in.
+    <section className="crew-list" aria-labelledby={headingId}>
+      <h2 id={headingId}>{title}</h2>
       {error && <p className="error">{error}</p>}
       {/* Above the list: it stays in the same place however long the list grows. */}
       <div className="add-row">
-        <input
-          type="text"
-          value={name}
-          placeholder="Vorname Nachname"
-          aria-invalid={addDuplicate !== undefined}
-          aria-describedby={addDuplicate ? addNameMessageId : undefined}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={handleAddKey}
-        />
-        {withEmail && (
+        <label className="crew-field">
+          <span>Name</span>
           <input
-            type="email"
-            value={email}
-            placeholder="E-Mail (optional)"
-            aria-invalid={addEmailInvalid}
-            aria-describedby={addEmailInvalid ? addEmailMessageId : undefined}
-            onChange={(e) => setEmail(e.target.value)}
+            ref={addNameInput}
+            type="text"
+            value={name}
+            placeholder="Vorname Nachname"
+            aria-invalid={addDuplicate !== undefined}
+            aria-describedby={addDuplicate ? addNameMessageId : undefined}
+            onChange={(e) => setName(e.target.value)}
             onKeyDown={handleAddKey}
           />
+        </label>
+        {withEmail && (
+          <label className="crew-field">
+            <span>E-Mail (optional)</span>
+            <input
+              ref={addEmailInput}
+              type="email"
+              value={email}
+              placeholder="name@beispiel.at"
+              aria-invalid={showAddEmailError}
+              aria-describedby={showAddEmailError ? addEmailMessageId : undefined}
+              onChange={(e) => setEmail(e.target.value)}
+              onBlur={() => setAddEmailChecked(email.trim() !== '')}
+              onKeyDown={handleAddKey}
+            />
+          </label>
         )}
-        <button type="button" className="btn primary" onClick={handleAdd} disabled={busy || !name.trim() || addEmailInvalid || addDuplicate !== undefined}>
+        {/* Not disabled by a malformed email: clicking is how the operator
+            finds out what is wrong with it. */}
+        <button type="button" className="btn primary" onClick={handleAdd} disabled={busy || !name.trim() || addDuplicate !== undefined}>
           Hinzufügen
         </button>
       </div>
-      {(addDuplicate || addEmailInvalid) && (
+      {(addDuplicate || showAddEmailError) && (
         <div className="crew-add-messages">
           {addDuplicate && (
             <p className="field-error" id={addNameMessageId} role="alert">
               „{addDuplicate.name}“ ist schon in der Liste.
             </p>
           )}
-          {addEmailInvalid && (
+          {showAddEmailError && (
             <p className="field-error" id={addEmailMessageId} role="alert">
               {EMAIL_MESSAGE}
             </p>
@@ -201,7 +261,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
               <div className="crew-edit-fields">
                 <input
                   type="text"
-                  aria-label="Name"
+                  aria-label="Name ändern"
                   value={draft.name}
                   aria-invalid={draftDuplicate !== undefined}
                   aria-describedby={draftDuplicate ? `${draftNameMessageId} ${renameNoteId}` : renameNoteId}
@@ -211,13 +271,15 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
                 />
                 {withEmail && (
                   <input
+                    ref={draftEmailInput}
                     type="email"
-                    aria-label="E-Mail"
+                    aria-label="E-Mail ändern"
                     placeholder="keine E-Mail"
-                    aria-invalid={draftEmailInvalid}
-                    aria-describedby={draftEmailInvalid ? draftEmailMessageId : undefined}
+                    aria-invalid={showDraftEmailError}
+                    aria-describedby={showDraftEmailError ? draftEmailMessageId : undefined}
                     value={draft.email}
                     onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+                    onBlur={() => setDraftEmailChecked(draft.email.trim() !== '')}
                     onKeyDown={handleDraftKey}
                   />
                 )}
@@ -226,7 +288,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
                     „{draftDuplicate.name}“ ist schon in der Liste.
                   </p>
                 )}
-                {draftEmailInvalid && (
+                {showDraftEmailError && (
                   <p className="field-error" id={draftEmailMessageId} role="alert">
                     {EMAIL_MESSAGE}
                   </p>
@@ -243,7 +305,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
                 <button
                   type="button"
                   className="btn secondary btn-icon"
-                  onClick={() => setDraft(null)}
+                  onClick={closeEdit}
                   disabled={busy}
                   aria-label="Abbrechen"
                   title="Abbrechen"
@@ -254,7 +316,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
                   type="button"
                   className="btn primary btn-icon"
                   onClick={handleSave}
-                  disabled={busy || !draft.name.trim() || draftEmailInvalid || draftDuplicate !== undefined}
+                  disabled={busy || !draft.name.trim() || draftDuplicate !== undefined}
                   aria-label="Speichern"
                   title="Speichern"
                 >
@@ -270,6 +332,10 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
               </div>
               <div className="crew-actions">
                 <button
+                  ref={(el) => {
+                    if (el) pencils.current.set(item.id, el)
+                    else pencils.current.delete(item.id)
+                  }}
                   type="button"
                   className="btn secondary btn-icon"
                   onClick={() => startEdit(item)}

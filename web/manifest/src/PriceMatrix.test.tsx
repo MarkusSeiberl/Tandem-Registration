@@ -7,6 +7,10 @@ const PRICES: Prices = {
   jump: 270, video: 100, video_photo: 120, weight_over_90: 40, weight_over_100: 60,
 }
 
+// The surcharge headings read "ab 90 kg" on screen; a screen reader also hears
+// the "Zuschlag" the first column states once (a visually hidden prefix).
+const HEADER = ['', 'ohne Zuschlag', 'Zuschlag ab 90 kg', 'Zuschlag ab 100 kg']
+
 // Every row as the text of its cells, header row first.
 const cells = () =>
   screen.getAllByRole('row').map((row) => Array.from(row.children).map((c) => c.textContent))
@@ -17,7 +21,7 @@ describe('PriceMatrix', () => {
 
     expect(screen.getByRole('heading', { name: 'Endpreise' })).toBeInTheDocument()
     expect(cells()).toEqual([
-      ['', 'ohne Zuschlag', 'ab 90 kg', 'ab 100 kg'],
+      HEADER,
       ['Tandem', '270 €', '310 €', '330 €'],
       ['Tandem + Video', '370 €', '410 €', '430 €'],
       ['Tandem + Video + Foto', '390 €', '430 €', '450 €'],
@@ -29,7 +33,7 @@ describe('PriceMatrix', () => {
     render(<PriceMatrix prices={withoutVideo} />)
 
     expect(cells()).toEqual([
-      ['', 'ohne Zuschlag', 'ab 90 kg', 'ab 100 kg'],
+      HEADER,
       ['Tandem', '270 €', '310 €', '330 €'],
       ['Tandem + Video', '–', '–', '–'],
       ['Tandem + Video + Foto', '390 €', '430 €', '450 €'],

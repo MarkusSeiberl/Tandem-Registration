@@ -23,7 +23,16 @@ vi.mock('./api', async (importOriginal) => ({
   startUpdateDownload: vi.fn(),
   installUpdate: vi.fn(),
   markUpdatePromptSeen: vi.fn(),
+  getSettings: vi.fn(),
+  putSettings: vi.fn(),
 }))
+
+const SETTINGS: api.Settings = {
+  exportDir: 'C:/Tandem', contractText: '', privacyText: '', jumpLocation: 'Freistadt',
+  backupDir: '', voucherListPath: '',
+  prices: { jump: 270, video: 100, video_photo: 120, weight_over_90: 40, weight_over_100: 60 },
+  payouts: { tandem_master: 45, video: 60, video_photo: 80, weight_over_90: 15, weight_over_100: 25 },
+}
 
 // The app opens on the Übersicht; most tests here are about the manifest.
 async function renderOnManifest() {
@@ -61,7 +70,75 @@ beforeEach(() => {
   // below overrides this per test; every other test here should behave as if
   // updates do not exist — no entry, no dialog, nothing to await.
   vi.mocked(api.getUpdateStatus).mockRejectedValue(new Error('not found'))
+  vi.mocked(api.getSettings).mockResolvedValue({ ...SETTINGS })
+  vi.mocked(api.putSettings).mockImplementation(async (fields) => ({ ...SETTINGS, ...fields }))
   vi.spyOn(window, 'confirm').mockReturnValue(false)
+})
+
+// Prices apply to every future day; an edit lost to a stray click on another
+// tab would be noticed only when a guest is charged the old price.
+describe('unsaved Tarife', () => {
+  async function editTarife() {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Tarife' }))
+    const jump = await screen.findByLabelText('Tandemsprung')
+    await user.clear(jump)
+    await user.type(jump, '290')
+    return user
+  }
+
+  it('asks before another tab drops them, and stays when the answer is no', async () => {
+    const user = await editTarife()
+    vi.mocked(window.confirm).mockReturnValue(false)
+
+    await user.click(screen.getByRole('button', { name: 'Crew' }))
+
+    expect(window.confirm).toHaveBeenCalledWith('Ungespeicherte Änderungen an den Tarifen verwerfen?')
+    expect((screen.getByLabelText('Tandemsprung') as HTMLInputElement).value).toBe('290')
+  })
+
+  it('leaves when the answer is yes', async () => {
+    const user = await editTarife()
+    vi.mocked(window.confirm).mockReturnValue(true)
+
+    await user.click(screen.getByRole('button', { name: 'Crew' }))
+
+    expect(await screen.findByRole('heading', { name: 'Tandemmaster' })).toBeInTheDocument()
+  })
+
+  it('does not ask when nothing is unsaved', async () => {
+    // The spy outlives the tests above it, and with it their calls.
+    vi.mocked(window.confirm).mockClear()
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Tarife' }))
+    await screen.findByLabelText('Tandemsprung')
+
+    await user.click(screen.getByRole('button', { name: 'Crew' }))
+
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(await screen.findByRole('heading', { name: 'Tandemmaster' })).toBeInTheDocument()
+  })
+
+  it('asks before the browser back button drops them', async () => {
+    await editTarife()
+    vi.mocked(window.confirm).mockReturnValue(false)
+
+    window.history.back()
+
+    await vi.waitFor(() => expect(window.confirm).toHaveBeenCalled())
+    expect((screen.getByLabelText('Tandemsprung') as HTMLInputElement).value).toBe('290')
+  })
+
+  it('asks the browser to warn before the window closes or reloads', async () => {
+    await editTarife()
+
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+  })
 })
 
 describe('App', () => {

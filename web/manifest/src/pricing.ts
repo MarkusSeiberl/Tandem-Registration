@@ -87,8 +87,11 @@ export function surchargeForWeight(kg: number): WeightSurcharge {
   return 'none'
 }
 
+// Whole euros stay whole ("270 €"); anything with cents shows both digits
+// ("302,50 €"), the way a price list writes it and so columns of them align.
 export function formatEuro(amount: number): string {
-  return `${amount.toLocaleString('de-AT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} €`
+  const digits = Number.isInteger(amount) ? 0 : 2
+  return `${amount.toLocaleString('de-AT', { minimumFractionDigits: digits, maximumFractionDigits: 2 })} €`
 }
 
 // Rank of the service levels, used to keep the flown service at least as high as

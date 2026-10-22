@@ -232,6 +232,20 @@ h2 {
   color: var(--error-text);
 }
 
+/* Read out by a screen reader, not drawn: completes a heading or a cell whose
+   meaning the eye takes from what stands beside it. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Numeric/tabular data (ages, weights, load numbers, prices) reads like a
    flight-ops board readout: aligned digits, not proportional body text. */
 .numeral {
@@ -810,6 +824,26 @@ col.col-action { width: 140px; }
   color: var(--text);
 }
 
+/* The app's own focus ring on everything typed into. The browser's default is
+   a near-black ring that disappears on the dark theme's panels, leaving a
+   focused field less outlined than an unfocused one. */
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible,
+.add-row input:focus-visible,
+.crew-edit-fields input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.field input[aria-invalid='true'] {
+  border-color: var(--error-text);
+}
+
+.field input[aria-invalid='true']:focus-visible {
+  outline-color: var(--error-text);
+}
+
 /* Only vertical: a note growing sideways would drag the whole column with it. */
 .field textarea {
   resize: vertical;
@@ -1270,16 +1304,75 @@ col.col-action { width: 140px; }
   min-width: 260px;
 }
 
+/* The final-price table needs more width than the payout fields beside it,
+   which stop at 340 px: three columns of amounts with cents ("410,50 €") would
+   otherwise scroll inside an even half. */
+.betraege-section .price-column {
+  flex: 3;
+}
+
+.betraege-section > .amount-block {
+  flex: 2;
+}
+
 .betraege-section .field {
   max-width: 340px;
   margin-bottom: 12px;
 }
 
-/* The save button belongs to all blocks, so it breaks onto its own row. */
-.betraege-section .actions,
-.betraege-section > .error,
-.betraege-section > .hint {
+/* The save bar belongs to all blocks, so it breaks onto its own row. */
+.betraege-section > .save-bar {
   flex-basis: 100%;
+}
+
+/* What the block's amounts apply to. Neutral, not the accent: on this screen
+   green means only "saved". */
+.amount-hint {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Amounts are read like the final-price table beside them: monospaced digits,
+   right-aligned towards the euro sign. Chained onto .field so it outranks the
+   `font: inherit` every field input gets. */
+.amount-input {
+  position: relative;
+  display: flex;
+}
+
+.field .amount-input input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 32px;
+  font-family: var(--mono);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.amount-unit {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--mono);
+  font-size: 16px;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Pending, not wrong: the warm text the app uses for "somebody has to decide". */
+.unsaved {
+  color: var(--warn-text);
+  font-weight: 600;
+}
+
+.load-failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 /* Scrolls rather than spilling out: the labels and three nowrap columns are
@@ -1301,7 +1394,7 @@ col.col-action { width: 140px; }
 
 .price-matrix th,
 .price-matrix td {
-  padding: 8px 12px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
   text-align: right;
   white-space: nowrap;
@@ -1314,6 +1407,13 @@ col.col-action { width: 140px; }
 .price-matrix tbody tr:last-child th,
 .price-matrix tbody tr:last-child td {
   border-bottom: none;
+}
+
+/* A final price an unsaved edit would change: tinted like a row that wants a
+   look, bold so it survives bright light without the tint. */
+.price-matrix td.changed {
+  background: var(--row-warn);
+  font-weight: 700;
 }
 
 .add-row {

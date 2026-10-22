@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import List from './List'
 import Overview from './Overview'
 import Detail from './Detail'
@@ -20,15 +20,27 @@ type View = 'overview' | 'list' | 'detail' | 'tarife' | 'crew' | 'settings' | 'u
 // Marks the one history entry the app pushes when it leaves the manifest.
 const AWAY_FROM_LIST = 'tandem-away-from-list'
 
+const DISCARD_TARIFE = 'Ungespeicherte Änderungen an den Tarifen verwerfen?'
+
 function App() {
   // The app opens on the Übersicht, where a jump day starts.
   const [view, setViewState] = useState<View>('overview')
   const [selected, setSelected] = useState<Registration | null>(null)
 
+  // Prices apply to every future day, so an edit on Tarife is not dropped by a
+  // stray click elsewhere without asking. A ref, not state: the popstate and
+  // beforeunload handlers below are registered once and must read it fresh.
+  const tarifeDirty = useRef(false)
+  const onTarifeDirtyChange = useCallback((dirty: boolean) => {
+    tarifeDirty.current = dirty
+  }, [])
+  const mayLeave = () => !tarifeDirty.current || window.confirm(DISCARD_TARIFE)
+
   // The browser's back button always leads to the manifest. Leaving the list
   // pushes a single history entry; moving on between other views replaces it,
   // so one press of back is enough however many tabs were visited.
   function setView(next: View) {
+    if (next !== view && !mayLeave()) return
     const away = window.history.state === AWAY_FROM_LIST
     if (next === 'list') {
       // Pop our own entry rather than leaving it behind: the popstate handler
@@ -47,11 +59,25 @@ function App() {
     if (window.history.state === AWAY_FROM_LIST) window.history.replaceState(null, '')
     function onPopState() {
       if (window.history.state === AWAY_FROM_LIST) return
+      // The browser has already gone back; staying means putting the entry
+      // that back just removed in place again.
+      if (tarifeDirty.current && !window.confirm(DISCARD_TARIFE)) {
+        window.history.pushState(AWAY_FROM_LIST, '')
+        return
+      }
       setSelected(null)
       setViewState('list')
     }
+    // Closing or reloading the window: the browser shows its own question.
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      if (tarifeDirty.current) e.preventDefault()
+    }
     window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => {
+      window.removeEventListener('popstate', onPopState)
+      window.removeEventListener('beforeunload', onBeforeUnload)
+    }
   }, [])
 
   // Stopping the program. Only the machine the server runs on may do it — the
@@ -280,7 +306,7 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
           {view === 'detail' && selected && (
             <Detail registration={selected} onBack={closeDetail} onSaved={setSelected} />
           )}
-          {view === 'tarife' && <Tarife />}
+          {view === 'tarife' && <Tarife onDirtyChange={onTarifeDirtyChange} />}
           {view === 'crew' && <Crew />}
           {view === 'settings' && <Settings />}
           {view === 'update' && update && (

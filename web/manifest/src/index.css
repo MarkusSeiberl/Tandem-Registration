@@ -1217,6 +1217,20 @@ col.col-action { width: 140px; }
   gap: 6px;
 }
 
+/* Grey at rest, so the list does not read as a column of warnings; on hover
+   each button says which one the mouse is on, the bin in the red the app's
+   other delete buttons use. Only the outline and icon change: the row's own
+   hover tint stays the louder signal. */
+.crew-edit-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.crew-delete-btn:hover:not(:disabled) {
+  border-color: var(--error-text);
+  color: var(--error-text);
+}
+
 /* Fields on the left, cancel/save where pencil/bin were — same row shape.
    Pinned to the top: centred, they would drop down beside the taller
    name + email fields of a camera flyer. */

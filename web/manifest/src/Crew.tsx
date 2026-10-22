@@ -337,7 +337,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
                     else pencils.current.delete(item.id)
                   }}
                   type="button"
-                  className="btn secondary btn-icon"
+                  className="btn secondary btn-icon crew-edit-btn"
                   onClick={() => startEdit(item)}
                   disabled={busy}
                   aria-label={`${item.name} bearbeiten`}
@@ -347,7 +347,7 @@ function CrewList({ title, withEmail, load, add, update, remove }: CrewListProps
                 </button>
                 <button
                   type="button"
-                  className="btn secondary btn-icon"
+                  className="btn secondary btn-icon crew-delete-btn"
                   onClick={() => handleRemove(item)}
                   disabled={busy}
                   aria-label={`${item.name} entfernen`}

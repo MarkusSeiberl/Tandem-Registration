@@ -279,25 +279,24 @@ describe('Beträge', () => {
     expect((await screen.findByLabelText('Tandemsprung') as HTMLInputElement).value).toBe('270')
   })
 
-  it('shows the final prices between the prices and the payout rates', async () => {
+  it('shows the final prices after the prices and the payout rates', async () => {
     render(<Betraege />)
     await screen.findByText('Preise (EUR)')
 
     const headings = screen.getAllByRole('heading').map((h) => h.textContent)
-    expect(headings).toEqual(['Preise (EUR)', 'Endpreise', 'Vergütung (EUR)'])
+    expect(headings).toEqual(['Preise (EUR)', 'Vergütung (EUR)', 'Endpreise'])
     expect(row('Tandem')).toHaveTextContent('Tandem270 €310 €330 €')
     expect(screen.getByRole('table', { name: 'Endpreise' })).toBeInTheDocument()
   })
 
-  it('keeps two columns: the final prices under the prices, the payouts beside', async () => {
+  it('puts the final prices in the third column, before the save bar', async () => {
     render(<Betraege />)
     await screen.findByText('Preise (EUR)')
 
-    // Layout is CSS; which column a block lands in is decided by the markup.
-    const column = (text: string) => screen.getByText(text).closest('.price-column')
-    expect(column('Endpreise')).not.toBeNull()
-    expect(column('Endpreise')).toBe(column('Preise (EUR)'))
-    expect(column('Vergütung (EUR)')).toBeNull()
+    // Layout is CSS; which row a block lands in is decided by the markup.
+    const matrix = screen.getByRole('heading', { name: 'Endpreise' }).closest('.price-matrix')
+    expect(matrix?.parentElement).toHaveClass('betraege-section')
+    expect(matrix?.nextElementSibling).toHaveClass('save-bar')
   })
 
   it('updates the final prices while typing, before saving', async () => {

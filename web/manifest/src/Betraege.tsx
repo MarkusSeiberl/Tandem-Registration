@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 import { getSettings, putSettings } from './api'
 import type { Payouts, Prices } from './api'
 import PriceMatrix from './PriceMatrix'
@@ -99,61 +98,55 @@ interface AmountFieldsProps<T> {
   onChange: (key: keyof T, value: string) => void
   onLeave: (key: keyof T) => void
   inputRef: (key: keyof T, el: HTMLInputElement | null) => void
-  // Shown beside the fields, under the block's heading: the final prices next
-  // to the prices they are built from.
-  aside?: ReactNode
 }
 
 function AmountFields<T>({
-  title, hint, fields, inputs, saved, shownInvalid, onChange, onLeave, inputRef, aside,
+  title, hint, fields, inputs, saved, shownInvalid, onChange, onLeave, inputRef,
 }: AmountFieldsProps<T>) {
   const ids = useId()
   return (
     <section className="amount-block">
       <h3>{title}</h3>
       <p className="amount-hint">{hint}</p>
-      <div className="amount-body">
-        <div className="amount-fields">
-          {fields.map(({ key, label }) => {
-            const invalid = shownInvalid.has(key)
-            const previous = parseAmount(saved[key])
-            const changed = isChanged(inputs[key], saved[key]) && previous !== null
-            const errorId = `${ids}-${String(key)}-error`
-            const previousId = `${ids}-${String(key)}-previous`
-            const inputId = `${ids}-${String(key)}`
-            const describedBy = [invalid && errorId, changed && previousId].filter(Boolean).join(' ')
-            // A div with a label pointing at the input, not a wrapping label: the
-            // label's text is the field's name, and the € sign, the error and the
-            // old amount below it are not part of that name.
-            return (
-              <div className="field" key={String(key)}>
-                <label htmlFor={inputId}>{label}</label>
-                <span className="amount-input">
-                  {/* Text with a decimal keypad, not type="number": a number field
-                      turns a scroll of the mouse wheel or an arrow key into a new
-                      price, silently, on a page that has to be scrolled. */}
-                  <input
-                    id={inputId}
-                    ref={(el) => inputRef(key, el)}
-                    type="text"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    className="numeral"
-                    value={inputs[key]}
-                    aria-invalid={invalid}
-                    aria-describedby={describedBy || undefined}
-                    onChange={(e) => onChange(key, e.target.value)}
-                    onBlur={() => onLeave(key)}
-                  />
-                  <span className="amount-unit" aria-hidden="true">€</span>
-                </span>
-                {invalid && <span className="field-error" id={errorId}>{amountProblem(inputs[key])}</span>}
-                {changed && <span className="field-hint" id={previousId}>vorher {formatEuro(previous)}</span>}
-              </div>
-            )
-          })}
-        </div>
-        {aside}
+      <div className="amount-fields">
+        {fields.map(({ key, label }) => {
+          const invalid = shownInvalid.has(key)
+          const previous = parseAmount(saved[key])
+          const changed = isChanged(inputs[key], saved[key]) && previous !== null
+          const errorId = `${ids}-${String(key)}-error`
+          const previousId = `${ids}-${String(key)}-previous`
+          const inputId = `${ids}-${String(key)}`
+          const describedBy = [invalid && errorId, changed && previousId].filter(Boolean).join(' ')
+          // A div with a label pointing at the input, not a wrapping label: the
+          // label's text is the field's name, and the € sign, the error and the
+          // old amount below it are not part of that name.
+          return (
+            <div className="field" key={String(key)}>
+              <label htmlFor={inputId}>{label}</label>
+              <span className="amount-input">
+                {/* Text with a decimal keypad, not type="number": a number field
+                    turns a scroll of the mouse wheel or an arrow key into a new
+                    price, silently, on a page that has to be scrolled. */}
+                <input
+                  id={inputId}
+                  ref={(el) => inputRef(key, el)}
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  className="numeral"
+                  value={inputs[key]}
+                  aria-invalid={invalid}
+                  aria-describedby={describedBy || undefined}
+                  onChange={(e) => onChange(key, e.target.value)}
+                  onBlur={() => onLeave(key)}
+                />
+                <span className="amount-unit" aria-hidden="true">€</span>
+              </span>
+              {invalid && <span className="field-error" id={errorId}>{amountProblem(inputs[key])}</span>}
+              {changed && <span className="field-hint" id={previousId}>vorher {formatEuro(previous)}</span>}
+            </div>
+          )
+        })}
       </div>
     </section>
   )
@@ -305,29 +298,19 @@ export default function Betraege({ onDirtyChange }: BetraegeProps) {
 
   return (
     <section className="betraege-section">
-      {/* The final prices sit under the inputs they are built from, so the
-          screen stays two columns: what the guest pays, what the club pays. */}
-      <div className="price-column">
-        <AmountFields
-          title="Preise (EUR)"
-          hint="Gilt ab dem nächsten Sprungtag. Laufende und abgeschlossene Tage behalten ihre Preise."
-          fields={PRICE_FIELDS}
-          inputs={priceInputs}
-          saved={savedPrices}
-          shownInvalid={shown(invalidPrices, 'prices')}
-          onChange={(key, value) => {
-            setPriceInputs((prev) => ({ ...prev, [key]: value }))
-            setSaved(false)
-          }}
-          {...blockProps('prices')}
-          aside={
-            <PriceMatrix
-              prices={liveAmounts(PRICE_FIELDS, priceInputs)}
-              before={dirty ? liveAmounts(PRICE_FIELDS, savedPrices) : undefined}
-            />
-          }
-        />
-      </div>
+      <AmountFields
+        title="Preise (EUR)"
+        hint="Gilt ab dem nächsten Sprungtag. Laufende und abgeschlossene Tage behalten ihre Preise."
+        fields={PRICE_FIELDS}
+        inputs={priceInputs}
+        saved={savedPrices}
+        shownInvalid={shown(invalidPrices, 'prices')}
+        onChange={(key, value) => {
+          setPriceInputs((prev) => ({ ...prev, [key]: value }))
+          setSaved(false)
+        }}
+        {...blockProps('prices')}
+      />
 
       <AmountFields
         title="Vergütung (EUR)"
@@ -341,6 +324,13 @@ export default function Betraege({ onDirtyChange }: BetraegeProps) {
           setSaved(false)
         }}
         {...blockProps('payouts')}
+      />
+
+      {/* The third column, after both blocks: the last thing read before
+          saving is what the guest will be charged. */}
+      <PriceMatrix
+        prices={liveAmounts(PRICE_FIELDS, priceInputs)}
+        before={dirty ? liveAmounts(PRICE_FIELDS, savedPrices) : undefined}
       />
 
       {/* Sticky like the one on Einstellungen: on a laptop screen the button

@@ -26,7 +26,8 @@ export function openDb(path: string, nativeBinding?: string): Database.Database 
       created_at TEXT, jump_date TEXT,
       paid_at TEXT, notes TEXT, privacy_ack_at TEXT,
       voucher_redeemed_at TEXT, voucher_redeem_synced_at TEXT,
-      voucher_check_status TEXT, voucher_check_detail TEXT
+      voucher_check_status TEXT, voucher_check_detail TEXT,
+      voucher_accepted INTEGER DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS tandem_masters (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, active INTEGER DEFAULT 1);
@@ -104,6 +105,9 @@ function migrate(db: Database.Database): void {
     // NULL on a migrated row: the next list load checks it if it is still open.
     ['voucher_check_status', 'TEXT'],
     ['voucher_check_detail', 'TEXT'],
+    // The operator honours a voucher the club's list rejects. 0 on a migrated
+    // row: nobody has made that call for it yet.
+    ['voucher_accepted', 'INTEGER DEFAULT 0'],
   ]
   for (const [name, type] of added) {
     if (!existing.has(name)) db.exec(`ALTER TABLE registrations ADD COLUMN ${name} ${type}`)

@@ -45,6 +45,7 @@ function makeRow(overrides: Partial<Registration>): Registration {
     voucher_redeem_synced_at: null,
     voucher_check_status: null,
     voucher_check_detail: null,
+    voucher_accepted: 0,
     ...overrides,
   }
 }

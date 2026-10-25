@@ -142,3 +142,85 @@ test('a list switched off shows no flags from the days it was on', async () => {
   expect(row.voucher_check_detail).toBeNull()
   await app.close()
 })
+
+// A voucher the list rejects is worth nothing until someone honours it in front
+// of the guest; the row's stored price is what the list and the till go by.
+async function onVoucher(app: Awaited<ReturnType<typeof setup>>['app'], id: number, extra = {}) {
+  return (await app.inject({
+    method: 'PATCH', url: `/api/registrations/${id}`,
+    payload: { payment_method: 'voucher', voucher_service: 'jump', ...extra },
+  })).json()
+}
+
+test('a rejected voucher takes nothing off the price until it is honoured', async () => {
+  const { app } = await setup()
+  const id = await register(app, '26-004')
+  await rows(app)
+
+  expect((await onVoucher(app, id)).price).toBe(270)
+  expect((await onVoucher(app, id, { voucher_accepted: true })).price).toBe(0)
+  expect((await onVoucher(app, id, { voucher_accepted: false })).price).toBe(270)
+  await app.close()
+})
+
+test('a valid voucher and an unknown number are deducted as before', async () => {
+  const { app } = await setup()
+  const ok = await register(app, '26-001')
+  const unknown = await register(app, '99-999')
+  await rows(app)
+
+  expect((await onVoucher(app, ok)).price).toBe(0)
+  expect((await onVoucher(app, unknown)).price).toBe(0)
+  await app.close()
+})
+
+test('a payment the club enters mid-day gives the deduction back on the next load', async () => {
+  const { app, cfgRef } = await setup()
+  const id = await register(app, '26-002')
+  await rows(app)
+  expect((await onVoucher(app, id)).price).toBe(270)
+
+  clearVoucherListCache()
+  cfgRef.current.voucherListPath = await writeVoucherFile([
+    { lfdNr: '26-002', einzahlDat: PAID, art: 'Tandem' },
+  ])
+  expect((await rows(app)).find((r) => r.id === id).price).toBe(0)
+  await app.close()
+})
+
+test('a new number drops the decision to honour the old one', async () => {
+  const { app } = await setup()
+  const id = await register(app, '26-004')
+  await rows(app)
+  await onVoucher(app, id, { voucher_accepted: true })
+
+  const moved = await onVoucher(app, id, { voucher_number: '26-002' })
+  expect(moved.voucher_accepted).toBe(0)
+  expect(moved.voucher_check_status).toBe('unpaid')
+  expect(moved.price).toBe(270)
+  await app.close()
+})
+
+test('a collected row keeps the price it was collected at', async () => {
+  const { app, cfgRef } = await setup()
+  const id = await register(app, '26-002')
+  await rows(app)
+  await onVoucher(app, id)
+  await app.inject({ method: 'PATCH', url: `/api/registrations/${id}`, payload: { paid: true } })
+
+  // Switching the list off would give an open row its deduction back.
+  cfgRef.current.voucherListPath = ''
+  expect((await rows(app)).find((r) => r.id === id).price).toBe(270)
+  await app.close()
+})
+
+test('a list switched off rejects nothing on open rows', async () => {
+  const { app, cfgRef } = await setup()
+  const id = await register(app, '26-004')
+  await rows(app)
+  expect((await onVoucher(app, id)).price).toBe(270)
+
+  cfgRef.current.voucherListPath = ''
+  expect((await rows(app)).find((r) => r.id === id).price).toBe(0)
+  await app.close()
+})

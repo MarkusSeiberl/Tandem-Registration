@@ -2,6 +2,9 @@ import type { Database } from 'better-sqlite3'
 import type { Config } from './config'
 import { loadVoucherList, lookupVoucher } from './voucherList'
 import type { VoucherList, VoucherStatus } from './voucherList'
+import { computePrice } from './pricing'
+import type { PricedFields } from './pricing'
+import { tablesForDay } from './dayTables'
 
 /**
  * What the manifest list marks with a ⚠: the verdict of the club's voucher list
@@ -15,6 +18,7 @@ export interface VoucherFlag {
 }
 
 const NO_FLAG: VoucherFlag = { status: null, detail: null }
+const NO_FLAG_ROW = { voucher_check_status: null, voucher_check_detail: null }
 
 export function flagFor(list: VoucherList, number: string): VoucherFlag {
   const { status, entry } = lookupVoucher(list, number)
@@ -42,6 +46,24 @@ function store(db: Database, id: number, flag: VoucherFlag): void {
 }
 
 /**
+ * Prices an open row again from its day's table, now that the verdict it is
+ * priced with may have changed: a rejected voucher takes nothing off the bill,
+ * and a payment the club enters mid-day gives the deduction back. A manual
+ * price and a collected row are left alone — the first is the operator's
+ * word, the second is money already taken. Returns the price the row now has.
+ */
+function reprice(db: Database, cfg: Config, id: number): number | null {
+  const row = db.prepare('SELECT * FROM registrations WHERE id=?').get(id) as
+    (PricedFields & { price: number | null; price_override: number; paid_at: string | null;
+      jump_date: string }) | undefined
+  if (!row) return null
+  if (row.price_override || row.paid_at) return row.price
+  const price = computePrice(row, tablesForDay(db, row.jump_date, cfg).prices)
+  if (price !== row.price) db.prepare('UPDATE registrations SET price=? WHERE id=?').run(price, id)
+  return price
+}
+
+/**
  * Re-checks the rows whose verdict can still change and returns every row with
  * the verdict the list should show.
  *
@@ -60,11 +82,19 @@ export async function refreshVoucherFlags<T extends FlaggableRow>(
   log?: (err: unknown) => void
 ): Promise<T[]> {
   const path = cfg.voucherListPath?.trim()
-  // A club that switched the feature off must not keep seeing warnings from
-  // the days it was on.
-  if (!path) return rows.map((row) => ({ ...row, voucher_check_status: null, voucher_check_detail: null }))
-
   const live = rows.filter((row) => row.voucher_number && !row.paid_at && !row.voucher_redeem_synced_at)
+  // A club that switched the feature off must not keep seeing warnings from
+  // the days it was on. Open rows also drop the stored verdict, since their
+  // price is computed from it: a list nobody consults rejects nothing.
+  if (!path) {
+    return rows.map((row) => {
+      if (live.includes(row) && row.voucher_check_status !== null) {
+        store(db, row.id, NO_FLAG)
+        return { ...row, ...NO_FLAG_ROW, price: reprice(db, cfg, row.id) }
+      }
+      return { ...row, ...NO_FLAG_ROW }
+    })
+  }
   if (live.length === 0) return rows
 
   let list: VoucherList
@@ -78,10 +108,12 @@ export async function refreshVoucherFlags<T extends FlaggableRow>(
   return rows.map((row) => {
     if (!live.includes(row)) return row
     const flag = flagFor(list, row.voucher_number!)
+    const verdict = { voucher_check_status: flag.status, voucher_check_detail: flag.detail }
     if (flag.status !== row.voucher_check_status || flag.detail !== row.voucher_check_detail) {
       store(db, row.id, flag)
+      return { ...row, ...verdict, price: reprice(db, cfg, row.id) }
     }
-    return { ...row, voucher_check_status: flag.status, voucher_check_detail: flag.detail }
+    return { ...row, ...verdict }
   })
 }
 
@@ -96,9 +128,6 @@ export async function refreshVoucherFlag(
   number: string | null
 ): Promise<void> {
   const path = cfg.voucherListPath?.trim()
-  if (!number || !path) {
-    store(db, id, NO_FLAG)
-    return
-  }
-  store(db, id, flagFor(await loadVoucherList(path), number))
+  store(db, id, !number || !path ? NO_FLAG : flagFor(await loadVoucherList(path), number))
+  reprice(db, cfg, id)
 }

@@ -104,6 +104,9 @@ export interface Registration {
   // to warn about; the detail is the redemption date or the cancellation text.
   voucher_check_status: Exclude<VoucherStatus, 'ok'> | null
   voucher_check_detail: string | null
+  // 1 when the operator honours a voucher the list rejects; only then does a
+  // rejected voucher take anything off the bill.
+  voucher_accepted: number
 }
 
 export interface StammdatenItem {
@@ -137,6 +140,7 @@ export interface ManifestPatch {
   voucher_service?: VoucherService | null
   voucher_topup?: 0 | 1
   voucher_amount?: number | null
+  voucher_accepted?: 0 | 1
   extra_booking?: ExtraBooking
   weight_surcharge?: WeightSurcharge
   camera_flyer_id?: number | null

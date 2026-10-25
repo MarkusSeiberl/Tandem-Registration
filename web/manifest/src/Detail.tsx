@@ -1,31 +1,42 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import {
   checkVoucher, dayTables, patch, remove, flyers as fetchFlyers, masters as fetchMasters,
   contractPdfUrl, urkundePdfUrl,
 } from './api'
 import type {
-  CollectedVia, DayTables, ExtraBooking, PaymentMethod, Prices, Registration, StammdatenItem,
-  VoucherCheck, VoucherService, WeightSurcharge,
+  CollectedVia, DayTables, ExtraBooking, ManifestPatch, PaymentMethod, Prices, Registration,
+  StammdatenItem, VoucherCheck, VoucherService, WeightSurcharge,
 } from './api'
 import {
   COLLECTED_VIA, EXTRA_BOOKINGS, PAYMENT_METHODS, VOUCHER_SERVICES, WEIGHT_SURCHARGES,
   genderLabel,
 } from './labels'
 import {
-  atLeast, formatEuro, priceLines, serviceOfVoucher, surchargeForWeight, voucherCovered,
-  voucherValue,
+  REJECTED_VOUCHER_STATUSES, atLeast, collectedVia, formatEuro, priceLines, serviceOfVoucher,
+  surchargeForWeight, voucherCovered, voucherValue,
 } from './pricing'
 import { formatDate, voucherAmountText, voucherServiceText, voucherStatusText } from './voucher'
 import { today } from './date'
+import CollectDialog from './CollectDialog'
 import TrashIcon from './TrashIcon'
 
 export interface DetailProps {
   registration: Registration
   onBack: () => void
   onSaved: (updated: Registration) => void
+  // Told whenever unsaved edits appear or go, so the app can ask before Zurück
+  // or a tab switch throws them away.
+  onDirtyChange?: (dirty: boolean) => void
 }
 
-export default function Detail({ registration, onBack, onSaved }: DetailProps) {
+const tillLabel = (via: CollectedVia | null) =>
+  COLLECTED_VIA.find((m) => m.value === via)?.label ?? 'keine Kassa'
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' })
+}
+
+export default function Detail({ registration, onBack, onSaved, onDirtyChange }: DetailProps) {
   const [masterList, setMasterList] = useState<StammdatenItem[]>([])
   const [flyerList, setFlyerList] = useState<StammdatenItem[]>([])
 
@@ -35,6 +46,12 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   // export. The settings table only decides what the NEXT day starts from.
   const [day, setDay] = useState<DayTables | null>(null)
   const prices: Prices | null = day?.prices ?? null
+  // A failed load used to leave "Preise werden geladen…" on screen for good and
+  // the crew selects silently empty. Each failure is said where it bites, with
+  // a way to try again.
+  const [pricesFailed, setPricesFailed] = useState(false)
+  const [crewFailed, setCrewFailed] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
 
   const [tandemMasterId, setTandemMasterId] = useState<number | ''>(registration.tandem_master_id ?? '')
   const [loadNumber, setLoadNumber] = useState<number | ''>(registration.load_number ?? '')
@@ -53,6 +70,8 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   const [voucherAmount, setVoucherAmount] =
     useState<number | null>(registration.voucher_amount ?? null)
   const [voucherTopup, setVoucherTopup] = useState<boolean>(!!registration.voucher_topup)
+  // The operator honours a voucher the club's list rejects.
+  const [voucherAccepted, setVoucherAccepted] = useState<boolean>(!!registration.voucher_accepted)
   const [extraBooking, setExtraBooking] = useState<ExtraBooking>(registration.extra_booking ?? 'none')
   const [weightSurcharge, setWeightSurcharge] =
     useState<WeightSurcharge>(registration.weight_surcharge ?? 'none')
@@ -63,12 +82,49 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  // Set by the operator's own edits and cleared by a save. Values the screen
+  // fills in by itself — the voucher amount from the club's list — do not
+  // count: nobody should be asked to discard something they never typed.
+  const [dirty, setDirty] = useState(false)
+  const [collectOpen, setCollectOpen] = useState(false)
+  const [collecting, setCollecting] = useState(false)
+  const [collectError, setCollectError] = useState<string | null>(null)
+
+  const ids = {
+    voucherNumber: useId(),
+    voucherChecks: useId(),
+    cameraFlyer: useId(),
+    cameraFlyerHint: useId(),
+  }
+
+  // Wraps a setter so the change counts as an edit: it arms the question before
+  // leaving, and "Gespeichert." stops claiming something it no longer covers.
+  function edited<T>(set: (value: T) => void) {
+    return (value: T) => {
+      set(value)
+      setDirty(true)
+      setSaved(false)
+    }
+  }
 
   useEffect(() => {
-    fetchMasters().then(setMasterList).catch(() => {})
-    fetchFlyers().then(setFlyerList).catch(() => {})
-    dayTables(registration.jump_date).then(setDay).catch(() => {})
-  }, [registration.jump_date])
+    onDirtyChange?.(dirty)
+  }, [dirty, onDirtyChange])
+  // Leaving the screen leaves nothing unsaved behind it.
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
+
+  useEffect(() => {
+    let cancelled = false
+    setPricesFailed(false)
+    setCrewFailed(false)
+    const onCrewFailed = () => { if (!cancelled) setCrewFailed(true) }
+    fetchMasters().then((list) => { if (!cancelled) setMasterList(list) }).catch(onCrewFailed)
+    fetchFlyers().then((list) => { if (!cancelled) setFlyerList(list) }).catch(onCrewFailed)
+    dayTables(registration.jump_date)
+      .then((tables) => { if (!cancelled) setDay(tables) })
+      .catch(() => { if (!cancelled) setPricesFailed(true) })
+    return () => { cancelled = true }
+  }, [registration.jump_date, loadAttempt])
 
   // A voucher number and the covered service only exist when the guest actually
   // paid with one.
@@ -105,18 +161,27 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
     }
   }, [voucherNumber, showVoucherNumber])
 
+  const paid = registration.paid_at != null
+  const numberAsSaved = voucherNumber.trim() === (registration.voucher_number ?? '')
+  // The verdict this row is priced with, the same one the server prices it
+  // with. A collected row — and one whose redemption already reached the club's
+  // file — keeps the verdict it was collected under: a live check would call
+  // the voucher redeemed by this very row. Otherwise the live check wins once
+  // it is back, and until then the verdict stored with the number stands.
+  const verdict: string | null = !showVoucherNumber
+    ? null
+    : numberAsSaved && (paid || registration.voucher_redeem_synced_at)
+      ? registration.voucher_check_status
+      : voucherCheck && !voucherCheck.configured
+        ? null
+        : voucherCheck?.readable
+          ? (voucherCheck.status === 'ok' ? null : voucherCheck.status)
+          : numberAsSaved ? registration.voucher_check_status : null
+  const voucherRejectedByList =
+    (REJECTED_VOUCHER_STATUSES as readonly string[]).includes(verdict ?? '')
+
   const voucherLine = voucherCheck ? voucherStatusText(voucherCheck) : null
   const voucherArtLine = voucherCheck ? voucherServiceText(voucherCheck, voucherService) : null
-  // What the same service is worth at today's table, for the "damals · heute"
-  // line. `voucherValue` is already imported by this screen's pricing helpers.
-  const voucherAmountLine =
-    voucherCheck && prices
-      ? voucherAmountText(
-          voucherCheck,
-          voucherCheck.service ? voucherValue(voucherCheck.service, prices) : null,
-          formatEuro
-        )
-      : null
   // What our two stamps say about this row's redemption. A row can be put back
   // to open while its date already stands in the club's file — the file keeps
   // that date, so the screen has to say so, or the operator sees an open row
@@ -134,6 +199,9 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
     (voucherService === 'jump_video' || voucherService === 'jump_video_photo')
   const showCameraFlyer =
     extraBooking === 'video' || extraBooking === 'video_photo' || voucherCoversVideo
+  // Booked video with nobody to film it is a flyer missing on the load. Said,
+  // not enforced: the flyer is often settled at the plane, after the row.
+  const cameraFlyerMissing = showCameraFlyer && cameraFlyerId === ''
 
   // One description of this row's money, used for the breakdown and for the
   // voucher difference alike, so the two can never disagree about what the
@@ -145,6 +213,8 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
     weight_surcharge: weightSurcharge,
     voucher_topup: showVoucherNumber && voucherTopup,
     voucher_amount: voucherAmount,
+    voucher_check_status: verdict,
+    voucher_accepted: showVoucherNumber && voucherAccepted,
   }
   const lines = prices ? priceLines(pricedFields, prices) : []
   const computed = lines.reduce((sum, l) => sum + l.amount, 0)
@@ -158,13 +228,9 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   // that one does it make sense to point at the button in the manifest.
   const dayIsToday = registration.jump_date === today()
   const due = priceOverride && price !== '' ? price : computed
-  // A voucher moves no money by itself, so the till it lands in is only a
-  // question once the guest actually owes something on top of it. The field stays
-  // in place either way and says which of the two it is — a field that vanishes
-  // while you are looking somewhere else is the thing this screen got wrong.
   // The voucher was bought at an older price and is honoured at today's. That
-  // gap is the club's to give away or to charge, so it is stated plainly and
-  // the decision sits right underneath it as a box to tick. Only a gap in the
+  // gap is the club's to give away or to charge, so it is stated once, beside
+  // the total it changes, with the decision as a box to tick. Only a gap in the
   // club's favour exists: a voucher bought above today's price is not refunded,
   // and `voucherTopup` never returns a negative amount.
   //
@@ -174,13 +240,44 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   const voucherDifference =
     voucherCheck?.amount != null && prices ? covered - voucherCheck.amount : 0
   const showVoucherDifference = showVoucherNumber && voucherDifference > 0
+  // The "damals · heute" line says the same thing as the difference block, so
+  // it only stands on its own when there is no difference to decide about.
+  const voucherAmountLine =
+    voucherCheck && prices && !showVoucherDifference
+      ? voucherAmountText(
+          voucherCheck,
+          voucherCheck.service ? voucherValue(voucherCheck.service, prices) : null,
+          formatEuro
+        )
+      : null
+  // A voucher moves no money by itself, so the till it lands in is only a
+  // question once the guest actually owes something on top of it. The field
+  // stays in place either way and says which of the two it is.
   const showVoucherPayment = showVoucherNumber && due > 0
-  const voucherStatus = showVoucherPayment
-    ? `Noch ${formatEuro(due)} offen — bitte Kassa wählen.`
-    : 'Gutschein deckt alles ab — nichts zu kassieren.'
   // Money is owed and nobody recorded where it went: that till will not add up at
   // closing. Worth a warning, not worth blocking a half-finished row from saving.
   const tillMissing = showVoucherPayment && voucherPaymentMethod === ''
+
+  // Which till the money is in now, and which it would be in after a save.
+  const tillThen = collectedVia(registration)
+  const tillNow = collectedVia({
+    payment_method: paymentMethod || null,
+    voucher_payment_method: showVoucherPayment ? voucherPaymentMethod || null : null,
+  })
+  // A collected row is money already counted. Editing it is allowed — mistakes
+  // happen — but the change to the till is said before it is saved.
+  const paidChanges = paid && dirty && prices
+    ? [
+        due !== (registration.price ?? 0) &&
+          `${formatEuro(registration.price ?? 0)} → ${formatEuro(due)}`,
+        tillNow !== tillThen && `${tillLabel(tillThen)} → ${tillLabel(tillNow)}`,
+      ].filter((part): part is string => !!part)
+    : []
+  const paidState = paid
+    ? `Kassiert ${formatTime(registration.paid_at!)} · ${
+        tillThen ? tillLabel(tillThen) : registration.payment_method === 'voucher' ? 'Gutschein' : 'ohne Kassa'
+      }`
+    : 'Offen'
 
   // The surcharge is derived from the weight once, when the guest registers. From
   // then on the operator owns it — waiving it is a legitimate exception. So this
@@ -188,54 +285,104 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
   const surchargeFromWeight = surchargeForWeight(registration.weight_kg)
   const surchargeDeviates = weightSurcharge !== surchargeFromWeight
 
+  // Everything this screen edits, as the PATCH that stores it. Shared by
+  // Speichern and Kassieren, so collecting from here also saves what is on
+  // screen instead of collecting the row as it was.
+  function changes(): ManifestPatch {
+    return {
+      tandem_master_id: tandemMasterId === '' ? null : tandemMasterId,
+      load_number: loadNumber === '' ? null : loadNumber,
+      // Without an override the price is left to the server, which derives it
+      // from the price table — sending our preview back would let two manifest
+      // clients with stale settings disagree.
+      ...(priceOverride
+        ? { price: price === '' ? null : price }
+        : { price_override: 0 as const }),
+      payment_method: paymentMethod === '' ? undefined : paymentMethod,
+      // Clear a stale voucher number if the guest no longer pays by voucher.
+      voucher_number: showVoucherNumber ? (voucherNumber.trim() === '' ? null : voucherNumber.trim()) : null,
+      voucher_service: showVoucherNumber ? (voucherService === '' ? null : voucherService) : null,
+      // The amount travels with the flag so the server can price this row
+      // again — on a save, on a reprice — without reaching for the club's
+      // Excel file, which may be locked, edited or gone by then.
+      voucher_topup: showVoucherNumber && voucherTopup ? 1 : 0,
+      voucher_amount: showVoucherNumber ? voucherAmount : null,
+      voucher_accepted: showVoucherNumber && voucherAccepted ? 1 : 0,
+      // Likewise drop the till once there is nothing left to collect.
+      voucher_payment_method: showVoucherPayment
+        ? (voucherPaymentMethod === '' ? null : voucherPaymentMethod)
+        : null,
+      extra_booking: extraBooking,
+      weight_surcharge: weightSurcharge,
+      // Clear a stale flyer selection if the booking no longer includes video.
+      camera_flyer_id: showCameraFlyer ? (cameraFlyerId === '' ? null : cameraFlyerId) : null,
+      notes: notes.trim() === '' ? null : notes.trim(),
+    }
+  }
+
+  // The server owns the stored values; adopt them so the fields cannot drift
+  // from the sheet.
+  function adopt(updated: Registration) {
+    setPrice(updated.price ?? '')
+    setPriceOverride(!!updated.price_override)
+    setVoucherTopup(!!updated.voucher_topup)
+    setVoucherAccepted(!!updated.voucher_accepted)
+    // The server trims the note and turns an empty one into nothing.
+    setNotes(updated.notes ?? '')
+    setDirty(false)
+    onSaved(updated)
+  }
+
   async function handleSave() {
     setSaving(true)
     setError(null)
     setSaved(false)
     try {
-      const updated = await patch(registration.id, {
-        tandem_master_id: tandemMasterId === '' ? null : tandemMasterId,
-        load_number: loadNumber === '' ? null : loadNumber,
-        // Without an override the price is left to the server, which derives it
-        // from the price table — sending our preview back would let two manifest
-        // clients with stale settings disagree.
-        ...(priceOverride
-          ? { price: price === '' ? null : price }
-          : { price_override: 0 as const }),
-        payment_method: paymentMethod === '' ? undefined : paymentMethod,
-        // Clear a stale voucher number if the guest no longer pays by voucher.
-        voucher_number: showVoucherNumber ? (voucherNumber.trim() === '' ? null : voucherNumber.trim()) : null,
-        voucher_service: showVoucherNumber ? (voucherService === '' ? null : voucherService) : null,
-        // The amount travels with the flag so the server can price this row
-        // again — on a save, on a reprice — without reaching for the club's
-        // Excel file, which may be locked, edited or gone by then.
-        voucher_topup: showVoucherNumber && voucherTopup ? (1 as const) : (0 as const),
-        voucher_amount: showVoucherNumber ? voucherAmount : null,
-        // Likewise drop the till once there is nothing left to collect.
-        voucher_payment_method: showVoucherPayment
-          ? (voucherPaymentMethod === '' ? null : voucherPaymentMethod)
-          : null,
-        extra_booking: extraBooking,
-        weight_surcharge: weightSurcharge,
-        // Clear a stale flyer selection if the booking no longer includes video.
-        camera_flyer_id: showCameraFlyer ? (cameraFlyerId === '' ? null : cameraFlyerId) : null,
-        notes: notes.trim() === '' ? null : notes.trim(),
-      })
-      // The server owns the number; adopt whatever it stored so the field cannot
-      // drift from the sheet.
-      setPrice(updated.price ?? '')
-      setPriceOverride(!!updated.price_override)
-      setVoucherTopup(!!updated.voucher_topup)
-      // Adopt the stored form of the note too, so the field shows what the sheet
-      // will show — the server trims it and turns an empty one into nothing.
-      setNotes(updated.notes ?? '')
-      onSaved(updated)
+      adopt(await patch(registration.id, changes()))
       setSaved(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen')
     } finally {
       setSaving(false)
     }
+  }
+
+  // `method` is the till the dialog asked for, or null when the screen already
+  // knows it — or nothing is owed. Same rule as the list's row button: the
+  // method is only written where money changes hands.
+  async function collect(method: CollectedVia | null) {
+    setCollecting(true)
+    setError(null)
+    setCollectError(null)
+    setSaved(false)
+    try {
+      const fields: ManifestPatch = { ...changes(), paid: true }
+      if (method !== null && due > 0) {
+        if (paymentMethod === 'voucher') fields.voucher_payment_method = method
+        else fields.payment_method = method
+      }
+      adopt(await patch(registration.id, fields))
+      setCollectOpen(false)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Kassieren fehlgeschlagen'
+      // With the dialog open the message belongs in it; without one, beside
+      // the buttons like every other failure on this screen.
+      if (collectOpen) setCollectError(message)
+      else setError(message)
+    } finally {
+      setCollecting(false)
+    }
+  }
+
+  // The dialog only asks which till the money went into. Nothing owed, or a
+  // till already chosen on this screen, leaves nothing to ask.
+  function startCollect() {
+    if (due <= 0 || tillNow !== null) {
+      void collect(null)
+      return
+    }
+    setCollectError(null)
+    setCollectOpen(true)
   }
 
   async function handleDelete() {
@@ -247,6 +394,10 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
     setError(null)
     try {
       await remove(registration.id)
+      // The row is gone, and with it anything unsaved about it — leaving must
+      // not ask about edits to a registration that no longer exists.
+      setDirty(false)
+      onDirtyChange?.(false)
       // The list re-fetches on the server's "changed" event, so going back is all
       // that is left to do here.
       onBack()
@@ -256,6 +407,8 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
       setDeleting(false)
     }
   }
+
+  const retry = () => setLoadAttempt((n) => n + 1)
 
   return (
     <div className="detail-screen">
@@ -295,7 +448,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
           </div>
           <div className="fact">
             <dt>Sprungdatum</dt>
-            <dd className="numeral">{registration.jump_date}</dd>
+            <dd className="numeral">{formatDate(registration.jump_date)}</dd>
           </div>
         </dl>
 
@@ -321,11 +474,20 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         <section className="panel" aria-label="Zuteilung">
           <h3 className="panel-title">Zuteilung</h3>
 
+          {crewFailed && (
+            <div className="load-failed">
+              <p className="error">Tandemmaster und Kameraflieger konnten nicht geladen werden.</p>
+              <button type="button" className="btn secondary" onClick={retry}>
+                Erneut versuchen
+              </button>
+            </div>
+          )}
+
           <label className="field">
             Tandemmaster
             <select
               value={tandemMasterId}
-              onChange={(e) => setTandemMasterId(e.target.value === '' ? '' : Number(e.target.value))}
+              onChange={(e) => edited(setTandemMasterId)(e.target.value === '' ? '' : Number(e.target.value))}
             >
               <option value="">— auswählen —</option>
               {masterList.map((m) => (
@@ -343,13 +505,16 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
               className="numeral"
               min={0}
               value={loadNumber}
-              onChange={(e) => setLoadNumber(e.target.value === '' ? '' : Number(e.target.value))}
+              onChange={(e) => edited(setLoadNumber)(e.target.value === '' ? '' : Number(e.target.value))}
             />
           </label>
 
           <label className="field">
             Zahlungsart
-            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod | '')}>
+            <select
+              value={paymentMethod}
+              onChange={(e) => edited(setPaymentMethod)(e.target.value as PaymentMethod | '')}
+            >
               <option value="">— auswählen —</option>
               {PAYMENT_METHODS.map((p) => (
                 <option key={p.value} value={p.value}>
@@ -360,38 +525,53 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
           </label>
 
           {/*
-            One block, tied to the payment method right above it and kept in the
-            same column as it: everything the voucher needs appears and
-            disappears together, and the till comes after the two fields that
-            decide its amount.
+            What the voucher is: its number, the club list's verdict on it, and
+            what it covers. What it does to the bill — the difference, the till,
+            honouring a rejected one — is decided in the Kassa, beside the total
+            it changes.
           */}
           {showVoucherNumber && (
             <fieldset className="voucher-group">
               <legend>Gutschein</legend>
 
-              <label className="field">
-                Gutschein-Nr.
+              {/*
+                The verdict lines sit outside the label and are tied to the input
+                by aria-describedby: inside it they became part of the field's
+                name, read out in full on every focus and changing under the
+                cursor while the check came back.
+              */}
+              <div className="field">
+                <label htmlFor={ids.voucherNumber}>Gutschein-Nr.</label>
                 <input
+                  id={ids.voucherNumber}
                   type="text"
                   value={voucherNumber}
-                  onChange={(e) => setVoucherNumber(e.target.value)}
+                  aria-describedby={ids.voucherChecks}
+                  onChange={(e) => {
+                    edited(setVoucherNumber)(e.target.value)
+                    // Honouring a rejected voucher is a decision about that
+                    // voucher, not about whatever number is typed next.
+                    setVoucherAccepted(false)
+                  }}
                 />
-                {voucherLine && (
-                  <span className={`field-hint voucher-check ${voucherLine.tone}`}>
-                    {voucherLine.text}
-                  </span>
-                )}
-                {voucherArtLine && (
-                  <span className={`field-hint voucher-check ${voucherArtLine.tone}`}>
-                    {voucherArtLine.text}
-                  </span>
-                )}
-                {voucherAmountLine && (
-                  <span className={`field-hint voucher-check ${voucherAmountLine.tone}`}>
-                    {voucherAmountLine.text}
-                  </span>
-                )}
-              </label>
+                <div id={ids.voucherChecks} className="voucher-checks" aria-live="polite">
+                  {voucherLine && (
+                    <p className={`field-hint voucher-check ${voucherLine.tone}`}>
+                      {voucherLine.text}
+                    </p>
+                  )}
+                  {voucherArtLine && (
+                    <p className={`field-hint voucher-check ${voucherArtLine.tone}`}>
+                      {voucherArtLine.text}
+                    </p>
+                  )}
+                  {voucherAmountLine && (
+                    <p className={`field-hint voucher-check ${voucherAmountLine.tone}`}>
+                      {voucherAmountLine.text}
+                    </p>
+                  )}
+                </div>
+              </div>
 
               <label className="field">
                 Gutschein-Leistung
@@ -400,7 +580,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
                   value={voucherService}
                   onChange={(e) => {
                     const next = e.target.value as VoucherService | ''
-                    setVoucherService(next)
+                    edited(setVoucherService)(next)
                     // The guest flies at least what the voucher covers, so raise
                     // the booking to match — otherwise the voucher would be worth
                     // more than the service and the difference would read as 0.
@@ -416,56 +596,6 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
                 </select>
                 <span className="field-hint">
                   Was der Gutschein abdeckt. Wird vom Preis abgezogen.
-                </span>
-              </label>
-
-              {/*
-                After the Leistung, because the difference is a difference to
-                what that Leistung costs today — and given its own framed block
-                rather than a fourth grey hint line under the number, because
-                this one is not a remark: it is money the operator has to decide
-                about while the guest is standing there.
-              */}
-              {showVoucherDifference && (
-                <div className="voucher-difference">
-                  <p className="voucher-difference-line">
-                    Gutschein damals {formatEuro(voucherCheck!.amount!)}, die gedeckte Leistung
-                    kostet heute {formatEuro(covered)} — Differenz{' '}
-                    <strong className="numeral">{formatEuro(voucherDifference)}</strong>.
-                  </p>
-                  <label className="voucher-topup-toggle">
-                    <input
-                      type="checkbox"
-                      name="voucher_topup"
-                      checked={voucherTopup}
-                      onChange={(e) => setVoucherTopup(e.target.checked)}
-                    />
-                    Differenz dazurechnen
-                  </label>
-                </div>
-              )}
-
-              <p className={tillMissing ? 'voucher-status warn' : 'voucher-status'}>
-                {voucherStatus}
-              </p>
-
-              <label className="field">
-                Zuzahlung bezahlt mit
-                <select
-                  name="voucher_payment_method"
-                  disabled={!showVoucherPayment}
-                  value={showVoucherPayment ? voucherPaymentMethod : ''}
-                  onChange={(e) => setVoucherPaymentMethod(e.target.value as CollectedVia | '')}
-                >
-                  <option value="">— auswählen —</option>
-                  {COLLECTED_VIA.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-                <span className="field-hint">
-                  Zählt am Abend in die Bar- bzw. Kartensumme.
                 </span>
               </label>
             </fieldset>
@@ -487,7 +617,10 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
 
           <label className="field">
             Gebuchte Leistung
-            <select value={extraBooking} onChange={(e) => setExtraBooking(e.target.value as ExtraBooking)}>
+            <select
+              value={extraBooking}
+              onChange={(e) => edited(setExtraBooking)(e.target.value as ExtraBooking)}
+            >
               {EXTRA_BOOKINGS.map((x) => (
                 <option key={x.value} value={x.value}>
                   {x.label}
@@ -505,7 +638,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             Gewichtszuschlag
             <select
               value={weightSurcharge}
-              onChange={(e) => setWeightSurcharge(e.target.value as WeightSurcharge)}
+              onChange={(e) => edited(setWeightSurcharge)(e.target.value as WeightSurcharge)}
             >
               {WEIGHT_SURCHARGES.map((w) => (
                 <option key={w.value} value={w.value}>
@@ -536,14 +669,17 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
           {/*
             Always in place, only usable when a video is actually flown — the
             field kept appearing and disappearing as the booking changed, which
-            reflowed the form under the operator's hand.
+            reflowed the form under the operator's hand. Its hint says why it is
+            locked, or that a booked video still has nobody to film it.
           */}
-          <label className="field">
-            Kameraflieger
+          <div className="field">
+            <label htmlFor={ids.cameraFlyer}>Kameraflieger</label>
             <select
+              id={ids.cameraFlyer}
               disabled={!showCameraFlyer}
               value={showCameraFlyer ? cameraFlyerId : ''}
-              onChange={(e) => setCameraFlyerId(e.target.value === '' ? '' : Number(e.target.value))}
+              aria-describedby={ids.cameraFlyerHint}
+              onChange={(e) => edited(setCameraFlyerId)(e.target.value === '' ? '' : Number(e.target.value))}
             >
               <option value="">— auswählen —</option>
               {flyerList.map((f) => (
@@ -552,8 +688,14 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
                 </option>
               ))}
             </select>
-            {!showCameraFlyer && <span className="field-hint">Kein Video gebucht.</span>}
-          </label>
+            <p id={ids.cameraFlyerHint} className={cameraFlyerMissing ? 'field-hint warn' : 'field-hint'}>
+              {!showCameraFlyer
+                ? 'Kein Video gebucht.'
+                : cameraFlyerMissing
+                  ? 'Video gebucht — noch kein Kameraflieger.'
+                  : ''}
+            </p>
+          </div>
 
           {/*
             Last in this column on purpose: a note records the special
@@ -566,7 +708,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
               name="notes"
               rows={3}
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={(e) => edited(setNotes)(e.target.value)}
             />
             <span className="field-hint">
               Besondere Vereinbarungen, Abweichungen, Sonderfälle. Steht im Excel-Export.
@@ -575,18 +717,30 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         </section>
 
         {/*
-          The money block carries no border of its own — the panel around it
-          is the border — so the total stays the only thing in this column
-          with visual weight.
+          Everything about this guest's money in one column: whether it is in,
+          what is owed, and every decision that changes that amount. The state
+          comes first — an operator back from an interruption has to see at a
+          glance whether the till already has it.
         */}
-        <section className="panel kassa-panel" aria-label="Kassa">
-          <h3 className="panel-title">Kassa</h3>
+        <section className="panel kassa-panel" aria-labelledby="kassa-title">
+          <div className="kassa-head">
+            <h3 className="panel-title" id="kassa-title">Kassa</h3>
+            <p className={paid ? 'kassa-state paid' : 'kassa-state open'}>{paidState}</p>
+          </div>
 
           {/*
             Until the price table has arrived there is nothing honest to show —
             a 0 € total would be read as "guest owes nothing".
           */}
-          {!prices && <p className="hint">Preise werden geladen…</p>}
+          {pricesFailed && (
+            <div className="load-failed">
+              <p className="error">Preise konnten nicht geladen werden.</p>
+              <button type="button" className="btn secondary" onClick={retry}>
+                Erneut versuchen
+              </button>
+            </div>
+          )}
+          {!prices && !pricesFailed && <p className="field-hint">Preise werden geladen…</p>}
 
           {prices && (
             <>
@@ -599,10 +753,92 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
                 ))}
               </div>
               <div className="price-line price-total">
-                <span>Zu kassieren</span>
+                {/* On a collected row the total is what was taken — until an edit
+                    changes it, when it is what the row would say after saving. */}
+                <span>
+                  {!paid ? 'Zu kassieren' : paidChanges.length > 0 ? 'Nach dem Speichern' : 'Kassiert'}
+                </span>
                 <span className="numeral">{formatEuro(due)}</span>
               </div>
+              {priceOverride && due !== computed && (
+                <p className="field-hint">Berechnet wären {formatEuro(computed)}.</p>
+              )}
             </>
+          )}
+
+          {/*
+            The club's list says this voucher is not worth anything — never
+            paid, cancelled, or already spent. It takes nothing off the bill
+            until someone decides, with the guest in front of them, to honour
+            it anyway. The box is that decision.
+          */}
+          {showVoucherNumber && voucherRejectedByList && (
+            <div className="kassa-alert">
+              <p role="alert">
+                <strong>Gutschein laut Liste ungültig</strong>
+                {voucherAccepted ? ' — wird trotzdem abgezogen.' : ' — volle Summe kassieren.'}
+              </p>
+              <label className="voucher-topup-toggle">
+                <input
+                  type="checkbox"
+                  name="voucher_accepted"
+                  checked={voucherAccepted}
+                  onChange={(e) => edited(setVoucherAccepted)(e.target.checked)}
+                />
+                trotzdem anerkennen
+              </label>
+            </div>
+          )}
+
+          {showVoucherDifference && (
+            <div className="voucher-difference">
+              <p className="voucher-difference-line">
+                Gutschein damals {formatEuro(voucherCheck!.amount!)}, die gedeckte Leistung
+                kostet heute {formatEuro(covered)} — Differenz{' '}
+                <strong>{formatEuro(voucherDifference)}</strong>.
+              </p>
+              <label className="voucher-topup-toggle">
+                <input
+                  type="checkbox"
+                  name="voucher_topup"
+                  checked={voucherTopup}
+                  onChange={(e) => edited(setVoucherTopup)(e.target.checked)}
+                />
+                Differenz dazurechnen
+              </label>
+            </div>
+          )}
+
+          {showVoucherNumber && (
+            <label className="field">
+              Zuzahlung bezahlt mit
+              <select
+                name="voucher_payment_method"
+                disabled={!showVoucherPayment}
+                value={showVoucherPayment ? voucherPaymentMethod : ''}
+                onChange={(e) => edited(setVoucherPaymentMethod)(e.target.value as CollectedVia | '')}
+              >
+                <option value="">— auswählen —</option>
+                {COLLECTED_VIA.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <span className={tillMissing ? 'field-hint warn' : 'field-hint'}>
+                {!showVoucherPayment
+                  ? 'Gutschein deckt alles ab — keine Zuzahlung.'
+                  : tillMissing
+                    ? `${formatEuro(due)} Zuzahlung — Bar oder Karte wählen.`
+                    : 'Zählt am Abend in die Bar- bzw. Kartensumme.'}
+              </span>
+            </label>
+          )}
+
+          {paidChanges.length > 0 && (
+            <p className="field-hint warn">
+              Bereits kassiert — Speichern ändert die Kassa: {paidChanges.join(', ')}.
+            </p>
           )}
 
           {dayOutdated && (
@@ -615,12 +851,18 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
             </p>
           )}
 
+          {/*
+            Locked until the prices are in: the manual field starts from the
+            computed amount, and before the table arrives that amount is 0 —
+            a single click would have stored the jump as free.
+          */}
           <label className="price-override-toggle">
             <input
               type="checkbox"
               checked={priceOverride}
+              disabled={!prices}
               onChange={(e) => {
-                setPriceOverride(e.target.checked)
+                edited(setPriceOverride)(e.target.checked)
                 // Start the manual field from the amount currently computed, so
                 // a small correction is a small edit — and so a price stored
                 // before the selection changed cannot silently come back.
@@ -637,9 +879,27 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
                 type="number"
                 className="numeral"
                 value={price}
-                onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                onChange={(e) => edited(setPrice)(e.target.value === '' ? '' : Number(e.target.value))}
               />
             </label>
+          )}
+
+          {/*
+            Collecting from here saves the screen with it, so an operator who
+            just fixed the booking does not have to go back to the list to take
+            the money for it.
+          */}
+          {!paid && (
+            <button
+              type="button"
+              className="btn primary kassa-collect"
+              onClick={startCollect}
+              disabled={!prices || saving || collecting || (priceOverride && price === '')}
+            >
+              {collecting
+                ? 'Wird kassiert…'
+                : due > 0 && prices ? `${formatEuro(due)} kassieren` : 'Kassieren'}
+            </button>
           )}
         </section>
       </div>
@@ -666,7 +926,7 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         >
           Urkunde drucken
         </a>
-        <button type="button" className="btn primary" onClick={handleSave} disabled={saving}>
+        <button type="button" className="btn primary" onClick={handleSave} disabled={saving || collecting}>
           {saving ? 'Speichert…' : 'Speichern'}
         </button>
         {/*
@@ -680,7 +940,8 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
         */}
         <div className="save-feedback" role="status" aria-live="polite">
           {error && <p className="error">{error}</p>}
-          {saved && !error && <p className="hint">Gespeichert.</p>}
+          {!error && dirty && <p className="unsaved">Ungespeicherte Änderungen</p>}
+          {!error && !dirty && saved && <p className="hint">Gespeichert.</p>}
         </div>
         {/* Set apart from the rest so it is never the button next to Speichern. */}
         <button
@@ -693,6 +954,22 @@ export default function Detail({ registration, onBack, onSaved }: DetailProps) {
           {deleting ? 'Löscht…' : 'Registrierung löschen'}
         </button>
       </div>
+
+      {collectOpen && (
+        <CollectDialog
+          rows={[{
+            ...registration,
+            payment_method: paymentMethod || null,
+            voucher_payment_method: showVoucherPayment ? voucherPaymentMethod || null : null,
+            price: due,
+          }]}
+          skippedCount={0}
+          busy={collecting}
+          error={collectError}
+          onConfirm={(method) => { void collect(method) }}
+          onCancel={() => setCollectOpen(false)}
+        />
+      )}
     </div>
   )
 }

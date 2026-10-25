@@ -67,6 +67,7 @@ function makeRegistration(overrides: Partial<Registration> = {}): Registration {
     voucher_redeem_synced_at: null,
     voucher_check_status: null,
     voucher_check_detail: null,
+    voucher_accepted: 0,
     ...overrides,
   }
 }
@@ -87,7 +88,10 @@ function renderDetail(registration = makeRegistration()) {
 // The voucher fields live in one labelled group, so a test can assert on the
 // block as a whole rather than on three fields that happen to be near each other.
 const voucherGroup = () => screen.getByRole('group', { name: 'Gutschein' })
-const status = () => document.querySelector('.voucher-status')
+// The hint under the till says why it is asked for, why it is locked, or that
+// it is still missing.
+const tillHint = () => screen.getByLabelText(/Zuzahlung bezahlt mit/).nextElementSibling
+const kassa = () => screen.getByRole('region', { name: 'Kassa' })
 
 describe('Detail', () => {
   beforeEach(() => {
@@ -122,7 +126,7 @@ describe('Detail', () => {
     expect(within(guest).getByText('30')).toBeInTheDocument()
     expect(within(guest).getByText('170 cm')).toBeInTheDocument()
     expect(within(guest).getByText('80 kg')).toBeInTheDocument()
-    expect(within(guest).getByText('2026-07-09')).toBeInTheDocument()
+    expect(within(guest).getByText('09.07.2026')).toBeInTheDocument()
     expect(within(guest).getByText('Hauptstraße 1, 5020 Salzburg')).toBeInTheDocument()
     expect(within(guest).getByText('anna@example.com')).toBeInTheDocument()
     expect(within(guest).getByText('0664 1234567')).toBeInTheDocument()
@@ -241,10 +245,10 @@ describe('Detail', () => {
     // The field stays in place and says so instead of vanishing.
     expect(total()).toBe('0 €')
     expect(screen.getByLabelText(/Zuzahlung bezahlt mit/)).toBeDisabled()
-    expect(status()).toHaveTextContent('Gutschein deckt alles ab — nichts zu kassieren.')
+    expect(tillHint()).toHaveTextContent('Gutschein deckt alles ab — keine Zuzahlung.')
   })
 
-  it('keeps the whole voucher block together, with the till after what sets it', async () => {
+  it('keeps what the voucher is together, and what it costs in the Kassa', async () => {
     const user = userEvent.setup()
     renderDetail()
     await screen.findByText('Zu kassieren')
@@ -255,10 +259,10 @@ describe('Detail', () => {
 
     const group = voucherGroup()
     expect(within(group).getByLabelText('Gutschein-Nr.')).toBeInTheDocument()
-    // The till has to come after the fields that decide its amount — above them
-    // it appeared where nobody was looking.
     const selects = within(group).getAllByRole('combobox').map((s) => s.getAttribute('name'))
-    expect(selects).toEqual(['voucher_service', 'voucher_payment_method'])
+    expect(selects).toEqual(['voucher_service'])
+    // The till is a money decision, so it sits beside the total it is about.
+    expect(within(kassa()).getByLabelText(/Zuzahlung bezahlt mit/)).toBeInTheDocument()
 
     await user.selectOptions(screen.getByLabelText('Zahlungsart'), 'cash')
     expect(screen.queryByRole('group', { name: 'Gutschein' })).not.toBeInTheDocument()
@@ -273,7 +277,7 @@ describe('Detail', () => {
     await user.selectOptions(screen.getByLabelText(/Gutschein-Leistung/), 'jump_video')
     await user.selectOptions(screen.getByLabelText(/Gebuchte Leistung/), 'video_photo')
 
-    expect(status()).toHaveTextContent('Noch 20 € offen — bitte Kassa wählen.')
+    expect(tillHint()).toHaveTextContent('20 € Zuzahlung — Bar oder Karte wählen.')
     expect(screen.getByLabelText(/Zuzahlung bezahlt mit/)).toBeEnabled()
   })
 
@@ -287,14 +291,14 @@ describe('Detail', () => {
     await user.selectOptions(screen.getByLabelText(/Gebuchte Leistung/), 'video')
 
     // Money is owed and nobody said where it went — that till will not add up.
-    expect(status()).toHaveClass('warn')
+    expect(tillHint()).toHaveClass('warn')
 
     // A half-finished row still has to be storable.
     await user.click(screen.getByRole('button', { name: 'Speichern' }))
     expect(api.patch).toHaveBeenCalled()
 
     await user.selectOptions(screen.getByLabelText(/Zuzahlung bezahlt mit/), 'cash')
-    expect(status()).not.toHaveClass('warn')
+    expect(tillHint()).not.toHaveClass('warn')
   })
 
   it('clears a stale till when the top-up disappears', async () => {
@@ -769,8 +773,9 @@ describe('Detail', () => {
       voucher_redeem_synced_at: null,
       voucher_check_status: null,
       voucher_check_detail: null,
+      voucher_accepted: 0,
     }))
-    await screen.findByText('Zu kassieren')
+    await screen.findByText('Kassiert')
 
     const line = screen.getByText(/noch nicht in die Gutscheinliste geschrieben/)
     expect(line.textContent).toContain('Einlösung vermerkt')
@@ -892,5 +897,209 @@ describe('Detail', () => {
         screen.queryByRole('button', { name: /Preise für diesen Tag/ })
       ).not.toBeInTheDocument()
     })
+  })
+})
+
+describe('Detail — money state and safeguards', () => {
+  const CANCELLED_CHECK = {
+    configured: true, readable: true, status: 'cancelled' as const, number: '26-004',
+    paidAt: null, paidText: 'STORNO', amount: 270, art: 'Tandem',
+    service: 'jump' as const, isAddOn: false, redeemedAt: null, error: null,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(api.masters).mockResolvedValue([])
+    vi.mocked(api.flyers).mockResolvedValue([{ id: 7, name: 'Peter' }])
+    vi.mocked(api.dayTables).mockResolvedValue({
+      prices: PRICES, payouts: PAYOUTS, frozen: true,
+      current: { prices: PRICES, payouts: PAYOUTS },
+    })
+    vi.mocked(api.patch).mockImplementation(async (_id, fields) =>
+      makeRegistration(fields as Partial<Registration>))
+  })
+
+  // A cancelled voucher used to take the whole jump off the bill, with only a
+  // line of small print to say the guest was flying free.
+  it('charges the full price for a voucher the club list rejects', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(CANCELLED_CHECK)
+    renderDetail(makeRegistration({ payment_method: 'voucher', voucher_service: 'jump' }))
+    await screen.findByText('Zu kassieren')
+
+    await user.type(screen.getByLabelText('Gutschein-Nr.'), '26-004')
+
+    expect(await within(kassa()).findByRole('alert')).toHaveTextContent(
+      'Gutschein laut Liste ungültig — volle Summe kassieren.')
+    expect(total()).toBe('270 €')
+    expect(within(kassa()).getByText('Gutschein ungültig')).toBeInTheDocument()
+  })
+
+  it('takes a rejected voucher off only once someone honours it', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.checkVoucher).mockResolvedValue(CANCELLED_CHECK)
+    renderDetail(makeRegistration({ payment_method: 'voucher', voucher_service: 'jump' }))
+    await screen.findByText('Zu kassieren')
+    await user.type(screen.getByLabelText('Gutschein-Nr.'), '26-004')
+    await within(kassa()).findByRole('alert')
+
+    await user.click(screen.getByLabelText('trotzdem anerkennen'))
+
+    expect(total()).toBe('0 €')
+    expect(within(kassa()).getByRole('alert')).toHaveTextContent('wird trotzdem abgezogen')
+    await user.click(screen.getByRole('button', { name: 'Speichern' }))
+    expect(vi.mocked(api.patch).mock.calls[0][1]).toMatchObject({ voucher_accepted: 1 })
+  })
+
+  it('prices a saved row with the verdict stored on it until the check is back', async () => {
+    vi.mocked(api.checkVoucher).mockReturnValue(new Promise(() => {}))
+    renderDetail(makeRegistration({
+      payment_method: 'voucher', voucher_service: 'jump', voucher_number: '26-002',
+      voucher_check_status: 'unpaid',
+    }))
+    await screen.findByText('Zu kassieren')
+
+    expect(total()).toBe('270 €')
+  })
+
+  it('says an open row is open and offers to collect it here', async () => {
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    expect(within(kassa()).getByText('Offen')).toBeInTheDocument()
+    expect(within(kassa()).getByRole('button', { name: '270 € kassieren' })).toBeEnabled()
+  })
+
+  // An operator back from an interruption has to see whether the money is in.
+  it('says when and into which till a collected row was paid', async () => {
+    const paidAt = '2026-07-09T13:54:00.000Z'
+    renderDetail(makeRegistration({ payment_method: 'cash', price: 270, paid_at: paidAt }))
+    await screen.findByText('Kassiert')
+
+    const time = new Date(paidAt).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' })
+    expect(within(kassa()).getByText(`Kassiert ${time} · Bar`)).toBeInTheDocument()
+    expect(within(kassa()).queryByRole('button', { name: /kassieren/ })).not.toBeInTheDocument()
+  })
+
+  it('says what saving a collected row would change in the till', async () => {
+    const user = userEvent.setup()
+    renderDetail(makeRegistration({
+      payment_method: 'cash', price: 270, paid_at: '2026-07-09T13:54:00.000Z',
+    }))
+    await screen.findByText('Kassiert')
+    expect(screen.queryByText(/Bereits kassiert/)).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText(/Gebuchte Leistung/), 'video')
+    await user.selectOptions(screen.getByLabelText('Zahlungsart'), 'card')
+
+    expect(screen.getByText(/Bereits kassiert/)).toHaveTextContent(
+      'Bereits kassiert — Speichern ändert die Kassa: 270 € → 370 €, Bar → Karte.')
+  })
+
+  it('collects a row whose till is known without asking, saving the screen with it', async () => {
+    const user = userEvent.setup()
+    const { onSaved } = renderDetail(makeRegistration({ payment_method: 'cash' }))
+    await screen.findByText('Zu kassieren')
+
+    await user.type(screen.getByLabelText('Load-Nr.'), '4')
+    await user.click(within(kassa()).getByRole('button', { name: '270 € kassieren' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(vi.mocked(api.patch).mock.calls[0][1]).toMatchObject({
+      paid: true, payment_method: 'cash', load_number: 4,
+    })
+    expect(onSaved).toHaveBeenCalled()
+  })
+
+  it('asks for the till when the row has none', async () => {
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await user.click(within(kassa()).getByRole('button', { name: '270 € kassieren' }))
+    const dialog = screen.getByRole('dialog')
+    await user.selectOptions(within(dialog).getByLabelText('Zahlungsart'), 'Karte')
+    await user.click(within(dialog).getByRole('button', { name: 'Kassieren' }))
+
+    expect(vi.mocked(api.patch).mock.calls[0][1]).toMatchObject({ paid: true, payment_method: 'card' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('reports unsaved edits, and stops claiming "Gespeichert." after the next one', async () => {
+    const user = userEvent.setup()
+    const onDirtyChange = vi.fn()
+    render(
+      <Detail
+        registration={makeRegistration()}
+        onBack={() => {}}
+        onSaved={() => {}}
+        onDirtyChange={onDirtyChange}
+      />
+    )
+    await screen.findByText('Zu kassieren')
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false)
+
+    await user.type(screen.getByLabelText('Load-Nr.'), '3')
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+    expect(screen.getByText('Ungespeicherte Änderungen')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Speichern' }))
+    expect(await screen.findByText('Gespeichert.')).toBeInTheDocument()
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false)
+
+    await user.type(screen.getByLabelText('Load-Nr.'), '1')
+    expect(screen.queryByText('Gespeichert.')).not.toBeInTheDocument()
+    expect(screen.getByText('Ungespeicherte Änderungen')).toBeInTheDocument()
+  })
+
+  it('does not count the voucher amount the list fills in as an edit', async () => {
+    const onDirtyChange = vi.fn()
+    vi.mocked(api.checkVoucher).mockResolvedValue({ ...CANCELLED_CHECK, status: 'ok', paidText: null })
+    render(
+      <Detail
+        registration={makeRegistration({ payment_method: 'voucher', voucher_number: '26-001' })}
+        onBack={() => {}}
+        onSaved={() => {}}
+        onDirtyChange={onDirtyChange}
+      />
+    )
+    await waitFor(() => expect(api.checkVoucher).toHaveBeenCalled())
+    expect(onDirtyChange).not.toHaveBeenCalledWith(true)
+  })
+
+  it('says when the prices could not be loaded and loads them again on request', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.dayTables).mockRejectedValueOnce(new Error('offline'))
+    renderDetail()
+
+    expect(await screen.findByText('Preise konnten nicht geladen werden.')).toBeInTheDocument()
+    expect(screen.queryByText('Preise werden geladen…')).not.toBeInTheDocument()
+    // Before the table arrives the computed amount is 0 — overriding from it
+    // would store the jump as free.
+    expect(screen.getByLabelText('abweichender Preis')).toBeDisabled()
+
+    await user.click(within(kassa()).getByRole('button', { name: 'Erneut versuchen' }))
+    expect(await screen.findByText('Zu kassieren')).toBeInTheDocument()
+    expect(total()).toBe('270 €')
+  })
+
+  it('says when the crew lists could not be loaded', async () => {
+    vi.mocked(api.masters).mockRejectedValueOnce(new Error('offline'))
+    renderDetail()
+
+    expect(await screen.findByText('Tandemmaster und Kameraflieger konnten nicht geladen werden.'))
+      .toBeInTheDocument()
+  })
+
+  it('points out a booked video that nobody films yet', async () => {
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText('Zu kassieren')
+
+    await user.selectOptions(screen.getByLabelText(/Gebuchte Leistung/), 'video')
+    expect(screen.getByText('Video gebucht — noch kein Kameraflieger.')).toHaveClass('warn')
+
+    await user.selectOptions(screen.getByLabelText('Kameraflieger'), 'Peter')
+    expect(screen.queryByText(/noch kein Kameraflieger/)).not.toBeInTheDocument()
   })
 })

@@ -22,6 +22,7 @@ const AWAY_FROM_LIST = 'tandem-away-from-list'
 
 const DISCARD_TARIFE = 'Ungespeicherte Änderungen an den Tarifen verwerfen?'
 const DISCARD_SETTINGS = 'Ungespeicherte Änderungen an den Einstellungen verwerfen?'
+const DISCARD_DETAIL = 'Ungespeicherte Änderungen an dieser Registrierung verwerfen?'
 
 function App() {
   // The app opens on the Übersicht, where a jump day starts.
@@ -30,8 +31,10 @@ function App() {
 
   // Prices apply to every future day and the guest signs the texts on
   // Einstellungen, so an edit on either screen is not dropped by a stray click
-  // elsewhere without asking. Holds the question to ask, or null when nothing
-  // is unsaved; one is enough, since only one of the two screens is mounted. A
+  // elsewhere without asking — nor is a guest's load and master on the detail
+  // screen, left half-done when the operator is called away. Holds the question
+  // to ask, or null when nothing is unsaved; one is enough, since only one of
+  // these screens is mounted. A
   // ref, not state: the popstate and beforeunload handlers below are registered
   // once and must read it fresh.
   const discardQuestion = useRef<string | null>(null)
@@ -40,6 +43,9 @@ function App() {
   }, [])
   const onSettingsDirtyChange = useCallback((dirty: boolean) => {
     discardQuestion.current = dirty ? DISCARD_SETTINGS : null
+  }, [])
+  const onDetailDirtyChange = useCallback((dirty: boolean) => {
+    discardQuestion.current = dirty ? DISCARD_DETAIL : null
   }, [])
   const mayLeave = () => discardQuestion.current === null || window.confirm(discardQuestion.current)
 
@@ -311,7 +317,12 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
           {view === 'overview' && <Overview onOpenDay={openDay} />}
           {view === 'list' && <List onSelect={openDetail} date={date} onDateChange={chooseDate} />}
           {view === 'detail' && selected && (
-            <Detail registration={selected} onBack={closeDetail} onSaved={setSelected} />
+            <Detail
+              registration={selected}
+              onBack={closeDetail}
+              onSaved={setSelected}
+              onDirtyChange={onDetailDirtyChange}
+            />
           )}
           {view === 'tarife' && <Tarife onDirtyChange={onTarifeDirtyChange} />}
           {view === 'crew' && <Crew />}

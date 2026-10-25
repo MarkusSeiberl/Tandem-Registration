@@ -15,6 +15,8 @@ vi.mock('./api', async (importOriginal) => ({
   list: vi.fn(),
   calendar: vi.fn(),
   masters: vi.fn(),
+  flyers: vi.fn(),
+  dayTables: vi.fn(),
   pendingRedemptions: vi.fn(),
   shutdownAllowed: vi.fn(),
   shutdownApp: vi.fn(),
@@ -56,6 +58,7 @@ const registration = (): api.Registration => ({
   voucher_redeem_synced_at: null,
   voucher_check_status: null,
   voucher_check_detail: null,
+  voucher_accepted: 0,
 })
 
 beforeEach(() => {
@@ -63,6 +66,7 @@ beforeEach(() => {
   vi.mocked(api.list).mockResolvedValue([])
   vi.mocked(api.calendar).mockResolvedValue([])
   vi.mocked(api.masters).mockResolvedValue([])
+  vi.mocked(api.flyers).mockResolvedValue([])
   vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 0 })
   vi.mocked(api.shutdownAllowed).mockResolvedValue({ allowed: true })
   vi.mocked(api.shutdownApp).mockResolvedValue(undefined)
@@ -108,6 +112,43 @@ describe('unsaved Einstellungen', () => {
 
     expect(window.confirm).not.toHaveBeenCalled()
     expect(await screen.findByRole('heading', { name: 'Tandemmaster' })).toBeInTheDocument()
+  })
+})
+
+// A guest's load and master, typed and then left when the operator is called
+// away, would otherwise vanish on Zurück without a word.
+describe('unsaved detail', () => {
+  async function editDetail() {
+    const user = userEvent.setup()
+    vi.mocked(api.list).mockResolvedValue([registration()])
+    vi.mocked(api.dayTables).mockResolvedValue({
+      prices: SETTINGS.prices, payouts: SETTINGS.payouts, frozen: false,
+      current: { prices: SETTINGS.prices, payouts: SETTINGS.payouts },
+    })
+    await renderOnManifest()
+    await user.click(await screen.findByText(/Anna Muster/))
+    await user.type(await screen.findByLabelText('Load-Nr.'), '3')
+    return user
+  }
+
+  it('asks before Zurück drops them, and stays when the answer is no', async () => {
+    const user = await editDetail()
+    vi.mocked(window.confirm).mockReturnValue(false)
+
+    await user.click(screen.getByRole('button', { name: '← Zurück' }))
+
+    expect(window.confirm)
+      .toHaveBeenCalledWith('Ungespeicherte Änderungen an dieser Registrierung verwerfen?')
+    expect((screen.getByLabelText('Load-Nr.') as HTMLInputElement).value).toBe('3')
+  })
+
+  it('leaves when the answer is yes', async () => {
+    const user = await editDetail()
+    vi.mocked(window.confirm).mockReturnValue(true)
+
+    await user.click(screen.getByRole('button', { name: '← Zurück' }))
+
+    expect(screen.queryByLabelText('Load-Nr.')).not.toBeInTheDocument()
   })
 })
 

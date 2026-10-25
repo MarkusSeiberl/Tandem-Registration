@@ -389,7 +389,7 @@ h2 {
   cursor: not-allowed;
 }
 
-/* "Kassiert" — outlined in the accent until used, filled on hover, so the open
+/* "Kassieren" — outlined in the accent until used, filled on hover, so the open
    table reads as a row of things still to do. */
 .btn.collect {
   background: transparent;
@@ -419,42 +419,78 @@ h2 {
   color: var(--border);
 }
 
-/* The day's takings — the same numbers the export's "Gesamt" row carries,
-   so they can be read off without exporting. */
-.list-total {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-h);
-  align-self: center;
-  font-family: var(--mono);
-}
-
-/* What is still to be collected is the number the manifest works against, so it
-   gets the ember accent; the collected sum beside it stays neutral. It is the
-   first item after the buttons, so it also carries the push to the far right. */
-.list-total-open {
+/* The day's takings — the same numbers the export's "Gesamt" row carries, so
+   they can be read off without exporting. Pushed to the far end of the toolbar,
+   away from the controls: these are read, not pressed. */
+.day-totals {
   margin-left: auto;
-  color: var(--ember);
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
 }
 
-/* Bar over Karte, in the order the tills are counted. The block sits on the
-   toolbar's baseline like a single item, so the row's alignment is unchanged. */
-.list-total-tills {
+.day-totals dl {
+  margin: 0;
+}
+
+.day-totals dd {
+  margin: 0;
+}
+
+/* Offen is the figure the desk works down all day, so it is the one that
+   survives a squint: large and in the heading ink. Ink, not ember — ember
+   already says "Gutschein" and "look here", and at this size it would also
+   fail contrast on the light background. */
+.day-total-open {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  align-self: center;
-  /* A rule between the open sum and the tills, so "Offen" and "Kassiert"
-     read as two separate figures rather than one run of amounts. */
-  padding-left: 14px;
-  border-left: 2px solid var(--rule);
+  justify-content: flex-end;
+  text-align: right;
 }
 
-/* The row-level centring above would centre each line within the column and
-   leave the two amounts ragged against each other. */
-.list-total-tills .list-total {
-  align-self: stretch;
+.day-total-open dt {
+  font-size: 14px;
+}
+
+.day-total-open dd {
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+/* Nothing left to collect: the day's goal reached, said in the go colour. */
+.day-totals.settled .day-total-open dd {
+  color: var(--accent);
+}
+
+/* Bar over Karte over their sum, labels left and amounts right, so the digits
+   line up the way they are counted at closing. The rule keeps them apart from
+   Offen, so the two sides never read as one run of amounts. */
+.day-total-tills {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-content: end;
+  padding-left: 18px;
+  border-left: 1px solid var(--rule);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Spacing on the amount rather than a column gap, so the rule above the sum
+   runs unbroken under both columns. */
+.day-total-tills dd {
+  padding-left: 14px;
+  text-align: right;
+  color: var(--text-h);
+}
+
+.day-total-tills .day-total-sum {
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px solid var(--rule);
+  font-weight: 700;
+  color: var(--text-h);
 }
 
 /* The actions that work on the checked rows, kept off the day toolbar above:
@@ -481,7 +517,7 @@ h2 {
 }
 
 /* Opaque on purpose — it is sticky, and rows scroll underneath it. The ember
-   edge is what "there is something here to press" looks like elsewhere on this
+   frame is what "there is something here to press" looks like elsewhere on this
    screen (.day-outdated, .export-warning) and the colour the open total already
    carries, so the bar reads as part of that language instead of a new one. */
 .selection-bar-active {
@@ -489,8 +525,7 @@ h2 {
   top: 0;
   z-index: 3;
   background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--ember);
+  border: 1px solid var(--ember);
   pointer-events: auto;
 }
 
@@ -748,12 +783,11 @@ col.col-action { width: 140px; }
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
-/* The guest strip. One rule of --ember down the left edge is the whole of the
-   screen's boldness; every card below it stays a quiet panel. */
+/* The guest strip. Read, never edited here, so it is framed like the panels
+   below it: the screen's emphasis belongs to the Kassa, where the money is. */
 .guest-strip {
   padding: 16px 20px;
   border: 1px solid var(--border);
-  border-left: 3px solid var(--ember);
   border-radius: 10px;
   background: var(--panel-bg);
 }
@@ -786,12 +820,12 @@ col.col-action { width: 140px; }
 }
 
 .fact dt {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text);
-  opacity: 0.7;
+  opacity: 0.8;
 }
 
 .fact dd {
@@ -830,6 +864,8 @@ col.col-action { width: 140px; }
 .field input:focus-visible,
 .field select:focus-visible,
 .field textarea:focus-visible,
+.text-body textarea:focus-visible,
+.text-preview:focus-visible,
 .add-row input:focus-visible,
 .crew-edit-fields input:focus-visible {
   outline: 2px solid var(--accent);
@@ -867,14 +903,53 @@ col.col-action { width: 140px; }
 /* The selected surcharge no longer matches the weight the guest entered. Worth
    seeing, never worth overriding — the waiver belongs to the operator. */
 .field-hint.warn {
-  color: var(--ember);
+  /* --ember is the brand's accent, not a text colour: at 12px it falls under
+     3:1 on a white panel and is gone in sunlight. */
+  color: var(--warn-text);
   font-weight: 600;
   opacity: 1;
 }
 
-/* The club's list disagrees with what was typed — worth seeing, never blocking. */
-.voucher-check.warn {
-  color: var(--ember);
+/* On Einstellungen the hints are instructions, not asides — what to leave
+   empty, which brackets to replace — so they are read at a size and contrast
+   that hold up by the hangar door. */
+.settings-screen .field-hint {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.settings-screen .field-hint.warn {
+  opacity: 1;
+}
+
+/* The detail screen's hints carry consequences — what is billed, what reaches
+   the export, which till — and are read at the desk by an open hangar door. */
+.detail-screen .field-hint {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.detail-screen .field-hint.warn {
+  opacity: 1;
+}
+
+/* The verdict lines under the voucher number, read out as they arrive. */
+.voucher-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.voucher-checks:empty {
+  display: none;
+}
+
+/* The club's list disagrees with what was typed. The verdict that decides
+   whether the voucher counts at all is read at the size of a label, in the
+   warning colour that holds up on a white panel — never in --ember. */
+.detail-screen .voucher-check.warn {
+  color: var(--warn-text);
+  font-size: 14px;
   font-weight: 600;
   opacity: 1;
 }
@@ -913,21 +988,6 @@ col.col-action { width: 140px; }
   color: var(--text-h);
 }
 
-/* Says why the till below it is asked for — or why it is locked. */
-.voucher-status {
-  margin: 0;
-  font-size: 13px;
-  color: var(--text);
-  opacity: 0.75;
-}
-
-/* Money owed with no till recorded: the evening's cash count will not add up. */
-.voucher-status.warn {
-  color: var(--ember);
-  font-weight: 600;
-  opacity: 1;
-}
-
 /* The gap between what a voucher cost and what it buys today. Framed like the
    outdated-price note, because it is the same kind of statement: nothing is
    broken, but somebody has to decide about it. */
@@ -936,13 +996,14 @@ col.col-action { width: 140px; }
   flex-direction: column;
   gap: 8px;
   padding: 8px 10px;
-  border-left: 3px solid var(--ember);
+  border: 1px solid var(--ember);
+  border-radius: 8px;
   background: rgba(255, 106, 61, 0.08);
 }
 
 .voucher-difference-line {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.45;
 }
 
@@ -970,13 +1031,12 @@ col.col-action { width: 140px; }
   display: flex;
   flex-direction: column;
   gap: 4px;
-  opacity: 0.75;
 }
 
 .price-total {
   padding-top: 8px;
   border-top: 1px solid var(--border);
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 700;
   color: var(--text-h);
 }
@@ -987,7 +1047,8 @@ col.col-action { width: 140px; }
 .price-outdated {
   margin: 0;
   padding: 8px 10px;
-  border-left: 3px solid var(--ember);
+  border: 1px solid var(--ember);
+  border-radius: 8px;
   background: rgba(255, 106, 61, 0.08);
   font-size: 13px;
   line-height: 1.45;
@@ -1020,35 +1081,88 @@ col.col-action { width: 140px; }
   line-height: 1.45;
 }
 
-/* Raised by Tagesabschluss when the day is not ready to be written. Same ember
-   frame as .day-outdated, which is what "there is something here for you to
-   press" looks like on this screen; the buttons sit on their own row because one
-   of them changes every open tandem on the list. */
+/* Raised by Tagesabschluss when the day is not ready to be written. A checklist,
+   not an alarm: the same ember frame as .day-outdated, which is what "there is
+   something here for you to press" looks like on this screen, around the plain
+   panel surface. A tinted wash read as an error. The buttons sit on their own
+   row because one of them changes every open tandem on the list. */
 .export-warning {
   margin-bottom: 12px;
-  padding: 10px 14px;
+  padding: 14px 16px;
   border: 1px solid var(--ember);
   border-radius: 8px;
-  background: rgba(255, 106, 61, 0.08);
+  background: var(--panel-bg);
 }
 
-.export-warning p {
+.export-warning h2 {
   margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.export-checklist {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* An ember dot per open point, the same mark the voucher pill uses for "look
+   here"; the text stays body ink so it holds up in sunlight. */
+.export-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.export-checklist li::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ember);
+}
+
+/* The fix stands right after its sentence, not at the far edge of the panel. */
+.export-checklist li > span {
+  flex: 0 1 auto;
+  min-width: 240px;
+}
+
+.export-why {
+  margin: 0 0 12px;
   font-size: 13px;
   line-height: 1.45;
 }
 
-/* The panel's own Betriebsleiter field has no paragraph around it to carry
-   .export-warning p's margin-bottom, so without this it would butt straight
-   into the button row below. */
-.export-warning .manager-field {
-  margin-bottom: 8px;
+.export-why summary {
+  cursor: pointer;
+  width: fit-content;
+  color: var(--text-h);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.export-why p {
+  margin: 6px 0 0;
+  max-width: 72ch;
 }
 
 .export-warning-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* The toolbar's Betriebsleiter field while the panel says it is missing: the
+   line's "Eintragen" sends the cursor here, and the edge shows where. */
+.manager-field.needs-entry input {
+  border-color: var(--warn-text);
 }
 
 /* Kassieren dialog: one payment method applied to every selected tandem at
@@ -1063,8 +1177,56 @@ col.col-action { width: 140px; }
      is unreadable on --panel-bg once dark mode is on. */
   color: var(--text);
   padding: 20px 24px;
-  min-width: 320px;
-  max-width: 420px;
+  min-width: 360px;
+  max-width: 480px;
+}
+
+/* Who the run books, one line each: name, the till it names now, the amount.
+   A long selection scrolls inside the list so the select and the buttons stay
+   where the operator's hand already is. */
+.collect-rows {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.collect-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.collect-row-till {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.collect-row-price {
+  min-width: 64px;
+  text-align: right;
+}
+
+/* A till the chosen method is about to replace. Weight and the ember text
+   carry it, so the change still reads where colour does not. */
+.collect-row.changed .collect-row-till {
+  color: var(--warn-text);
+  font-weight: 700;
+}
+
+/* Holds its line even while empty, so picking a method does not make the
+   buttons jump under the pointer. */
+.collect-dialog p.collect-change-note {
+  min-height: 1.45em;
+  margin: 8px 0 0;
+  color: var(--warn-text);
+  font-weight: 700;
 }
 
 /* Custom properties are historically unreliable inside ::backdrop, so this is
@@ -1290,38 +1452,19 @@ col.col-action { width: 140px; }
   color: var(--text);
 }
 
-/* Tarife screen: two columns where the window allows — prices with the final
-   prices under them, payouts beside — stacked on a narrow one. */
+/* Tarife screen: three columns where the window allows — prices, payouts,
+   final prices — wrapping on a narrow one; the manifest PC is 1920 px wide.
+   They do not grow: on a wide screen the columns follow each other instead of
+   drifting to the far edge. */
 .betraege-section {
   display: flex;
   flex-wrap: wrap;
   gap: 32px;
 }
 
-.betraege-section .price-column,
 .betraege-section > .amount-block {
-  flex: 1;
+  flex: 0 1 360px;
   min-width: 260px;
-}
-
-/* The price column holds its fields and the final-price table side by side,
-   so the table that shows what an edit would charge stays in view while the
-   edit is made. Its basis is what both need on one line, and it does not grow
-   past it: on a wide screen the payouts follow it instead of drifting to the
-   far edge. The payout column beside it needs only its fields. */
-.betraege-section .price-column {
-  flex: 0 1 760px;
-}
-
-.betraege-section > .amount-block {
-  flex: 1 1 240px;
-}
-
-.amount-body {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 12px 32px;
 }
 
 /* Amounts are three or four digits; a field sized for them keeps the number
@@ -1394,11 +1537,8 @@ col.col-action { width: 140px; }
   gap: 12px;
 }
 
-/* Scrolls rather than spilling out: the labels and three nowrap columns are
-   wider than the column's minimum width. */
-/* Beside the price fields it wraps under them before it shrinks: flex-wrap
-   measures it at its full width. The scroll is only the last resort of a
-   window narrower than the table itself. */
+/* The third column, as wide as its table. Scrolls rather than spilling out on
+   a window narrower than its labels and three nowrap columns. */
 .price-matrix {
   flex: 0 1 auto;
   min-width: 0;
@@ -1616,6 +1756,79 @@ html:has(.save-bar) {
   font-weight: 600;
 }
 
+/* This text has an unsaved edit. In the warm "somebody has to decide" colour
+   of the save bar's own line, so the two are read as one message. */
+.text-tab-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: var(--warn-text);
+}
+
+/* Placeholders still in a guest text, listed above both tabs so one in the
+   text that is not showing is not missed. */
+.text-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* A warning line that is also the way to the fix: it opens the text with the
+   placeholder selected. Underlined so it reads as something to press. */
+.text-warning {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warn-text);
+  background: none;
+  border: none;
+  padding: 2px 0;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.text-warning:hover {
+  text-decoration-thickness: 2px;
+}
+
+.text-warning:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* The same placeholder where it stands in the preview. The stronger of the two
+   warm tints, plus a 2px rule under it: the tint alone barely parts from the
+   panel, and the rule is what still shows in sunlight. Text stays full contrast. */
+.text-preview mark.placeholder {
+  background: var(--row-warn-hover);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+  box-shadow: inset 0 -2px 0 var(--warn-text);
+}
+
+/* A text a save was refused for. Red edge and ring like an invalid amount on
+   Tarife, the reason right under it. */
+.text-body textarea[aria-invalid='true'] {
+  border-color: var(--error-text);
+}
+
+.text-body textarea[aria-invalid='true']:focus-visible {
+  outline-color: var(--error-text);
+}
+
+.text-error {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .text-body {
   flex: 1;
   min-height: 0;
@@ -1730,6 +1943,63 @@ html:has(.save-bar) {
   margin-left: 0;
 }
 
+/* Kassa's title and the row's money state on one line. The state is a solid
+   label, not a hint: "is the money in?" is the first question after every
+   interruption, and it has to be answered from across the desk. */
+.kassa-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kassa-state {
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Open money is the "somebody has to act" state: the ember tint the list uses
+   for rows that want attention, with text in the readable warning colour. */
+.kassa-state.open {
+  background: var(--row-warn);
+  color: var(--warn-text);
+}
+
+.kassa-state.paid {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* The club's list rejects the voucher. Red, unlike the ember notes: the
+   default here is that the guest pays in full, and missing it costs money. */
+.kassa-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--error-text);
+  border-radius: 8px;
+  background: rgba(179, 38, 30, 0.08);
+}
+
+.kassa-alert p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-h);
+}
+
+.kassa-alert strong {
+  color: var(--error-text);
+}
+
+.btn.kassa-collect {
+  align-self: stretch;
+}
+
 /* Three columns, and the money is the one an operator glances back at while
    changing the other two. On a desk monitor it follows them down. */
 @media (min-width: 1280px) {
@@ -1818,8 +2088,28 @@ html:has(.save-bar) {
   text-align: center;
 }
 
-.calendar-head .btn:last-child {
+.calendar-head .calendar-today-button {
   margin-left: auto;
+}
+
+/* A failed load says so above the grid and offers the retry there, so the
+   empty cells below are not read as a month nobody jumped. */
+.calendar-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.calendar-error .error {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* The month on screen has not arrived yet (or could not be loaded): its days
+   are drawn, but faded, so an empty cell is not taken for "no jumps". */
+.calendar-grid.loading .calendar-day {
+  opacity: 0.45;
 }
 
 .calendar-grid {
@@ -1841,7 +2131,11 @@ html:has(.save-bar) {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  min-height: 78px;
+  /* Room for the number and three lines under it, so a week with a busy day
+     is not taller than the week before it. The small lines would otherwise
+     inherit the body's 24px line height and need 122px. */
+  min-height: 100px;
+  line-height: 1.3;
   gap: 2px;
   padding: 8px 10px;
   border: 1px solid var(--border);
@@ -1865,13 +2159,39 @@ html:has(.save-bar) {
   background: rgba(19, 122, 69, 0.16);
 }
 
+.calendar-day:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .calendar-day.today {
   border: 2px solid var(--ember);
   padding: 7px 9px;
 }
 
+.calendar-day-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Today is a filled ember chip with dark ink on it (6.6:1), not ember text on
+   white (2.9:1, gone in sunlight). A filled shape also keeps it apart from the
+   warnings, which are orange words, never a block of colour. */
 .calendar-day.today .calendar-day-number {
-  color: var(--ember);
+  min-width: 28px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--ember);
+  color: var(--ink);
+  text-align: center;
+}
+
+.calendar-today-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-h);
 }
 
 .calendar-day-number {
@@ -1897,4 +2217,20 @@ html:has(.save-bar) {
   font-size: 12px;
   font-weight: 600;
   color: var(--warn-text);
+}
+
+/* Money still owed: the loudest line a day can carry, above the missing
+   Abschluss, in the same warm "somebody has to act" colour. */
+.calendar-open {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--warn-text);
+}
+
+/* Today with guests and no Abschluss yet: the normal state of a jump day in
+   progress, so it is said plainly rather than flagged. */
+.calendar-running {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
 }

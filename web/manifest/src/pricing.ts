@@ -16,6 +16,20 @@ export interface PricedFields {
   // and what the club's list says was paid for it.
   voucher_topup?: number | boolean | null
   voucher_amount?: number | null
+  // The club list's verdict on the number, and whether the operator honours the
+  // voucher regardless.
+  voucher_check_status?: string | null
+  voucher_accepted?: number | boolean | null
+}
+
+// Mirror of REJECTED_VOUCHER_STATUSES / voucherRejected() in src/server/pricing.ts:
+// a voucher that was never paid, was cancelled or is already spent takes nothing
+// off the bill unless the operator honours it anyway.
+export const REJECTED_VOUCHER_STATUSES = ['unpaid', 'cancelled', 'redeemed'] as const
+
+export function voucherRejected(fields: PricedFields): boolean {
+  return (REJECTED_VOUCHER_STATUSES as readonly string[]).includes(fields.voucher_check_status ?? '') &&
+    !fields.voucher_accepted
 }
 
 export interface PriceLine {
@@ -34,7 +48,7 @@ export function voucherValue(service: VoucherService | '' | null | undefined, pr
 // The detail screen shows the difference to what the guest once paid for the
 // voucher, and that difference is about this number.
 export function voucherCovered(fields: PricedFields, prices: Prices): number {
-  if (fields.payment_method !== 'voucher') return 0
+  if (fields.payment_method !== 'voucher' || voucherRejected(fields)) return 0
   const service = prices.jump +
     (fields.extra_booking === 'video'
       ? prices.video
@@ -59,7 +73,9 @@ export function priceLines(fields: PricedFields, prices: Prices): PriceLine[] {
   else if (fields.extra_booking === 'video_photo')
     lines.push({ label: 'Video+Foto', amount: prices.video_photo })
 
-  if (fields.payment_method === 'voucher') {
+  if (fields.payment_method === 'voucher' && voucherRejected(fields)) {
+    lines.push({ label: 'Gutschein ungültig', amount: 0 })
+  } else if (fields.payment_method === 'voucher') {
     lines.push({ label: 'Gutschein', amount: -voucherCovered(fields, prices) })
     const topup = voucherTopup(fields, prices)
     if (topup > 0) lines.push({ label: 'Gutschein-Differenz', amount: topup })

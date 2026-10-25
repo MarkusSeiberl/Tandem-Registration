@@ -201,12 +201,12 @@ export function registerRegistrationRoutes(
 
   const ALLOWED = ['tandem_master_id', 'load_number', 'price', 'price_override',
     'payment_method', 'voucher_payment_method', 'voucher_number', 'voucher_service',
-    'voucher_topup', 'voucher_amount',
+    'voucher_topup', 'voucher_amount', 'voucher_accepted',
     'extra_booking', 'weight_surcharge', 'camera_flyer_id', 'paid_at', 'notes'] as const
   // Changing any of these changes what the guest owes, so a non-overridden price
   // has to be recomputed in the same statement.
   const PRICING_FIELDS = [
-    'payment_method', 'voucher_service', 'voucher_topup', 'voucher_amount',
+    'payment_method', 'voucher_service', 'voucher_topup', 'voucher_amount', 'voucher_accepted',
     'extra_booking', 'weight_surcharge',
   ] as const
 
@@ -249,6 +249,7 @@ export function registerRegistrationRoutes(
       return reply.code(400).send({ error: 'Gutscheinbetrag ungültig' })
     // SQLite has no boolean type; normalised the same way price_override is.
     if ('voucher_topup' in body) body.voucher_topup = body.voucher_topup ? 1 : 0
+    if ('voucher_accepted' in body) body.voucher_accepted = body.voucher_accepted ? 1 : 0
 
     // Free text, so nothing to validate beyond the type — but an empty note is
     // stored as NULL rather than '' so the export shows a blank cell either way.
@@ -266,6 +267,11 @@ export function registerRegistrationRoutes(
     // stamp records when the money arrived, not when someone last tapped.
     if (paid === true && !current.paid_at) body.paid_at = new Date().toISOString()
     else if (paid === false) body.paid_at = null
+
+    // Honouring a rejected voucher is a decision about that one voucher. A new
+    // number starts without it, unless the same save makes the call again.
+    if ('voucher_number' in body && body.voucher_number !== current.voucher_number &&
+        !('voucher_accepted' in body)) body.voucher_accepted = 0
 
     // A price sent by the manifest is always a manual correction — the computed
     // amount never travels over the wire. Sending price_override:0 hands control

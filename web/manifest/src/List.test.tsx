@@ -28,6 +28,10 @@ function renderList(props: Partial<React.ComponentProps<typeof List>> = {}) {
   )
 }
 
+// One figure of the day's totals block, read off by its term.
+const total = (term: string) =>
+  screen.getByText(term, { selector: '.day-totals dt' }).nextElementSibling?.textContent
+
 const openTable = () => screen.getByRole('table', { name: /^Offen/ })
 const paidTable = () => screen.getByRole('table', { name: /^Kassiert/ })
 
@@ -283,7 +287,7 @@ describe('List', () => {
 
     // The row button asks the same question the toolbar's Kassieren asks, for
     // one row: a Zahlungsart, before any money is booked.
-    await user.click(within(openTable()).getByRole('button', { name: /kassiert/i }))
+    await user.click(within(openTable()).getByRole('button', { name: /kassieren$/i }))
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('1 Tandem kassieren')).toBeInTheDocument()
     await user.selectOptions(within(dialog).getByLabelText('Zahlungsart'), 'cash')
@@ -317,7 +321,7 @@ describe('List', () => {
     renderList({ onSelect })
     await screen.findByText('Anna Muster')
 
-    await userEvent.click(within(openTable()).getByRole('button', { name: /kassiert/i }))
+    await userEvent.click(within(openTable()).getByRole('button', { name: /kassieren$/i }))
 
     expect(onSelect).not.toHaveBeenCalled()
   })
@@ -383,7 +387,7 @@ describe('List', () => {
     renderList()
 
     expect(await screen.findByText('Gutschein')).toBeInTheDocument()
-    expect(screen.getByText('Bar')).toBeInTheDocument()
+    expect(within(openTable()).getByText('Bar')).toBeInTheDocument()
   })
 
   it('shows no surcharge pill when none is set', async () => {
@@ -407,9 +411,11 @@ describe('List', () => {
 
     renderList()
 
-    expect(await screen.findByText('Offen: 510 €')).toBeInTheDocument()
-    expect(screen.getByText('Kassiert Bar: 270 €')).toBeInTheDocument()
-    expect(screen.getByText('Kassiert Karte: 0 €')).toBeInTheDocument()
+    await waitFor(() => expect(total('Offen')).toBe('510 €'))
+    expect(total('Bar')).toBe('270 €')
+    expect(total('Karte')).toBe('0 €')
+    // The tills added up, to hold against the cash box and the card terminal.
+    expect(total('Kassiert')).toBe('270 €')
   })
 
   it('splits the collected sum by till, counting a voucher row by its top-up', async () => {
@@ -426,8 +432,10 @@ describe('List', () => {
 
     renderList()
 
-    expect(await screen.findByText('Kassiert Bar: 150 €')).toBeInTheDocument()
-    expect(screen.getByText('Kassiert Karte: 200 €')).toBeInTheDocument()
+    await waitFor(() => expect(total('Bar')).toBe('150 €'))
+    expect(total('Karte')).toBe('200 €')
+    // Row 4 has no till, so it is in neither sum nor in their total.
+    expect(total('Kassiert')).toBe('350 €')
   })
 
   it('shows the day it was handed, in the format the input speaks', async () => {
@@ -572,9 +580,8 @@ describe('List', () => {
   // written.
   describe('Export-Warnung', () => {
     const exportButton = () => screen.getByRole('button', { name: 'Tagesabschluss' })
-    // The panel's own Betriebsleiter field carries the same label as the one in
-    // the toolbar, so tests that need one or the other scope the query to its
-    // container instead of adding a test-only hook to the markup.
+    // Scoped queries keep the panel and the toolbar apart where both carry
+    // similar text, without adding a test-only hook to the markup.
     const panel = () => document.querySelector('.export-warning') as HTMLElement
     const toolbar = () => document.querySelector('.list-toolbar') as HTMLElement
 
@@ -795,7 +802,7 @@ describe('List', () => {
     // The label reads the live field, not the snapshot the panel opened on —
     // typing a name while the panel stands turns "Trotzdem exportieren" back
     // into a plain "Exportieren".
-    it('drops the "Trotzdem" from the export button once a name is typed into the panel', async () => {
+    it('drops the "Trotzdem" from the export button once a name is typed', async () => {
       const user = userEvent.setup()
       vi.mocked(api.list).mockResolvedValue([
         makeRow({
@@ -808,7 +815,7 @@ describe('List', () => {
       await user.click(exportButton())
       expect(await screen.findByRole('button', { name: 'Trotzdem exportieren' })).toBeInTheDocument()
 
-      await user.type(within(panel()).getByLabelText('Betriebsleiter'), 'Max Muster')
+      await user.type(within(toolbar()).getByLabelText('Betriebsleiter'), 'Max Muster')
 
       expect(await screen.findByRole('button', { name: 'Exportieren' })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Trotzdem exportieren' })).not.toBeInTheDocument()
@@ -869,7 +876,7 @@ describe('List', () => {
       expect(api.saveDayManager).not.toHaveBeenCalled()
     })
 
-    // The loop goes through the same PATCH as a row's own ✓ Kassiert button.
+    // The loop goes through the same PATCH as a row's own Kassieren button.
     // That handler is where a voucher row's redemption is queued for the export
     // sweep, so a bulk route of its own would have to repeat that rule to stay
     // correct.
@@ -1036,10 +1043,9 @@ describe('List', () => {
         expect(screen.queryByText(/noch nicht kassiert/)).not.toBeInTheDocument())
     })
 
-    // The panel's field is bound to the same manager state as the toolbar, not
-    // a copy of its own — so a letter typed in one has to show up in the other
-    // immediately, without any save round-trip in between.
-    it('shows the typed name in the toolbar field too', async () => {
+    // The day has one Betriebsleiter field, in the toolbar. The panel points
+    // at it instead of offering a second copy of the same input.
+    it('has no Betriebsleiter field of its own', async () => {
       const user = userEvent.setup()
       vi.mocked(api.list).mockResolvedValue([
         makeRow({
@@ -1050,15 +1056,32 @@ describe('List', () => {
       await screen.findByText('Anna Muster')
 
       await user.click(exportButton())
-      await user.type(within(panel()).getByLabelText('Betriebsleiter'), 'Max Muster')
+      await screen.findByText(/Kein Betriebsleiter/)
 
-      expect(within(toolbar()).getByLabelText('Betriebsleiter')).toHaveValue('Max Muster')
+      expect(within(panel()).queryAllByLabelText('Betriebsleiter')).toHaveLength(0)
+    })
+
+    // "Eintragen" takes the operator straight to the one field that fixes it.
+    it('puts the cursor in the toolbar field from the missing-name line', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({
+          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
+        }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+      await user.click(await within(panel()).findByRole('button', { name: 'Betriebsleiter eintragen' }))
+
+      expect(within(toolbar()).getByLabelText('Betriebsleiter')).toHaveFocus()
     })
 
     // Pressing the panel's export button has to carry the name the operator
-    // just typed there — runExport() saves through the same saveManager() the
+    // just typed — runExport() saves through the same saveManager() the
     // toolbar's onBlur uses, so there is nothing left to write on top of it.
-    it('saves the name typed in the panel before exporting', async () => {
+    it('saves the typed name before exporting', async () => {
       const user = userEvent.setup()
       vi.mocked(api.list).mockResolvedValue([
         makeRow({
@@ -1069,7 +1092,7 @@ describe('List', () => {
       await screen.findByText('Anna Muster')
 
       await user.click(exportButton())
-      await user.type(within(panel()).getByLabelText('Betriebsleiter'), 'Max Muster')
+      await user.type(within(toolbar()).getByLabelText('Betriebsleiter'), 'Max Muster')
       await user.click(within(panel()).getByRole('button', { name: 'Exportieren' }))
 
       await waitFor(() =>
@@ -1080,28 +1103,9 @@ describe('List', () => {
       ).toBeLessThan(vi.mocked(api.exportDay).mock.invocationCallOrder[0])
     })
 
-    // A panel that opened only because tandems are still open already has a
-    // Betriebsleiter — offering a second field there would ask again for
-    // nothing.
-    it('adds no Betriebsleiter field when the panel opened only for open tandems', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.dayManager).mockResolvedValue({ name: 'Max Muster' })
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({ id: 1, payment_method: 'cash', price: 270 }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      await screen.findByText(/noch nicht kassiert/)
-
-      expect(within(panel()).queryAllByLabelText('Betriebsleiter')).toHaveLength(0)
-    })
-
-    // The field's presence is pinned to the snapshot the panel opened with, not
-    // the live value — otherwise it would vanish under the operator's fingers
-    // as soon as the warning sentence above it does.
-    it('keeps the field once the warning sentence is gone', async () => {
+    // The checklist only lists what is still wrong: a name typed while the
+    // panel stands takes its line away.
+    it('drops the missing-name line once a name is typed', async () => {
       const user = userEvent.setup()
       vi.mocked(api.list).mockResolvedValue([
         makeRow({
@@ -1112,12 +1116,32 @@ describe('List', () => {
       await screen.findByText('Anna Muster')
 
       await user.click(exportButton())
-      await user.type(within(panel()).getByLabelText('Betriebsleiter'), 'Max Muster')
+      await user.type(within(toolbar()).getByLabelText('Betriebsleiter'), 'Max Muster')
 
       expect(screen.queryByText(
         'Kein Betriebsleiter eingetragen. Die BL-Zeile im Blatt bliebe leer.'
       )).not.toBeInTheDocument()
-      expect(within(panel()).getByLabelText('Betriebsleiter')).toBeInTheDocument()
+    })
+
+    // Once nothing the panel listed is still true, exporting is no longer an
+    // override, and the button says so by becoming the primary action.
+    it('makes the export the primary action only once nothing is left to override', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([
+        makeRow({
+          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
+        }),
+      ])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Anna Muster')
+
+      await user.click(exportButton())
+      expect(await screen.findByRole('button', { name: 'Trotzdem exportieren' }))
+        .not.toHaveClass('primary')
+
+      await user.type(within(toolbar()).getByLabelText('Betriebsleiter'), 'Max Muster')
+
+      expect(within(panel()).getByRole('button', { name: 'Exportieren' })).toHaveClass('primary')
     })
   })
 
@@ -1530,13 +1554,13 @@ describe('List', () => {
     })
   })
 
-  // The row's own ✓ Kassiert is the bulk action for exactly one tandem: same
+  // The row's own Kassieren is the bulk action for exactly one tandem: same
   // dialog, same write rule, and it says nothing about whatever else is checked.
   describe('Zeilen-Kassieren', () => {
     const checkbox = (name: string) => screen.getByLabelText(`${name} auswählen`)
     const dialog = () => screen.getByRole('dialog')
     const rowCollectButton = (name: string) =>
-      within(screen.getByText(name).closest('tr')!).getByRole('button', { name: /kassiert/i })
+      within(screen.getByText(name).closest('tr')!).getByRole('button', { name: /kassieren$/i })
 
     beforeEach(() => {
       vi.clearAllMocks()

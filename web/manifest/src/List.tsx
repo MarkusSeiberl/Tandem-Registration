@@ -150,14 +150,20 @@ function RegistrationTable({
               its click to itself.
             */}
             <td className="col-action" onClick={(e) => e.stopPropagation()}>
+              {/*
+                Named for what it does, not for the state it leads to: a row of
+                "✓ Kassiert" in the open table read as tandems already paid.
+                The guest's name tells one row's button from the next.
+              */}
               {variant === 'open' ? (
                 <button
                   type="button"
                   className="btn small collect"
                   onClick={() => onCollect(row)}
                   disabled={busy || pendingId === row.id}
+                  aria-label={`${row.first_name} ${row.last_name} kassieren`}
                 >
-                  ✓ Kassiert
+                  Kassieren
                 </button>
               ) : (
                 <button
@@ -200,17 +206,14 @@ interface ExportWarning {
    * honest sentence instead of reading as twice the problem.
    */
   noPaymentOpen: number
-  /**
-   * Whether the day had no Betriebsleiter when the button was pressed. Only
-   * decides that the panel carries the name field — the warning sentence and
-   * the button's label read the live value, because the operator fixes this
-   * one inside the panel.
-   */
-  noManager: boolean
 }
 
-/** The panel's first line: what the day still has open, in words. */
-function warningCounts(w: ExportWarning): string {
+/**
+ * The panel's checklist: what the day still has open, one line per group of
+ * tandems. A follow-up that only makes sense after its line ("1 davon …")
+ * stays on that line.
+ */
+function warningCounts(w: ExportWarning): string[] {
   const parts: string[] = []
   // Rows without a Zahlungsart that are not among the open ones — the ones an
   // "open" sentence cannot already be covering.
@@ -234,12 +237,12 @@ function warningCounts(w: ExportWarning): string {
       const haveVerb = w.open === 1 ? 'hat' : 'haben'
       parts.push(`${openSubject} ${openVerb} noch nicht kassiert und ${haveVerb} noch keine Zahlungsart${voucher}.`)
     } else {
-      parts.push(`${openSubject} ${openVerb} noch nicht kassiert${voucher}.`)
-      if (w.noPaymentOpen > 0) {
-        parts.push(w.noPaymentOpen === 1
-          ? '1 davon hat auch keine Zahlungsart.'
-          : `${w.noPaymentOpen} davon haben auch keine Zahlungsart.`)
-      }
+      const openLine = `${openSubject} ${openVerb} noch nicht kassiert${voucher}.`
+      parts.push(w.noPaymentOpen === 0
+        ? openLine
+        : w.noPaymentOpen === 1
+          ? `${openLine} 1 davon hat auch keine Zahlungsart.`
+          : `${openLine} ${w.noPaymentOpen} davon haben auch keine Zahlungsart.`)
     }
   }
 
@@ -257,7 +260,7 @@ function warningCounts(w: ExportWarning): string {
         : `${collectedNoPayment} Tandems haben keine Zahlungsart.`)
     }
   }
-  return parts.join(' ')
+  return parts
 }
 
 /**
@@ -286,7 +289,7 @@ function warningExplanation(w: ExportWarning): string {
  * bulk-collect loop's `freshRows`) can describe exactly that snapshot without
  * waiting for it to land back in `rows`.
  */
-function computeExportWarning(source: Registration[], noManager: boolean): ExportWarning {
+function computeExportWarning(source: Registration[]): ExportWarning {
   const open = source.filter((r) => r.paid_at == null)
   const noPayment = source.filter((r) => collectedVia(r) === null && (r.price ?? 0) > 0)
   return {
@@ -294,7 +297,6 @@ function computeExportWarning(source: Registration[], noManager: boolean): Expor
     openVoucher: open.filter((r) => r.payment_method === 'voucher').length,
     noPayment: noPayment.length,
     noPaymentOpen: noPayment.filter((r) => r.paid_at == null).length,
-    noManager,
   }
 }
 
@@ -311,7 +313,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   const [collecting, setCollecting] = useState(false)
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
   // What the open dialog is about to collect: the checked rows ('selection'),
-  // or the single row whose ✓ Kassiert button was pressed (its id). null while
+  // or the single row whose Kassieren button was pressed (its id). null while
   // the dialog is closed.
   const [collectTarget, setCollectTarget] = useState<'selection' | number | null>(null)
   const [collectError, setCollectError] = useState<string | null>(null)
@@ -447,11 +449,12 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   }
 
   // Whether the day currently has nobody named as Betriebsleiter. Read fresh on
-  // every render, so the warning sentence, the button label and the re-checks
-  // after a bulk collect all agree with whatever stands in the field right
-  // now — only the snapshot in ExportWarning.noManager is meant to hold still
-  // once the panel is open.
+  // every render, so the panel's checklist line and the export button's label
+  // agree with whatever stands in the field right now.
   const noManager = manager.trim() === ''
+  // The one Betriebsleiter field. The Tagesabschluss panel sends the cursor
+  // here rather than drawing a second copy of the same input.
+  const managerInput = useRef<HTMLInputElement>(null)
 
   const sortedRows = [...rows].sort((a, b) => (b.load_number ?? -1) - (a.load_number ?? -1))
   // Payment happens after the jump, so the open table is the working list and
@@ -463,7 +466,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   // passing over them in silence.
   const selectedOpenRows = openRows.filter((r) => checkedIds.has(r.id))
   const selectedPaidCount = paidRows.filter((r) => checkedIds.has(r.id)).length
-  // A row's own ✓ Kassiert is the same action on one row: same dialog, same
+  // A row's own Kassieren is the same action on one row: same dialog, same
   // write rule, so a single tandem's Zahlungsart is asked for instead of
   // guessed. Read out of `openRows` rather than held as a snapshot, so a row
   // collected on another tablet while the dialog stands drops out of the run.
@@ -488,6 +491,9 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   const sumOf = (items: Registration[]) => items.reduce((sum, r) => sum + (r.price ?? 0), 0)
   const paidVia = (via: 'cash' | 'card') =>
     sumOf(paidRows.filter((r) => collectedVia(r) === via))
+  const openSum = sumOf(openRows)
+  const paidCash = paidVia('cash')
+  const paidCard = paidVia('card')
 
   function toggleChecked(id: number) {
     setCheckedIds((prev) => {
@@ -701,7 +707,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
       // The panel below is still open (it is what "Alle kassieren und
       // exportieren" hangs off) and must describe what the table now shows,
       // not the pre-collect count the operator originally pressed on.
-      setExportWarning(computeExportWarning(freshRows, noManager))
+      setExportWarning(computeExportWarning(freshRows))
       return
     } finally {
       setCollecting(false)
@@ -713,7 +719,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     // this re-check: collecting rows cannot have changed it, and the operator
     // already saw the name warning and the field before pressing this button —
     // going ahead without a name here is exactly the override the design grants.
-    const afterCollect = computeExportWarning(freshRows, noManager)
+    const afterCollect = computeExportWarning(freshRows)
     if (afterCollect.noPayment > 0) {
       setExportWarning(afterCollect)
       return
@@ -735,7 +741,6 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
       openVoucher: openVoucherRows.length,
       noPayment: noPaymentRows.length,
       noPaymentOpen: noPaymentOpenRows.length,
-      noManager,
     })
   }
 
@@ -762,11 +767,15 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   }
 
   // Evaluated once so the JSX below can use the exact same value both to
-  // decide whether to render a paragraph and to fill it in — the condition and
+  // decide whether to render something and to fill it in — the condition and
   // the text it guards have to be one value, not two separate calls to
   // warningCounts() / warningExplanation() that happen to agree.
-  const warningCountsText = exportWarning ? warningCounts(exportWarning) : ''
+  const warningLines = exportWarning ? warningCounts(exportWarning) : []
   const warningExplanationText = exportWarning ? warningExplanation(exportWarning) : ''
+  // Exporting skips something as long as anything the panel lists is still
+  // true — a missing name, or a line about open tandems or a missing
+  // Zahlungsart. Only once both are gone does the press stop being an override.
+  const exportOverrides = noManager || warningLines.length > 0
 
   return (
     <div className="list-screen">
@@ -819,9 +828,12 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         </button>
         {/* Beside the date, because it is the same kind of fact: what this day
             was. The export writes it into the Betriebsleiter (BL) line. */}
-        <label className="manager-field">
+        <label
+          className={exportWarning && noManager ? 'manager-field needs-entry' : 'manager-field'}
+        >
           Betriebsleiter
           <input
+            ref={managerInput}
             type="text"
             value={manager}
             onChange={(e) => setManager(e.target.value)}
@@ -841,83 +853,91 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         {/* Kassieren and the delete action used to stand here. They act on the
             checked rows, not on the day, and in a row of identical grey buttons
             only their disabled state said so — they live in SelectionBar now. */}
-        {/* What is still to be collected, and what already went into the till.
-            The row count lives in each table's caption, so the toolbar does not
-            repeat it. */}
-        <span className="list-total list-total-open">Offen: {formatEuro(sumOf(openRows))}</span>
-        {/* The two tills stack rather than sitting side by side: at closing they
-            are counted one after the other, and as a column the amounts line up
-            under each other instead of drifting apart when the toolbar wraps. */}
-        <div className="list-total-tills">
-          <span className="list-total">Kassiert Bar: {formatEuro(paidVia('cash'))}</span>
-          <span className="list-total">Kassiert Karte: {formatEuro(paidVia('card'))}</span>
+        {/* The day's money in one place. Offen leads: it is what the desk works
+            down all day and what has to reach zero before closing. The tills
+            stack beside it with their sum, in the order they are counted, so the
+            amounts line up under each other for the cash box and the terminal.
+            The row count lives in each table's caption, so it is not repeated. */}
+        <div className={openSum === 0 && rows.length > 0 ? 'day-totals settled' : 'day-totals'}>
+          <dl className="day-total-open">
+            <dt>Offen</dt>
+            <dd className="numeral">{formatEuro(openSum)}</dd>
+          </dl>
+          <dl className="day-total-tills">
+            <dt>Bar</dt>
+            <dd className="numeral">{formatEuro(paidCash)}</dd>
+            <dt>Karte</dt>
+            <dd className="numeral">{formatEuro(paidCard)}</dd>
+            <dt className="day-total-sum">Kassiert</dt>
+            <dd className="numeral day-total-sum">{formatEuro(paidCash + paidCard)}</dd>
+          </dl>
         </div>
       </div>
 
       {exportWarning && (
-        <div className="export-warning">
-          {/* Lives on the live name, not the snapshot: the operator fixes this
-              one right here in the panel, so the sentence has to disappear the
-              moment the field does, not only on the next Tagesabschluss press. */}
-          {noManager && (
-            <p>Kein Betriebsleiter eingetragen. Die BL-Zeile im Blatt bliebe leer.</p>
-          )}
-          {/* On a clean day both of these are empty strings — rendering them
-              unconditionally would put two blank lines in the panel. */}
-          {warningCountsText && <p>{warningCountsText}</p>}
-          {warningExplanationText && <p>{warningExplanationText}</p>}
-          {/* Bound to the snapshot, not the live check above: the field must
-              not disappear out from under the operator's fingers the moment
-              the first letter clears the live warning sentence. It shares the
-              toolbar's manager state, so a letter typed here already stands
-              there too, and runExport() picks it up via the existing
-              saveManager() call — no save of its own. */}
-          {exportWarning.noManager && (
-            <label className="manager-field">
-              Betriebsleiter
-              <input
-                type="text"
-                value={manager}
-                onChange={(e) => setManager(e.target.value)}
-                disabled={collecting || exporting}
-              />
-            </label>
+        <section className="export-warning" aria-labelledby="export-warning-title">
+          <h2 id="export-warning-title">Vor dem Tagesabschluss</h2>
+          {/* One line per thing the day is missing, each with the way to fix
+              it where there is one. The lines read live state, so a fix made
+              while the panel stands takes its line away. */}
+          <ul className="export-checklist">
+            {noManager && (
+              <li>
+                <span>Kein Betriebsleiter eingetragen. Die BL-Zeile im Blatt bliebe leer.</span>
+                <button
+                  type="button"
+                  className="btn secondary small"
+                  onClick={() => managerInput.current?.focus()}
+                  aria-label="Betriebsleiter eintragen"
+                >
+                  Eintragen
+                </button>
+              </li>
+            )}
+            {warningLines.map((line) => <li key={line}><span>{line}</span></li>)}
+          </ul>
+          {/* What the counts mean for the two files the export writes. Needed
+              once, not on every closing, so it waits behind a question. */}
+          {warningExplanationText && (
+            <details className="export-why">
+              <summary>Warum?</summary>
+              <p>{warningExplanationText}</p>
+            </details>
           )}
           <div className="export-warning-actions">
             {/* Only when there is something to collect — a button that would do
-                nothing promises an action the day does not have. */}
+                nothing promises an action the day does not have. It settles
+                the panel's first line rather than skipping it, so it leads. */}
             {exportWarning.open > 0 && (
               <button
                 type="button"
-                className="btn small"
+                className="btn primary"
                 onClick={() => { void handleCollectAllAndExport() }}
                 disabled={collecting || exporting}
               >
                 {collecting ? 'Wird kassiert…' : 'Alle kassieren und exportieren'}
               </button>
             )}
+            {/* Filled only once it is no longer an override: an emphasised
+                "Trotzdem" would invite the very skip the panel warns about. */}
             <button
               type="button"
-              className="btn secondary small"
+              className={exportOverrides ? 'btn secondary' : 'btn primary'}
               onClick={() => { void runExport() }}
               disabled={collecting || exporting}
             >
-              {/* "Trotzdem" belongs on the button as long as anything the panel
-                  said is still true — a missing name, or a warning sentence
-                  still standing (open tandems, a missing Zahlungsart). Only
-                  once both are gone does the press stop being an override. */}
-              {(noManager || warningCountsText) ? 'Trotzdem exportieren' : 'Exportieren'}
+              {exportOverrides ? 'Trotzdem exportieren' : 'Exportieren'}
             </button>
             <button
               type="button"
-              className="btn secondary small"
+              className="btn secondary"
               onClick={() => setExportWarning(null)}
               disabled={collecting || exporting}
             >
               Abbrechen
             </button>
           </div>
-        </div>
+        </section>
       )}
 
       {collectTarget !== null && (

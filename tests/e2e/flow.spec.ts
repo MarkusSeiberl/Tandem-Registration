@@ -177,7 +177,7 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   const paidTable = page.locator('table.manifest-table-paid')
   await expect(openTable.locator('tr.clickable-row', { hasText: fullName })).toBeVisible()
 
-  await updatedRow.getByRole('button', { name: /Kassiert/ }).click()
+  await updatedRow.getByRole('button', { name: /kassieren$/ }).click()
 
   // The row already names its till (Karte, set on the detail screen above), so
   // the row button collects it without asking for a Zahlungsart again.

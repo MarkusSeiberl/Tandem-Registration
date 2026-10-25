@@ -2,19 +2,21 @@ import { useEffect, useRef, useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import type { CollectedVia, Registration } from './api'
 import { COLLECTED_VIA } from './labels'
-import { formatEuro } from './pricing'
+import { collectedVia, formatEuro } from './pricing'
 
 export interface CollectDialogProps {
-  /** Die ausgewählten Zeilen, die noch offen sind. Nie leer. */
+  /** The selected rows that are still open. Never empty. */
   rows: Registration[]
-  /** Angehakte Zeilen, die schon kassiert sind — die Aktion lässt sie in Ruhe. */
+  /** Checked rows that are already collected — the run leaves them alone. */
   skippedCount: number
-  /** Läuft die Schleife gerade. Sperrt alles, damit Escape nicht mitten hineinfährt. */
+  /** The collect loop is running. Locks everything so Escape cannot cut into it. */
   busy: boolean
   error: string | null
   onConfirm: (method: CollectedVia) => void
   onCancel: () => void
 }
+
+const tillLabel = (via: CollectedVia) => COLLECTED_VIA.find((m) => m.value === via)?.label ?? ''
 
 // Pure presentation: List (Task 3) owns the fetch loop and only mounts this
 // once it has decided the dialog should be open, so there is no `open` prop
@@ -45,7 +47,15 @@ export default function CollectDialog({
   }
 
   const sum = rows.reduce((s, r) => s + (r.price ?? 0), 0)
-  const zeroCount = rows.filter((r) => (r.price ?? 0) <= 0).length
+  // The run writes the chosen method to every row that owes money, over
+  // whatever till it already names (List.runCollect). That is the intended
+  // rule; what this dialog adds is that nobody has to find out at closing.
+  const owes = (r: Registration) => (r.price ?? 0) > 0
+  const overwritten = (r: Registration) => {
+    const current = collectedVia(r)
+    return method !== '' && owes(r) && current !== null && current !== method
+  }
+  const changeCount = rows.filter(overwritten).length
 
   return (
     <dialog
@@ -57,7 +67,25 @@ export default function CollectDialog({
       <h2 id="collect-dialog-title">
         {rows.length === 1 ? '1 Tandem kassieren' : `${rows.length} Tandems kassieren`}
       </h2>
-      <p>
+      <ul className="collect-rows" aria-label="Tandems in diesem Lauf">
+        {rows.map((r) => {
+          const current = collectedVia(r)
+          return (
+            <li key={r.id} className={overwritten(r) ? 'collect-row changed' : 'collect-row'}>
+              <span className="collect-row-name">{r.first_name} {r.last_name}</span>
+              <span className="collect-row-till">
+                {!owes(r)
+                  ? 'ohne Restbetrag'
+                  : overwritten(r)
+                    ? `${tillLabel(current!)} → ${tillLabel(method as CollectedVia)}`
+                    : current !== null ? tillLabel(current) : ''}
+              </span>
+              <span className="collect-row-price numeral">{formatEuro(r.price ?? 0)}</span>
+            </li>
+          )
+        })}
+      </ul>
+      <p className="collect-sum">
         Offener Betrag: <span className="numeral">{formatEuro(sum)}</span>
       </p>
       {skippedCount > 0 && (
@@ -65,13 +93,6 @@ export default function CollectDialog({
           {skippedCount === 1
             ? '1 bereits kassierte Zeile bleibt unverändert.'
             : `${skippedCount} bereits kassierte Zeilen bleiben unverändert.`}
-        </p>
-      )}
-      {zeroCount > 0 && (
-        <p>
-          {zeroCount === 1
-            ? '1 Tandem ohne Restbetrag behält seine Zahlungsart.'
-            : `${zeroCount} Tandems ohne Restbetrag behalten ihre Zahlungsart.`}
         </p>
       )}
       <label>
@@ -87,6 +108,13 @@ export default function CollectDialog({
           ))}
         </select>
       </label>
+      <p className="collect-change-note" aria-live="polite">
+        {changeCount === 0
+          ? ''
+          : changeCount === 1
+            ? '1 Zahlungsart wird geändert.'
+            : `${changeCount} Zahlungsarten werden geändert.`}
+      </p>
       {error && <p className="error">{error}</p>}
       <div className="collect-dialog-actions">
         <button type="button" className="btn secondary" onClick={onCancel} disabled={busy}>

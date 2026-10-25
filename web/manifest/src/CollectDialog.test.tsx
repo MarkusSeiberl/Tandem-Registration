@@ -1,6 +1,6 @@
 import type React from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CollectDialog from './CollectDialog'
 import type { Registration } from './api'
@@ -104,43 +104,77 @@ describe('CollectDialog', () => {
     expect(screen.queryByText(/bereits kassierte Zeile/)).not.toBeInTheDocument()
   })
 
-  it('weist auf Zeilen ohne Restbetrag hin, sonst nicht', () => {
-    const { rerender } = renderDialog({
-      rows: [makeRow({ id: 1, price: 0 }), makeRow({ id: 2, price: 100 })],
+  // The run is named row by row, so the operator sees who is about to be
+  // booked rather than only how many.
+  it('lists every tandem in the run by name with its amount', () => {
+    renderDialog({
+      rows: [
+        makeRow({ id: 1, first_name: 'Anna', last_name: 'Huber', price: 300 }),
+        makeRow({ id: 2, first_name: 'Bruno', last_name: 'Bauer', price: 390 }),
+      ],
     })
-    expect(
-      screen.getByText('1 Tandem ohne Restbetrag behält seine Zahlungsart.')
-    ).toBeInTheDocument()
+    const list = screen.getByRole('list', { name: 'Tandems in diesem Lauf' })
+    const items = within(list).getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    expect(items[0]).toHaveTextContent('Anna Huber')
+    expect(items[0]).toHaveTextContent('300 €')
+    expect(items[1]).toHaveTextContent('Bruno Bauer')
+  })
 
-    rerender(
-      <CollectDialog
-        rows={[
-          makeRow({ id: 1, price: 0 }),
-          makeRow({ id: 2, price: 0 }),
-          makeRow({ id: 3, price: 100 }),
-        ]}
-        skippedCount={0}
-        busy={false}
-        error={null}
-        onConfirm={() => {}}
-        onCancel={() => {}}
-      />
-    )
-    expect(
-      screen.getByText('2 Tandems ohne Restbetrag behalten ihre Zahlungsart.')
-    ).toBeInTheDocument()
+  // A fully covered voucher moves no money, so the chosen method does not
+  // reach it — the row says so where it stands.
+  it('marks a tandem without anything left to pay', () => {
+    renderDialog({
+      rows: [
+        makeRow({ id: 1, first_name: 'Anna', last_name: 'Huber', price: 0 }),
+        makeRow({ id: 2, first_name: 'Bruno', last_name: 'Bauer', price: 100 }),
+      ],
+    })
+    const [covered, owing] = screen.getAllByRole('listitem')
+    expect(covered).toHaveTextContent('ohne Restbetrag')
+    expect(owing).not.toHaveTextContent('ohne Restbetrag')
+  })
 
-    rerender(
-      <CollectDialog
-        rows={[makeRow({ id: 1, price: 100 })]}
-        skippedCount={0}
-        busy={false}
-        error={null}
-        onConfirm={() => {}}
-        onCancel={() => {}}
-      />
-    )
-    expect(screen.queryByText(/ohne Restbetrag/)).not.toBeInTheDocument()
+  // The chosen method is written to every row that owes money, including one
+  // that already names its till. That overwrite is deliberate, but it must be
+  // visible before Kassieren is pressed, not discovered at closing.
+  it('shows which recorded tills the chosen method overwrites', async () => {
+    const user = userEvent.setup()
+    renderDialog({
+      rows: [
+        makeRow({ id: 1, first_name: 'Anna', last_name: 'Huber', price: 370, payment_method: 'cash' }),
+        makeRow({ id: 2, first_name: 'Bruno', last_name: 'Bauer', price: 270, payment_method: 'card' }),
+        makeRow({ id: 3, first_name: 'Clara', last_name: 'Berg', price: 270 }),
+      ],
+    })
+    expect(screen.queryByText(/geändert/)).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Zahlungsart'), 'Karte')
+
+    const [anna, bruno, clara] = screen.getAllByRole('listitem')
+    expect(anna).toHaveTextContent('Bar → Karte')
+    expect(bruno).not.toHaveTextContent('→')
+    expect(clara).not.toHaveTextContent('→')
+    expect(screen.getByText('1 Zahlungsart wird geändert.')).toBeInTheDocument()
+  })
+
+  // A voucher row's till is its top-up's; that is the field the run writes.
+  it('reads a voucher row\'s till from its top-up', async () => {
+    const user = userEvent.setup()
+    renderDialog({
+      rows: [
+        makeRow({
+          id: 1, first_name: 'Anna', last_name: 'Huber', price: 50,
+          payment_method: 'voucher', voucher_payment_method: 'cash',
+        }),
+        makeRow({ id: 2, first_name: 'Bruno', last_name: 'Bauer', price: 270, payment_method: 'cash' }),
+      ],
+    })
+
+    await user.selectOptions(screen.getByLabelText('Zahlungsart'), 'Karte')
+
+    expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('Bar → Karte')
+    expect(screen.getByText('2 Zahlungsarten werden geändert.')).toBeInTheDocument()
   })
 
   it('sperrt Kassieren, bis eine Zahlungsart gewählt ist', async () => {

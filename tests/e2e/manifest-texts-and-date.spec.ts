@@ -83,11 +83,11 @@ test('the manifest keeps the chosen day, and "Heute" brings it back', async ({ p
   await expect(page.getByRole('button', { name: 'Heute' })).toBeDisabled()
 })
 
-test('the app opens on the Übersicht, and "Neuer Tandemtag" starts today', async ({ page }) => {
+test('the app opens on the Übersicht, and "Heute öffnen" opens today', async ({ page }) => {
   await page.goto('/manifest/')
   await expect(page.getByRole('heading', { name: 'Übersicht' })).toBeVisible()
   await expect(page.locator('.calendar-day.today')).toHaveCount(1)
 
-  await page.getByRole('button', { name: 'Neuer Tandemtag' }).click()
+  await page.getByRole('button', { name: 'Heute öffnen' }).click()
   await expect(page.getByLabel('Datum')).toHaveValue(localToday())
 })

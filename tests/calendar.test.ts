@@ -16,9 +16,9 @@ test('counts the registrations of each day in the month', async () => {
   expect(res.statusCode).toBe(200)
   expect(res.json()).toEqual({
     days: [
-      { date: '2026-10-03', count: 2, exported: false },
-      { date: '2026-10-17', count: 1, exported: false },
-      { date: '2026-10-31', count: 1, exported: false },
+      { date: '2026-10-03', count: 2, open: 2, exported: false },
+      { date: '2026-10-17', count: 1, open: 1, exported: false },
+      { date: '2026-10-31', count: 1, open: 1, exported: false },
     ],
   })
   await app.close()
@@ -28,7 +28,7 @@ test('leaves out the days of neighbouring months', async () => {
   const { app, db } = testServer()
   seed(db, ['2026-09-30', '2026-10-01', '2026-11-01'])
   const res = await app.inject({ method: 'GET', url: '/api/calendar/2026-10' })
-  expect(res.json()).toEqual({ days: [{ date: '2026-10-01', count: 1, exported: false }] })
+  expect(res.json()).toEqual({ days: [{ date: '2026-10-01', count: 1, open: 1, exported: false }] })
   await app.close()
 })
 
@@ -56,8 +56,8 @@ test('says which days had their Tagesabschluss', async () => {
 
   const days = (await app.inject({ method: 'GET', url: '/api/calendar/2026-10' })).json().days
   expect(days).toEqual([
-    { date: '2026-10-03', count: 1, exported: true },
-    { date: '2026-10-04', count: 1, exported: false },
+    { date: '2026-10-03', count: 1, open: 1, exported: true },
+    { date: '2026-10-04', count: 1, open: 1, exported: false },
   ])
   await app.close()
 })
@@ -72,7 +72,24 @@ test('a Tagesabschluss that failed does not count as done', async () => {
   expect(res.statusCode).toBe(500)
 
   const days = (await app.inject({ method: 'GET', url: '/api/calendar/2026-10' })).json().days
-  expect(days).toEqual([{ date: '2026-10-03', count: 1, exported: false }])
+  expect(days).toEqual([{ date: '2026-10-03', count: 1, open: 1, exported: false }])
   await app.close()
   await fs.rm(path.dirname(blocker), { recursive: true, force: true })
+})
+
+test('counts the guests of each day who have not paid yet', async () => {
+  const { app, db } = testServer()
+  seed(db, ['2026-10-03', '2026-10-03', '2026-10-03', '2026-10-04'])
+  // The manifest's rule: paid once paid_at is set, whatever the payment method.
+  const pay = db.prepare('UPDATE registrations SET paid_at = ? WHERE id = ?')
+  pay.run('2026-10-03T15:00:00Z', 1)
+  pay.run('2026-10-03T15:05:00Z', 2)
+  pay.run('2026-10-04T15:00:00Z', 4)
+
+  const days = (await app.inject({ method: 'GET', url: '/api/calendar/2026-10' })).json().days
+  expect(days).toEqual([
+    { date: '2026-10-03', count: 3, open: 1, exported: false },
+    { date: '2026-10-04', count: 1, open: 0, exported: false },
+  ])
+  await app.close()
 })

@@ -4,12 +4,17 @@ import type { Database } from 'better-sqlite3'
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 
 /**
- * How many tandems were registered on each day of one month, and whether that
- * day's Tagesabschluss went through, for the calendar on the Übersicht.
+ * How many tandems were registered on each day of one month, how many of them
+ * still have to pay, and whether that day's Tagesabschluss went through, for
+ * the calendar on the Übersicht.
  *
  * Counts every registration filed under the day — the same rows the manifest
  * lists for it. Days without a single registration are simply absent, so the
  * screen does not have to tell "nothing flown" from "nothing sent".
+ *
+ * "Open" is the manifest's own rule — no paid_at yet — so the calendar and the
+ * day's Offen list can never disagree about who still owes money. A day can be
+ * exported with guests still open, which is why it is counted apart.
  */
 export function registerCalendarRoutes(app: FastifyInstance, db: Database) {
   app.get('/api/calendar/:month', async (req, reply) => {
@@ -19,11 +24,12 @@ export function registerCalendarRoutes(app: FastifyInstance, db: Database) {
     // still uses the plain text comparison rather than parsing dates in SQL.
     const rows = db.prepare(
       `SELECT r.jump_date AS date, COUNT(*) AS count,
+              SUM(r.paid_at IS NULL) AS open,
               EXISTS (SELECT 1 FROM day_exports e WHERE e.jump_date = r.jump_date) AS exported
        FROM registrations r
        WHERE r.jump_date >= ? AND r.jump_date < ?
        GROUP BY r.jump_date ORDER BY r.jump_date`
-    ).all(`${month}-01`, `${month}-32`) as { date: string; count: number; exported: number }[]
+    ).all(`${month}-01`, `${month}-32`) as { date: string; count: number; open: number; exported: number }[]
     return { days: rows.map((r) => ({ ...r, exported: r.exported === 1 })) }
   })
 }

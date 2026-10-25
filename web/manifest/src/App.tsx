@@ -21,20 +21,27 @@ type View = 'overview' | 'list' | 'detail' | 'tarife' | 'crew' | 'settings' | 'u
 const AWAY_FROM_LIST = 'tandem-away-from-list'
 
 const DISCARD_TARIFE = 'Ungespeicherte Änderungen an den Tarifen verwerfen?'
+const DISCARD_SETTINGS = 'Ungespeicherte Änderungen an den Einstellungen verwerfen?'
 
 function App() {
   // The app opens on the Übersicht, where a jump day starts.
   const [view, setViewState] = useState<View>('overview')
   const [selected, setSelected] = useState<Registration | null>(null)
 
-  // Prices apply to every future day, so an edit on Tarife is not dropped by a
-  // stray click elsewhere without asking. A ref, not state: the popstate and
-  // beforeunload handlers below are registered once and must read it fresh.
-  const tarifeDirty = useRef(false)
+  // Prices apply to every future day and the guest signs the texts on
+  // Einstellungen, so an edit on either screen is not dropped by a stray click
+  // elsewhere without asking. Holds the question to ask, or null when nothing
+  // is unsaved; one is enough, since only one of the two screens is mounted. A
+  // ref, not state: the popstate and beforeunload handlers below are registered
+  // once and must read it fresh.
+  const discardQuestion = useRef<string | null>(null)
   const onTarifeDirtyChange = useCallback((dirty: boolean) => {
-    tarifeDirty.current = dirty
+    discardQuestion.current = dirty ? DISCARD_TARIFE : null
   }, [])
-  const mayLeave = () => !tarifeDirty.current || window.confirm(DISCARD_TARIFE)
+  const onSettingsDirtyChange = useCallback((dirty: boolean) => {
+    discardQuestion.current = dirty ? DISCARD_SETTINGS : null
+  }, [])
+  const mayLeave = () => discardQuestion.current === null || window.confirm(discardQuestion.current)
 
   // The browser's back button always leads to the manifest. Leaving the list
   // pushes a single history entry; moving on between other views replaces it,
@@ -61,7 +68,7 @@ function App() {
       if (window.history.state === AWAY_FROM_LIST) return
       // The browser has already gone back; staying means putting the entry
       // that back just removed in place again.
-      if (tarifeDirty.current && !window.confirm(DISCARD_TARIFE)) {
+      if (!mayLeave()) {
         window.history.pushState(AWAY_FROM_LIST, '')
         return
       }
@@ -70,7 +77,7 @@ function App() {
     }
     // Closing or reloading the window: the browser shows its own question.
     function onBeforeUnload(e: BeforeUnloadEvent) {
-      if (tarifeDirty.current) e.preventDefault()
+      if (discardQuestion.current !== null) e.preventDefault()
     }
     window.addEventListener('popstate', onPopState)
     window.addEventListener('beforeunload', onBeforeUnload)
@@ -308,7 +315,7 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
           )}
           {view === 'tarife' && <Tarife onDirtyChange={onTarifeDirtyChange} />}
           {view === 'crew' && <Crew />}
-          {view === 'settings' && <Settings />}
+          {view === 'settings' && <Settings onDirtyChange={onSettingsDirtyChange} />}
           {view === 'update' && update && (
             <Update status={update} onRefresh={refreshUpdate} />
           )}

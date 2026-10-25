@@ -28,7 +28,7 @@ vi.mock('./api', async (importOriginal) => ({
 }))
 
 const SETTINGS: api.Settings = {
-  exportDir: 'C:/Tandem', contractText: '', privacyText: '', jumpLocation: 'Freistadt',
+  exportDir: 'C:/Tandem', contractText: 'Vertrag', privacyText: 'Datenschutz', jumpLocation: 'Freistadt',
   backupDir: '', voucherListPath: '',
   prices: { jump: 270, video: 100, video_photo: 120, weight_over_90: 40, weight_over_100: 60 },
   payouts: { tandem_master: 45, video: 60, video_photo: 80, weight_over_90: 15, weight_over_100: 25 },
@@ -73,6 +73,42 @@ beforeEach(() => {
   vi.mocked(api.getSettings).mockResolvedValue({ ...SETTINGS })
   vi.mocked(api.putSettings).mockImplementation(async (fields) => ({ ...SETTINGS, ...fields }))
   vi.spyOn(window, 'confirm').mockReturnValue(false)
+})
+
+// The guest signs what Einstellungen holds; a corrected clause lost to a click
+// on another tab would be noticed only on the next signed contract.
+describe('unsaved Einstellungen', () => {
+  async function editSettings() {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Einstellungen' }))
+    await user.type(await screen.findByLabelText('Ort (für Vertragsunterschrift)'), ' Ost')
+    return user
+  }
+
+  it('asks before another tab drops them, and stays when the answer is no', async () => {
+    const user = await editSettings()
+    vi.mocked(window.confirm).mockReturnValue(false)
+
+    await user.click(screen.getByRole('button', { name: 'Crew' }))
+
+    expect(window.confirm)
+      .toHaveBeenCalledWith('Ungespeicherte Änderungen an den Einstellungen verwerfen?')
+    expect((screen.getByLabelText('Ort (für Vertragsunterschrift)') as HTMLInputElement).value)
+      .toBe('Freistadt Ost')
+  })
+
+  it('does not ask once they are saved', async () => {
+    const user = await editSettings()
+    await user.click(screen.getByRole('button', { name: 'Einstellungen speichern' }))
+    await screen.findByText('Gespeichert.')
+    vi.mocked(window.confirm).mockClear()
+
+    await user.click(screen.getByRole('button', { name: 'Crew' }))
+
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(await screen.findByRole('heading', { name: 'Tandemmaster' })).toBeInTheDocument()
+  })
 })
 
 // Prices apply to every future day; an edit lost to a stray click on another
@@ -148,12 +184,12 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Übersicht' })).toHaveClass('active')
   })
 
-  it('"Neuer Tandemtag" opens the manifest on today', async () => {
+  it('"Heute öffnen" opens the manifest on today', async () => {
     const user = userEvent.setup()
     sessionStorage.setItem('manifest.date', '2026-07-09')
     render(<App />)
 
-    await user.click(await screen.findByRole('button', { name: 'Neuer Tandemtag' }))
+    await user.click(await screen.findByRole('button', { name: /^Heute öffnen/ }))
 
     await screen.findByText('Keine Registrierungen für dieses Datum.')
     expect(dateInput().value).toBe(today())
@@ -163,10 +199,10 @@ describe('App', () => {
   it('a click on a calendar day opens the manifest on that day', async () => {
     const user = userEvent.setup()
     const month = today().slice(0, 7)
-    vi.mocked(api.calendar).mockResolvedValue([{ date: `${month}-01`, count: 16, exported: true }])
+    vi.mocked(api.calendar).mockResolvedValue([{ date: `${month}-01`, count: 16, open: 0, exported: true }])
     render(<App />)
 
-    await user.click(await screen.findByRole('button', { name: /^1\..*16 Tandems$/ }))
+    await user.click(await screen.findByRole('button', { name: /, 1\. .*, 16 Tandems$/ }))
 
     await screen.findByText('Keine Registrierungen für dieses Datum.')
     expect(dateInput().value).toBe(`${month}-01`)

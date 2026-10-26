@@ -45,7 +45,7 @@ async function registerGuest(page: Page, firstName: string) {
   await page.mouse.up()
   await page.locator('.privacy-check input').check()
   await page.getByRole('button', { name: 'Anmeldung abschicken' }).click()
-  await expect(page.getByRole('heading', { name: 'Vielen Dank!' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^Vielen Dank/ })).toBeVisible()
 }
 
 // The prices live on the Tarife screen.

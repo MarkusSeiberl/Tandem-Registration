@@ -8,6 +8,11 @@
   --bg: #eaf3fc;
   --panel-bg: #ffffff;
   --border: #d7e3f0;
+  /* Edges the guest has to find to act on: inputs, choices, the signature pad,
+     secondary buttons. --border is too faint for that in sunlight (1.1:1); this
+     holds 3.6:1 on the page and 4.1:1 on white. */
+  --field-border: #6b7f96;
+  --text-muted: #4a5a6e;
   --accent: #1e9e5b;
   --accent-dark: #167a45;
   --accent-contrast: #ffffff;
@@ -16,28 +21,15 @@
   --mono: 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
 
   font: 20px/150% var(--sans);
-  color-scheme: light dark;
+  /* Light only. The kiosk is used outdoors and by the hangar doors, where a dark
+     screen washes out; the tablet's system setting must not flip it. */
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #e4e2ea;
-    --text-h: #f7f6fb;
-    --bg: #0e1420;
-    --panel-bg: #17202b;
-    --border: #2a3644;
-    --accent: #34c77b;
-    --accent-dark: #1e9e5b;
-    --accent-contrast: #06150d;
-    --sky: #1c4e8c;
-    --sky-deep: #060e1a;
-  }
 }
 
 * {
@@ -107,12 +99,25 @@ p {
   width: 100%;
 }
 
+/* Done screen: the same sky as the welcome, so the flow ends where it began. */
+.done-screen {
+  max-width: none;
+  background: linear-gradient(180deg, var(--sky-deep) 0%, var(--sky) 45%, var(--bg) 100%);
+}
+
+.done-screen h1,
+.done-screen .done-lead,
+.done-screen .done-handback,
+.done-screen .done-countdown {
+  color: #fff;
+}
+
 /* Welcome screen: full-bleed "altitude" gradient (deep sky at the top fading
    to the horizon), CTA pinned in the lower, thumb-reachable third of the
    tablet rather than centered with the rest of the copy. */
 .welcome-screen {
   max-width: none;
-  justify-content: space-between;
+  justify-content: center;
   background: linear-gradient(180deg, var(--sky-deep) 0%, var(--sky) 45%, var(--bg) 100%);
   padding-top: max(56px, env(safe-area-inset-top));
   padding-bottom: max(56px, env(safe-area-inset-bottom));
@@ -127,8 +132,40 @@ p {
   font-size: 24px;
 }
 
+/* What to have ready. A solid panel rather than text on the gradient: it lands
+   where the sky fades to the horizon, and white text would fade with it. */
+.welcome-facts {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 20px 28px;
+  border-radius: 16px;
+  background: var(--panel-bg);
+  color: var(--text-h);
+  text-align: left;
+  font-size: 21px;
+  box-shadow: 0 10px 30px rgb(8 25 47 / 0.25);
+}
+
+.welcome-facts li {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 6px 0;
+}
+
+.welcome-facts li::before {
+  content: '';
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-dark);
+  transform: translateY(-2px);
+}
+
 .welcome-mark {
-  margin-bottom: 20px;
+  display: block;
+  margin-bottom: 28px;
   filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.3));
 }
 
@@ -160,8 +197,11 @@ p {
   transform: scale(0.97);
 }
 
+/* The darker green: white on --accent is 3.4:1, which an airfield in sunshine
+   eats; on --accent-dark it is 5.4:1. */
 .btn.primary {
-  background: var(--accent);
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
   color: var(--accent-contrast);
 }
 
@@ -171,9 +211,18 @@ p {
 }
 
 .btn.secondary {
-  background: transparent;
-  color: var(--text);
-  border-color: var(--border);
+  background: var(--panel-bg);
+  color: var(--text-h);
+  border-color: var(--field-border);
+}
+
+/* Only ever the confirming half of a destructive question (CancelConfirm):
+   red so it reads as the one that deletes, outlined so it is not the loudest. */
+.btn.danger-quiet {
+  background: var(--panel-bg);
+  border-color: var(--error);
+  color: var(--error);
+  font-weight: 600;
 }
 
 .btn.big {
@@ -186,7 +235,7 @@ p {
    flow, echoing the dispatch light by a jump-plane's door. Reduced motion
    turns it into a plain steady button. */
 .welcome-screen .btn.big {
-  margin-top: auto;
+  margin-top: 56px;
   animation: pulse-go 2.4s ease-in-out infinite;
 }
 
@@ -219,8 +268,16 @@ p {
 .step-ticks {
   display: flex;
   justify-content: center;
+  align-items: center;
   gap: 10px;
   padding-top: 20px;
+}
+
+.step-label {
+  margin-left: 6px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .step-tick {
@@ -239,6 +296,19 @@ p {
   transform: scale(1.3);
 }
 
+/* About 75 characters a line at 19px: the legal text is read in full, often
+   outdoors, and a 95-character line in landscape is where readers lose the
+   start of the next one. Portrait is narrower than this anyway. */
+.contract-screen {
+  max-width: 760px;
+}
+
+.contract-help {
+  margin: -12px 0 20px;
+  font-size: 18px;
+  color: var(--text-muted);
+}
+
 /* Contract screen: the vertragstext and signature pad sit inside one
    ticket-like card with a perforated divider, echoing the tear-off
    Gutschein box on the club's own paper contract. */
@@ -249,6 +319,16 @@ p {
   background: var(--panel-bg);
   overflow: hidden;
   margin-bottom: 8px;
+}
+
+/* Who signs, above the text that calls them "the passenger named above". */
+.boarding-card .passenger {
+  margin: 0;
+  padding: 18px 24px;
+  text-align: left;
+  font-size: 19px;
+  background: #f4f8fc;
+  border-bottom: 1px solid var(--border);
 }
 
 .boarding-card .contract-text {
@@ -332,11 +412,9 @@ p {
   gap: 12px;
   margin: 12px 0 0;
   padding: 14px 16px;
-  border: 1px solid var(--ember);
-  border-left-width: 6px;
-  border-radius: 8px;
-  /* Literal rgb rather than a token: --ember has no translucent variant, and a
-     tint is what keeps this readable on both the light and the dark ground. */
+  border: 2px solid var(--ember);
+  border-radius: 10px;
+  /* Literal rgb rather than a token: --ember has no translucent variant. */
   background: rgb(255 106 61 / 0.12);
   color: var(--text-h);
   font-size: 19px;
@@ -345,15 +423,11 @@ p {
   text-align: left;
 }
 
-/* Decorative, and deliberately not in the markup: the sentence carries the
-   meaning on its own, and a glyph inside the text node would break the
-   copy-exact assertions the contract screen is tested with. */
-.minor-note::before {
-  content: '⚠';
+.minor-note svg {
   flex: none;
-  color: var(--ember);
-  font-size: 24px;
-  line-height: 1.1;
+  width: 26px;
+  height: 26px;
+  color: #c2410c;
 }
 
 /* Big tap target: this is ticked on a tablet, often with a gloved finger. */
@@ -367,6 +441,7 @@ p {
 }
 
 .privacy-check input {
+  accent-color: var(--accent-dark);
   flex: 0 0 auto;
   width: 28px;
   height: 28px;
@@ -406,9 +481,11 @@ p {
   margin: 0;
   padding: 12px 24px;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
-  font-size: 16px;
+  font-size: 19px;
+  font-weight: 700;
   background: var(--ember);
-  color: #fff;
+  /* Ink, not white: white on ember is 2.9:1, ink is 6.6:1. */
+  color: var(--ink);
   text-align: center;
   box-shadow: 0 -2px 12px rgb(0 0 0 / 0.12);
 }
@@ -425,7 +502,52 @@ p {
   border-radius: 12px;
   padding: 20px 24px;
   margin-bottom: 24px;
-  font-size: 18px;
+  font-size: 19px;
+  line-height: 1.6;
+}
+
+.send-error {
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 16px 20px;
+  border: 2px solid var(--error);
+  border-radius: 12px;
+  background: #fdf3f2;
+  text-align: left;
+  color: var(--error);
+  font-size: 19px;
+}
+
+.send-error-title {
+  margin: 0 0 6px;
+  font-weight: 700;
+}
+
+.send-error ul {
+  margin: 0;
+  padding-left: 22px;
+}
+
+/* Back on the form after the server turned a field down. */
+.form-server-note {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 0 20px;
+  padding: 14px 18px;
+  border: 2px solid var(--error);
+  border-radius: 12px;
+  background: #fdf3f2;
+  color: var(--text-h);
+  font-size: 19px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 /* Says up front what the error messages can only say afterwards. */
@@ -434,8 +556,8 @@ p {
   max-width: 560px;
   margin: -8px 0 20px;
   text-align: left;
-  font-size: 16px;
-  opacity: 0.75;
+  font-size: 18px;
+  color: var(--text-muted);
 }
 
 /* Form screen */
@@ -465,12 +587,22 @@ p {
      past the other fields). */
   width: 100%;
   min-width: 0;
+  font-family: inherit;
   font-size: 22px;
   padding: 14px 16px;
-  border: 2px solid var(--border);
+  border: 2px solid var(--field-border);
   border-radius: 10px;
   background: var(--panel-bg);
   color: var(--text);
+}
+
+/* The field says it is wrong, not only the line under it: a guest scanning for
+   the problem looks at the boxes, and red text alone is a colour cue. */
+.field input[aria-invalid='true'],
+.radio-row[aria-invalid='true'] .radio-option {
+  border-color: var(--error);
+  border-width: 3px;
+  background: #fdf3f2;
 }
 
 .field input:focus {
@@ -478,18 +610,23 @@ p {
   outline-offset: 1px;
 }
 
+.field input[aria-invalid='true']:focus {
+  outline-color: var(--error);
+}
+
 .error {
   color: var(--error);
-  font-size: 16px;
+  font-size: 18px;
+  font-weight: 600;
   margin: 6px 0 0;
 }
 
 /* The quiet sibling of .error: a note that is always there, not a verdict on
    what the guest typed. Same rhythm, muted rather than red. */
 .field-note {
-  font-size: 16px;
+  font-size: 18px;
   margin: 6px 0 0;
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 /*
@@ -543,13 +680,14 @@ p {
   font-size: 20px;
   margin-bottom: 0;
   padding: 14px 16px;
-  border: 2px solid var(--border);
+  border: 2px solid var(--field-border);
   border-radius: 10px;
   background: var(--panel-bg);
   cursor: pointer;
 }
 
 .radio-row input[type='radio'] {
+  accent-color: var(--accent-dark);
   width: 24px;
   height: 24px;
   flex: none;
@@ -603,23 +741,138 @@ p {
   border-color: var(--error);
 }
 
+/* As wide as the card in both orientations, at the canvas' own 700:280 ratio.
+   Contract.tsx maps touches from CSS pixels back to canvas pixels. */
+.signature-wrap {
+  position: relative;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
 .signature-pad {
-  border: 2px solid var(--border);
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 3px solid var(--field-border);
   border-radius: 12px;
   background: #fff;
   touch-action: none;
-  max-width: 100%;
-  margin-bottom: 8px;
+}
+
+/* Never takes a touch: every stroke has to reach the canvas underneath. */
+.signature-guide {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.signature-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 32%;
+  text-align: center;
+  font-size: 22px;
+  color: var(--text-muted);
+}
+
+.signature-line {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  bottom: 24%;
+  border-bottom: 2px solid var(--field-border);
+}
+
+.signature-x {
+  position: absolute;
+  left: 0;
+  bottom: 2px;
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--field-border);
+}
+
+.signature-caption {
+  margin: 0 0 8px;
+  font-size: 17px;
+  color: var(--text-muted);
 }
 
 /* Done screen */
 .done-mark {
-  margin-bottom: 8px;
+  margin-bottom: 16px;
 }
 
 .done-screen h1 {
   font-size: 48px;
-  color: var(--accent);
+  margin-bottom: 16px;
+}
+
+/* A solid panel for the same reason as .welcome-facts: it lands where the sky
+   fades out, and white text would fade with it. */
+.done-next {
+  max-width: 560px;
+  margin: 0 0 32px;
+  padding: 18px 24px;
+  border-radius: 16px;
+  background: var(--panel-bg);
+  color: var(--text-h);
+  font-size: 21px;
+  box-shadow: 0 10px 30px rgb(8 25 47 / 0.25);
+}
+
+.done-lead {
+  font-size: 24px;
+}
+
+/* The one instruction left on this screen, so it is the loudest line on it. */
+.done-handback {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 8px 0 24px;
+}
+
+.done-countdown {
+  margin-top: 16px;
+  font-size: 17px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Takes the place of the button row while open (CancelConfirm.tsx). */
+.cancel-confirm {
+  width: 100%;
+  max-width: 560px;
+  margin: 24px auto 0;
+  padding: 24px;
+  border: 2px solid var(--error);
+  border-radius: 16px;
+  background: var(--panel-bg);
+  text-align: center;
+}
+
+.cancel-confirm-title {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text-h);
+}
+
+.cancel-confirm-detail {
+  margin: 0;
+  font-size: 19px;
+}
+
+.cancel-confirm .actions {
+  margin-top: 20px;
+}
+
+/* What is still missing after a press on "Weiter", right above the button. */
+.form-missing {
+  margin-top: 4px;
+  font-size: 19px;
 }
 
 /* Hidden settings overlay */
@@ -643,9 +896,10 @@ p {
 
 .overlay-panel input {
   width: 100%;
+  font-family: inherit;
   font-size: 18px;
   padding: 12px;
-  border: 2px solid var(--border);
+  border: 2px solid var(--field-border);
   border-radius: 8px;
   margin-bottom: 16px;
 }

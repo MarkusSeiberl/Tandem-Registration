@@ -198,7 +198,9 @@ describe('Contract', () => {
     await waitFor(() => screen.getByText('Vertragstext hier.'))
 
     expect(
-      screen.getByText('Unterschrift: gesetzlicher Vertreter bei Minderjährigen unter 18 Jahre')
+      screen.getByText(
+        'Du bist unter 18: Hier unterschreibt bitte ein Elternteil oder eine andere erziehungsberechtigte Person.'
+      )
     ).toBeInTheDocument()
   })
 
@@ -206,6 +208,101 @@ describe('Contract', () => {
     render(<Contract onNext={vi.fn()} />)
     await waitFor(() => screen.getByText('Vertragstext hier.'))
 
-    expect(screen.queryByText(/gesetzlicher Vertreter/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/erziehungsberechtigte Person/)).not.toBeInTheDocument()
+  })
+
+  it('names the passenger above the contract text', async () => {
+    render(
+      <Contract
+        onNext={vi.fn()}
+        passenger={{ name: 'Anna Muster', address: 'Hauptstraße 1, 4240 Freistadt' }}
+      />
+    )
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    expect(screen.getByText('Anna Muster')).toBeInTheDocument()
+    expect(screen.getByText(/Hauptstraße 1, 4240 Freistadt/)).toBeInTheDocument()
+  })
+
+  it('lets the guest retry when the contract could not be loaded', async () => {
+    const getContract = vi
+      .spyOn(api, 'getContract')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce('Vertragstext hier.')
+    render(<Contract onNext={vi.fn()} />)
+
+    await waitFor(() => screen.getByText('Vertragstext konnte nicht geladen werden.'))
+    fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
+
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+    expect(getContract).toHaveBeenCalledTimes(2)
+  })
+
+  it('lets the guest retry when the data-protection notice could not be loaded', async () => {
+    const getPrivacy = vi
+      .spyOn(api, 'getPrivacyText')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce('Datenschutzinformation hier.')
+    render(<Contract onNext={vi.fn()} />)
+
+    await waitFor(() =>
+      screen.getByText(
+        'Die Datenschutzinformation konnte nicht geladen werden. Bitte wende dich an das Personal.'
+      )
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
+
+    await waitFor(() => screen.getByRole('checkbox'))
+    expect(getPrivacy).toHaveBeenCalledTimes(2)
+  })
+
+  it('asks before "Zurück" throws a drawn signature away', async () => {
+    const onBack = vi.fn()
+    render(<Contract onNext={vi.fn()} onBack={onBack} />)
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    sign()
+    fireEvent.click(screen.getByRole('button', { name: 'Zurück' }))
+    expect(onBack).not.toHaveBeenCalled()
+    expect(screen.getByText('Zurück zu deinen Daten?')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ja, zurück' }))
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
+
+  it('goes straight back when nothing is signed yet', async () => {
+    const onBack = vi.fn()
+    render(<Contract onNext={vi.fn()} onBack={onBack} />)
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zurück' }))
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows where to sign until the guest starts signing', async () => {
+    render(<Contract onNext={vi.fn()} />)
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    expect(screen.getByText('Hier mit dem Finger unterschreiben')).toBeInTheDocument()
+    sign()
+    expect(screen.queryByText('Hier mit dem Finger unterschreiben')).not.toBeInTheDocument()
+  })
+
+  it('asks before Abbrechen throws the registration away', async () => {
+    const onCancel = vi.fn()
+    render(<Contract onNext={vi.fn()} onCancel={onCancel} />)
+    await waitFor(() => screen.getByText('Vertragstext hier.'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(screen.getByText('Alle Eingaben verwerfen?')).toBeInTheDocument()
+
+    // The safe answer brings the buttons back and keeps everything.
+    fireEvent.click(screen.getByRole('button', { name: 'Nein, weiter ausfüllen' }))
+    expect(screen.getByRole('button', { name: 'Anmeldung abschicken' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ja, verwerfen' }))
+    expect(onCancel).toHaveBeenCalledTimes(1)
   })
 })

@@ -6,15 +6,19 @@ import Contract from './Contract'
 import Done from './Done'
 import HiddenSettings from './HiddenSettings'
 import { submitRegistration } from './api'
+import { splitServerErrors } from './serverErrors'
+import type { ServerFieldErrors } from './serverErrors'
 
 type Screen = 'welcome' | 'form' | 'contract' | 'done'
 
-// A guest mid-flow always knows how much of Form -> Contract is left.
+// A guest mid-flow always knows how much of Form -> Contract is left. Said in
+// words as well as dots: two unlabelled dots read as decoration, not progress.
 function StepTicks({ step }: { step: 0 | 1 }) {
   return (
-    <div className="step-ticks" aria-hidden="true">
-      <span className={`step-tick ${step > 0 ? 'done' : 'active'}`} />
-      <span className={`step-tick ${step === 1 ? 'active' : ''}`} />
+    <div className="step-ticks">
+      <span className={`step-tick ${step > 0 ? 'done' : 'active'}`} aria-hidden="true" />
+      <span className={`step-tick ${step === 1 ? 'active' : ''}`} aria-hidden="true" />
+      <span className="step-label">Schritt {step + 1} von 2</span>
     </div>
   )
 }
@@ -25,11 +29,13 @@ function App() {
   const [formValues, setFormValues] = useState<FormValues | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitErrors, setSubmitErrors] = useState<string[] | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<ServerFieldErrors | null>(null)
 
   function resetToWelcome() {
     setScreen('welcome')
     setFormValues(null)
     setSubmitErrors(null)
+    setFieldErrors(null)
     setSubmitting(false)
   }
 
@@ -49,7 +55,15 @@ function App() {
     if (result.ok) {
       setScreen('done')
     } else {
-      setSubmitErrors(result.errors)
+      // A rejected field is fixed where it was typed, not read about under the
+      // contract. The signature goes with it, as it does on "Zurück".
+      const { fields, other } = splitServerErrors(result.errors)
+      if (Object.keys(fields).length > 0) {
+        setFieldErrors(fields)
+        setScreen('form')
+      } else {
+        setSubmitErrors(other)
+      }
     }
   }
 
@@ -67,10 +81,12 @@ function App() {
           <Form
             onNext={(values) => {
               setFormValues(values)
+              setFieldErrors(null)
               setScreen('contract')
             }}
             onCancel={resetToWelcome}
             initialValues={formValues}
+            serverErrors={fieldErrors}
           />
         </>
       )}
@@ -81,6 +97,14 @@ function App() {
             onNext={handleSign}
             onCancel={resetToWelcome}
             minor={formValues !== null && formValues.age < 18}
+            passenger={
+              formValues
+                ? {
+                    name: `${formValues.first_name} ${formValues.last_name}`,
+                    address: `${formValues.street}, ${formValues.postal_code} ${formValues.city}`,
+                  }
+                : undefined
+            }
             // Back to the form with everything still in it. The signature is
             // not kept: it belongs to the data it was drawn under, and that is
             // exactly what the guest went back to change.
@@ -93,7 +117,9 @@ function App() {
           />
         </>
       )}
-      {screen === 'done' && <Done onTimeout={resetToWelcome} />}
+      {screen === 'done' && (
+        <Done firstName={formValues?.first_name} onTimeout={resetToWelcome} />
+      )}
 
       {settingsOpen && <HiddenSettings onClose={() => setSettingsOpen(false)} />}
     </div>

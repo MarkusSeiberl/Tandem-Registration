@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import Form from './Form'
 
 // Fills everything except the field under test, so each case can prove that the
-// one remaining field is what keeps "Weiter" disabled.
+// one remaining field is what holds "Weiter" back.
 async function fillValid(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Vorname'), 'Anna')
   await user.type(screen.getByLabelText('Nachname'), 'Muster')
@@ -19,18 +19,27 @@ async function fillValid(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Telefon'), '0664 1234567')
 }
 
+// "Weiter" is never disabled. Held back means: pressing it does not go on, and
+// says what is still to fix instead.
+async function expectHeldBack(user: ReturnType<typeof userEvent.setup>, onNext?: ReturnType<typeof vi.fn>) {
+  const calls = onNext?.mock.calls.length ?? 0
+  await user.click(screen.getByRole('button', { name: 'Weiter' }))
+  expect(screen.getByText(/^Bitte prüfe noch:/)).toBeInTheDocument()
+  if (onNext) expect(onNext).toHaveBeenCalledTimes(calls)
+}
+
 describe('Form', () => {
-  it('disables "Weiter" until all required fields are filled with valid values', async () => {
+  it('holds "Weiter" back until all required fields are filled with valid values', async () => {
     const user = userEvent.setup()
     const onNext = vi.fn()
     render(<Form onNext={onNext} />)
 
     const submit = screen.getByRole('button', { name: 'Weiter' })
-    expect(submit).toBeDisabled()
+    await expectHeldBack(user, onNext)
 
     await user.type(screen.getByLabelText('Vorname'), 'Anna')
     await user.type(screen.getByLabelText('Nachname'), 'Muster')
-    expect(submit).toBeDisabled()
+    await expectHeldBack(user, onNext)
 
     await user.click(screen.getByRole('radio', { name: 'weiblich' }))
     await user.type(screen.getByLabelText('Alter'), '30')
@@ -39,10 +48,10 @@ describe('Form', () => {
     await user.type(screen.getByLabelText('Straße und Hausnummer'), 'Hauptstraße 1')
     await user.type(screen.getByLabelText('PLZ'), '4240')
     await user.type(screen.getByLabelText('Wohnort'), 'Freistadt')
-    // invalid email should keep the button disabled
+    // an invalid email still holds the guest back
     await user.type(screen.getByLabelText('E-Mail'), 'not-an-email')
     await user.type(screen.getByLabelText('Telefon'), '0664 1234567')
-    expect(submit).toBeDisabled()
+    await expectHeldBack(user, onNext)
 
     await user.clear(screen.getByLabelText('E-Mail'))
     await user.type(screen.getByLabelText('E-Mail'), 'anna@example.com')
@@ -77,7 +86,7 @@ describe('Form', () => {
     await user.clear(screen.getByLabelText('Gewicht (kg)'))
     await user.type(screen.getByLabelText('Gewicht (kg)'), '5')
 
-    expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+    await expectHeldBack(user, onNext)
     expect(onNext).not.toHaveBeenCalled()
   })
 
@@ -90,7 +99,7 @@ describe('Form', () => {
     await user.clear(screen.getByLabelText('Größe (cm)'))
     await user.type(screen.getByLabelText('Größe (cm)'), '95')
 
-    expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+    await expectHeldBack(user, onNext)
     expect(onNext).not.toHaveBeenCalled()
   })
 
@@ -102,11 +111,12 @@ describe('Form', () => {
     await fillValid(user)
     await user.clear(screen.getByLabelText('Größe (cm)'))
     await user.type(screen.getByLabelText('Größe (cm)'), '139')
-    expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+    await expectHeldBack(user, onNext)
 
     await user.clear(screen.getByLabelText('Größe (cm)'))
     await user.type(screen.getByLabelText('Größe (cm)'), '140')
-    expect(screen.getByRole('button', { name: 'Weiter' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Weiter' }))
+    expect(onNext).toHaveBeenCalledTimes(1)
   })
 
   it('requires a gender to be chosen', async () => {
@@ -127,11 +137,12 @@ describe('Form', () => {
     await user.type(screen.getByLabelText('Telefon'), '0664 1234567')
 
     const submit = screen.getByRole('button', { name: 'Weiter' })
-    expect(submit).toBeDisabled()
+    await expectHeldBack(user, onNext)
+    expect(screen.getByText('Bitte prüfe noch: Geschlecht')).toBeInTheDocument()
 
     // Choosing one — and only that — releases it.
     await user.click(screen.getByRole('radio', { name: 'divers' }))
-    expect(submit).toBeEnabled()
+    expect(screen.queryByText(/^Bitte prüfe noch:/)).not.toBeInTheDocument()
 
     await user.click(submit)
     expect(onNext).toHaveBeenCalledWith(expect.objectContaining({ gender: 'diverse' }))
@@ -165,7 +176,7 @@ describe('Form', () => {
   })
 
   // Guards against a field being added to the form without a validation rule:
-  // emptying any single one of them has to be enough to shut the button. One
+  // emptying any single one of them has to be enough to hold the guest back. One
   // case per field, so a new field that slips through names itself in the report.
   it.each(TEXT_FIELDS)('holds "Weiter" back when %s is empty', async (label) => {
     const user = userEvent.setup()
@@ -175,21 +186,90 @@ describe('Form', () => {
     expect(screen.getByRole('button', { name: 'Weiter' })).toBeEnabled()
 
     await user.clear(screen.getByLabelText(label))
-    expect(screen.getByRole('button', { name: 'Weiter' })).toBeDisabled()
+    await expectHeldBack(user)
+    expect(screen.getByLabelText(label)).toHaveAttribute('aria-invalid', 'true')
   })
 
-  it('flags a field the guest left empty', async () => {
+  it('asks before Abbrechen throws the typed data away', async () => {
+    const user = userEvent.setup()
+    const onCancel = vi.fn()
+    render(<Form onNext={vi.fn()} onCancel={onCancel} />)
+
+    await user.type(screen.getByLabelText('Vorname'), 'Anna')
+    await user.click(screen.getByRole('button', { name: 'Abbrechen' }))
+    expect(onCancel).not.toHaveBeenCalled()
+    // The safe answer has the focus, so a second tap on the same spot keeps the data.
+    expect(screen.getByRole('button', { name: 'Nein, weiter ausfüllen' })).toHaveFocus()
+
+    await user.click(screen.getByRole('button', { name: 'Nein, weiter ausfüllen' }))
+    expect(screen.getByLabelText('Vorname')).toHaveValue('Anna')
+
+    await user.click(screen.getByRole('button', { name: 'Abbrechen' }))
+    await user.click(screen.getByRole('button', { name: 'Ja, verwerfen' }))
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets the guest pass an empty field and names it on "Weiter"', async () => {
     const user = userEvent.setup()
     render(<Form onNext={vi.fn()} />)
 
     const input = screen.getByLabelText('Vorname')
-    expect(input).not.toHaveAttribute('aria-invalid')
-
     await user.click(input)
     await user.tab()
 
+    // Tapping ahead is not a mistake: nothing turns red on the way past.
+    expect(input).not.toHaveAttribute('aria-invalid')
+    expect(screen.queryByText('Vorname fehlt')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Weiter' }))
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByText('Vorname fehlt')).toBeInTheDocument()
+  })
+
+  it('flags a wrong value as soon as the guest leaves the field', async () => {
+    const user = userEvent.setup()
+    render(<Form onNext={vi.fn()} />)
+
+    await user.type(screen.getByLabelText('E-Mail'), 'anna@')
+    await user.tab()
+
+    expect(screen.getByLabelText('E-Mail')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText('E-Mail ungültig')).toBeInTheDocument()
+  })
+
+  it('says "fehlt" for an empty number and "ungültig" for a wrong one', async () => {
+    const user = userEvent.setup()
+    render(<Form onNext={vi.fn()} />)
+
+    await user.type(screen.getByLabelText('Gewicht (kg)'), '5')
+    await user.click(screen.getByRole('button', { name: 'Weiter' }))
+
+    expect(screen.getByText('Alter fehlt')).toBeInTheDocument()
+    expect(screen.getByText('Gewicht ungültig (20–200 kg)')).toBeInTheDocument()
+  })
+
+  it('marks the fields the server turned down and clears a mark on change', async () => {
+    const user = userEvent.setup()
+    render(
+      <Form
+        onNext={vi.fn()}
+        initialValues={{
+          first_name: 'Anna', last_name: 'Muster', gender: 'female',
+          age: 30, height_cm: 170, weight_kg: 70,
+          street: 'Hauptstraße 1', postal_code: '4240', city: 'Freistadt',
+          email: 'anna@example.com', phone: '0664 1234567',
+        }}
+        serverErrors={{ email: 'E-Mail ungültig' }}
+      />
+    )
+
+    const email = screen.getByLabelText('E-Mail')
+    expect(screen.getByText(/Danach unterschreibst du den Vertrag noch/)).toBeInTheDocument()
+    expect(email).toHaveFocus()
+    expect(email).toHaveAttribute('aria-invalid', 'true')
+
+    await user.type(email, 'x')
+    expect(email).not.toHaveAttribute('aria-invalid')
   })
 
   it('accepts a non-numeric foreign postal code', async () => {
@@ -383,7 +463,7 @@ describe('Form field navigation', () => {
 
     expect(onNext).not.toHaveBeenCalled()
     expect(screen.getByLabelText('Alter')).toHaveFocus()
-    expect(screen.getByText('Alter ungültig (1–120)')).toBeInTheDocument()
+    expect(screen.getByText('Alter fehlt')).toBeInTheDocument()
   })
 
   it('comes back filled in when the guest returns from the contract', async () => {

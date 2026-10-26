@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { getContract, getPrivacyText } from './api'
+import CancelConfirm from './CancelConfirm'
 import { renderRichText } from './richText'
 import { useReachedEnd } from './useReachedEnd'
 
@@ -13,6 +14,9 @@ export interface ContractProps {
   errors?: string[] | null
   /** Guest is under 18 — the signature has to come from the legal guardian. */
   minor?: boolean
+  /** Who is signing. The contract speaks of "the passenger named above", so
+   *  the screen has to name them above it. */
+  passenger?: { name: string; address: string }
 }
 
 const CANVAS_WIDTH = 700
@@ -25,16 +29,23 @@ export default function Contract({
   submitting,
   errors,
   minor,
+  passenger,
 }: ContractProps) {
   const [text, setText] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // Bumped by "Erneut versuchen": a failed load must not leave the guest stuck
+  // on a screen they cannot finish and the kiosk cannot reload.
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  // Which leave-the-screen question is open in place of the button row, if any.
+  const [confirming, setConfirming] = useState<'cancel' | 'back' | null>(null)
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const drawingRef = useRef(false)
   const [hasDrawn, setHasDrawn] = useState(false)
 
   const privacyCheckRef = useRef<HTMLInputElement | null>(null)
+  const privacySectionRef = useRef<HTMLDivElement | null>(null)
   const signSectionRef = useRef<HTMLDivElement | null>(null)
 
   // Set by an attempt to send that could not go through. It is what turns the
@@ -65,9 +76,15 @@ export default function Contract({
   const [privacyText, setPrivacyText] = useState<string>('')
   const [privacyOpen, setPrivacyOpen] = useState(false)
   const [privacyAccepted, setPrivacyAccepted] = useState(false)
+  // Bumped by "Erneut versuchen" under the notice. Without the notice there is
+  // no box to tick, so a failed load would otherwise block sending for good.
+  const [privacyAttempt, setPrivacyAttempt] = useState(0)
+  const [privacyLoading, setPrivacyLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
+    setLoading(true)
+    setLoadError(null)
     getContract()
       .then((t) => {
         if (!cancelled) setText(t)
@@ -81,21 +98,25 @@ export default function Contract({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [loadAttempt])
 
   // A failure here leaves the text empty; the block below then says so instead of
   // presenting an empty box to tick. It never blocks the contract from loading.
   useEffect(() => {
     let cancelled = false
+    setPrivacyLoading(true)
     getPrivacyText()
       .then((t) => {
         if (!cancelled) setPrivacyText(t)
       })
       .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setPrivacyLoading(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [privacyAttempt])
 
   function getContext(): CanvasRenderingContext2D | null {
     return canvasRef.current?.getContext('2d') ?? null
@@ -176,7 +197,11 @@ export default function Contract({
       // would open the read gate on their behalf, which is the one thing it
       // exists to prevent. The pinned hint already says what to do.
       if (!missingRead) {
-        const target = missingPrivacy ? privacyCheckRef.current : signSectionRef.current
+        // With no notice loaded there is no box, so the section itself (and
+        // its retry button) is where the guest has to go.
+        const target = missingPrivacy
+          ? (privacyCheckRef.current ?? privacySectionRef.current)
+          : signSectionRef.current
         target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
         if (missingPrivacy) privacyCheckRef.current?.focus()
       }
@@ -188,11 +213,32 @@ export default function Contract({
 
   return (
     <section className="screen contract-screen">
-      <h1>Teilnahmebedingungen</h1>
+      <h1>Beförderungsvertrag</h1>
+      {/* "TM" is the contract's own shorthand and cannot be reworded here, so
+          the screen says what it means before the guest meets it. */}
+      <p className="contract-help">
+        Fragen? Frag das Personal oder deinen Tandemmaster („TM“ im Vertrag).
+      </p>
       <div className="boarding-card">
-        <div className="contract-text" role="region" aria-label="Teilnahmebedingungen">
+        {passenger && (
+          <p className="passenger">
+            Tandempassagier: <strong>{passenger.name}</strong>, {passenger.address}
+          </p>
+        )}
+        <div className="contract-text" role="region" aria-label="Beförderungsvertrag">
           {loading && <p>Lade Vertragstext…</p>}
-          {!loading && loadError && <p className="error">{loadError}</p>}
+          {!loading && loadError && (
+            <div className="load-error">
+              <p className="error">{loadError}</p>
+              <button
+                type="button"
+                className="btn secondary btn-small"
+                onClick={() => setLoadAttempt((n) => n + 1)}
+              >
+                Erneut versuchen
+              </button>
+            </div>
+          )}
           {!loading && !loadError && text.trim().length === 0 && (
             <p>Es liegt derzeit kein Vertragstext vor. Bitte wende dich an das Personal.</p>
           )}
@@ -213,18 +259,29 @@ export default function Contract({
           separate from the contract text above it, because that is the whole
           point of pulling it out of the contract.
         */}
-        <div className="privacy-section">
+        <div className="privacy-section" ref={privacySectionRef}>
           <h2>Datenschutz</h2>
           <p>
             Wir verarbeiten deine Daten, um deinen Tandemsprung durchzuführen und abzurechnen.
             Die vollständige Datenschutzinformation kannst du hier aufklappen.
           </p>
 
-          {privacyText.trim().length === 0 ? (
-            <p className="error">
-              Die Datenschutzinformation konnte nicht geladen werden. Bitte wende dich an das
-              Personal.
-            </p>
+          {privacyLoading ? (
+            <p>Lade Datenschutzinformation…</p>
+          ) : privacyText.trim().length === 0 ? (
+            <div className="load-error">
+              <p className="error">
+                Die Datenschutzinformation konnte nicht geladen werden. Bitte wende dich an das
+                Personal.
+              </p>
+              <button
+                type="button"
+                className="btn secondary btn-small"
+                onClick={() => setPrivacyAttempt((n) => n + 1)}
+              >
+                Erneut versuchen
+              </button>
+            </div>
           ) : (
             <>
               <button
@@ -269,20 +326,46 @@ export default function Contract({
           <p>Mit deiner Unterschrift bestätigst du, den Vertrag gelesen und akzeptiert zu haben.</p>
           {minor && (
             <p className="minor-note">
-              Unterschrift: gesetzlicher Vertreter bei Minderjährigen unter 18 Jahre
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 3 2 21h20L12 3Z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+                <path d="M12 10v5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <circle cx="12" cy="18" r="1.2" fill="currentColor" />
+              </svg>
+              <span>
+                Du bist unter 18: Hier unterschreibt bitte ein Elternteil oder eine andere
+                erziehungsberechtigte Person.
+              </span>
             </p>
           )}
-          <canvas
-            ref={canvasRef}
-            width={CANVAS_WIDTH}
-            height={CANVAS_HEIGHT}
-            className={`signature-pad${attempted && missingSignature ? ' missing' : ''}`}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={stopDrawing}
-            onPointerLeave={stopDrawing}
-            onPointerCancel={stopDrawing}
-          />
+          {/* The baseline and the hint lie over the canvas, not on it: they
+              guide the pen but never end up in the signature image. */}
+          <div className="signature-wrap">
+            <canvas
+              ref={canvasRef}
+              width={CANVAS_WIDTH}
+              height={CANVAS_HEIGHT}
+              aria-label="Unterschriftsfeld"
+              className={`signature-pad${attempted && missingSignature ? ' missing' : ''}`}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={stopDrawing}
+              onPointerLeave={stopDrawing}
+              onPointerCancel={stopDrawing}
+            />
+            <div className="signature-guide" aria-hidden="true">
+              {!hasDrawn && <span className="signature-hint">Hier mit dem Finger unterschreiben</span>}
+              <span className="signature-line">
+                <span className="signature-x">×</span>
+              </span>
+            </div>
+          </div>
+          {passenger && (
+            <p className="signature-caption">
+              {minor
+                ? `Unterschrift eines Elternteils für ${passenger.name}`
+                : `Unterschrift von ${passenger.name}`}
+            </p>
+          )}
 
           {/* Directly under the pad it clears, not down in the row of buttons
               that leave the screen: there, "Löschen" reads like it might throw
@@ -315,12 +398,17 @@ export default function Contract({
         </p>
       )}
 
+      {/* Only what the guest cannot fix in the form ends up here (no connection,
+          a rejected signature): field errors send them back to the form. */}
       {errors && errors.length > 0 && (
-        <ul className="error">
-          {errors.map((err) => (
-            <li key={err}>{err}</li>
-          ))}
-        </ul>
+        <div className="send-error" role="alert">
+          <p className="send-error-title">Die Anmeldung wurde noch nicht gesendet.</p>
+          <ul>
+            {errors.map((err) => (
+              <li key={err}>{err}</li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {attempted && missingRead && (
@@ -329,24 +417,53 @@ export default function Contract({
         </p>
       )}
 
-      <div className="actions">
-        {onBack && (
-          <button type="button" className="btn secondary" onClick={onBack} disabled={submitting}>
-            Zurück
+      {confirming === 'cancel' && onCancel ? (
+        <CancelConfirm
+          detail="Deine Daten und deine Unterschrift werden gelöscht und die Anmeldung beginnt von vorn."
+          onKeep={() => setConfirming(null)}
+          onDiscard={onCancel}
+        />
+      ) : confirming === 'back' && onBack ? (
+        <CancelConfirm
+          title="Zurück zu deinen Daten?"
+          detail="Deine Daten bleiben erhalten, aber deine Unterschrift wird gelöscht. Du unterschreibst danach noch einmal."
+          keepLabel="Hier bleiben"
+          discardLabel="Ja, zurück"
+          onKeep={() => setConfirming(null)}
+          onDiscard={onBack}
+        />
+      ) : (
+        <div className="actions">
+          {onBack && (
+            <button
+              type="button"
+              className="btn secondary"
+              // Only a drawn signature is lost by going back; with none there
+              // is nothing to ask about.
+              onClick={() => (hasDrawn ? setConfirming('back') : onBack())}
+              disabled={submitting}
+            >
+              Zurück
+            </button>
+          )}
+          {onCancel && (
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => setConfirming('cancel')}
+              disabled={submitting}
+            >
+              Abbrechen
+            </button>
+          )}
+          {/* Not disabled while something is missing: a grey button tells the
+              guest that they may not send, never what to fix. Pressing it says
+              both. */}
+          <button type="button" className="btn primary" disabled={submitting} onClick={handleNext}>
+            {submitting ? 'Wird gesendet…' : 'Anmeldung abschicken'}
           </button>
-        )}
-        {onCancel && (
-          <button type="button" className="btn secondary" onClick={onCancel} disabled={submitting}>
-            Abbrechen
-          </button>
-        )}
-        {/* Not disabled while something is missing: a grey button tells the
-            guest that they may not send, never what to fix. Pressing it says
-            both. */}
-        <button type="button" className="btn primary" disabled={submitting} onClick={handleNext}>
-          {submitting ? 'Wird gesendet…' : 'Anmeldung abschicken'}
-        </button>
-      </div>
+        </div>
+      )}
     </section>
   )
 }

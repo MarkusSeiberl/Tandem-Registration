@@ -25,11 +25,21 @@ export default function Welcome({ onStart, onOpenSettings }: WelcomeProps) {
 
   return (
     <section className="screen welcome-screen">
-      <button type="button" className="logo-tap" onClick={handleLogoTap} aria-label="HFSC Freistadt">
-        <BrandMark size={64} className="welcome-mark" />
-        <h1>Willkommen beim HFSC Freistadt</h1>
+      {/* The logo is the hidden door to the settings, so it is a button with no
+          name of its own: the heading next to it is what the screen says. */}
+      <button type="button" className="logo-tap" onClick={handleLogoTap} aria-hidden="true" tabIndex={-1}>
+        <BrandMark size={160} className="welcome-mark" />
       </button>
+      <h1>Willkommen beim HFSC Freistadt</h1>
       <p>Bitte melde dich hier für deinen Tandemsprung an.</p>
+
+      {/* What the guest needs before they start, so the form holds no surprise. */}
+      <ul className="welcome-facts">
+        <li>Dauert etwa 3 Minuten</li>
+        <li>Name, Adresse, Körpergröße und Gewicht</li>
+        <li>Gutschein-Nr., falls du einen hast</li>
+      </ul>
+
       <button type="button" className="btn primary big" onClick={onStart}>
         Anmeldung starten
       </button>

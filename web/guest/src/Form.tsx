@@ -1,6 +1,8 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react'
+import CancelConfirm from './CancelConfirm'
 import FieldNav from './FieldNav'
+import type { ServerFieldErrors } from './serverErrors'
 import { FIELD_CHAIN, firstErrorField, nextField, prevField } from './useFieldChain'
 import type { FieldName } from './useFieldChain'
 import { useViewportHeight } from './useViewportHeight'
@@ -41,6 +43,9 @@ export interface FormProps {
   /** What the guest typed last time round, when they came back from the
    *  contract screen to correct something. */
   initialValues?: FormValues | null
+  /** Fields the server turned down after the guest signed. Shown as errors
+   *  until the guest changes the field. */
+  serverErrors?: ServerFieldErrors | null
 }
 
 interface RawValues {
@@ -111,6 +116,30 @@ function toRaw(values: FormValues | null | undefined): RawValues {
 
 const LAST_FIELD: FieldName = FIELD_CHAIN[FIELD_CHAIN.length - 1]
 
+// The names the guest sees on the screen, for the line that says what is still
+// missing. Listed in screen order, which is the order the line reads them out in.
+const FIELD_LABELS: Record<keyof Errors, string> = {
+  firstName: 'Vorname',
+  lastName: 'Nachname',
+  gender: 'Geschlecht',
+  age: 'Alter',
+  height: 'Größe',
+  weight: 'Gewicht',
+  street: 'Straße und Hausnummer',
+  postalCode: 'PLZ',
+  city: 'Wohnort',
+  email: 'E-Mail',
+  phone: 'Telefon',
+}
+
+// "fehlt" for an empty field, "ungültig" only for a value that is there and
+// wrong: an empty Alter is not an invalid age, it is a missing one.
+function intError(v: string, label: string, lo: number, hi: number, unit = ''): string | undefined {
+  if (v.trim() === '') return `${label} fehlt`
+  if (!isInt(v, lo, hi)) return `${label} ungültig (${lo}–${hi}${unit})`
+  return undefined
+}
+
 function isInt(v: string, lo: number, hi: number): boolean {
   if (!/^\d+$/.test(v.trim())) return false
   const n = Number(v)
@@ -122,21 +151,38 @@ function validate(v: RawValues): Errors {
   if (v.firstName.trim().length === 0) e.firstName = 'Vorname fehlt'
   if (v.lastName.trim().length === 0) e.lastName = 'Nachname fehlt'
   if (v.gender === '') e.gender = 'Geschlecht fehlt'
-  if (!isInt(v.age, 1, 120)) e.age = 'Alter ungültig (1–120)'
-  if (!isInt(v.height, 140, 220)) e.height = 'Größe ungültig (140–220 cm)'
-  if (!isInt(v.weight, 20, 200)) e.weight = 'Gewicht ungültig (20–200 kg)'
+  const age = intError(v.age, 'Alter', 1, 120)
+  if (age) e.age = age
+  const height = intError(v.height, 'Größe', 140, 220, ' cm')
+  if (height) e.height = height
+  const weight = intError(v.weight, 'Gewicht', 20, 200, ' kg')
+  if (weight) e.weight = weight
   if (v.street.trim().length === 0) e.street = 'Straße und Hausnummer fehlt'
   // Presence only — see the matching note in src/server/validation.ts.
   if (v.postalCode.trim().length === 0) e.postalCode = 'PLZ fehlt'
   if (v.city.trim().length === 0) e.city = 'Wohnort fehlt'
-  if (!EMAIL.test(v.email.trim())) e.email = 'E-Mail ungültig'
+  if (v.email.trim() === '') e.email = 'E-Mail fehlt'
+  else if (!EMAIL.test(v.email.trim())) e.email = 'E-Mail ungültig'
   if (v.phone.trim().length === 0) e.phone = 'Telefon fehlt'
   return e
 }
 
-export default function Form({ onNext, onCancel, initialValues }: FormProps) {
+export default function Form({ onNext, onCancel, initialValues, serverErrors }: FormProps) {
   const [values, setValues] = useState<RawValues>(() => toRaw(initialValues))
+  // What the server said about each field. A field's entry goes as soon as the
+  // guest changes that field: from then on it is the guest's new value, and the
+  // form's own rules, that count.
+  const [serverErr, setServerErr] = useState<ServerFieldErrors>(() => serverErrors ?? {})
+  // What the form opened with, kept apart from serverErr: it decides the note at
+  // the top and where the cursor starts, and must not change as marks clear.
+  const initialServerErr = useRef<ServerFieldErrors>(serverErrors ?? {})
+  const hadServerErrors = useRef(Object.keys(initialServerErr.current).length > 0)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
+
+  // Set by a press on "Weiter" that could not go through. It is what brings up
+  // the line above the buttons naming every field still to fix.
+  const [attempted, setAttempted] = useState(false)
+  const [confirmingCancel, setConfirmingCancel] = useState(false)
 
   // Which field the cursor sits in. Fed by every field's onFocus rather than by
   // the arrows themselves, so that tapping straight into a field mid-form leaves
@@ -164,6 +210,18 @@ export default function Form({ onNext, onCancel, initialValues }: FormProps) {
     }
     inputs.current[name]?.focus()
   }
+
+  // Coming back from a rejected registration: straight to the first field the
+  // server turned down, in screen order.
+  useEffect(() => {
+    if (!hadServerErrors.current) return
+    const first = FIELD_CHAIN.find((name) => initialServerErr.current[name as keyof ServerFieldErrors])
+    if (first) {
+      focusField(first)
+      inputs.current[first]?.scrollIntoView({ block: 'center' })
+    }
+    // Mount only: later edits clear entries, they must not move the cursor.
+  }, [])
 
   function goNext() {
     // From nowhere, the first field — so the arrow is a way *into* the form too.
@@ -194,6 +252,7 @@ export default function Form({ onNext, onCancel, initialValues }: FormProps) {
       phone: true,
     })
     if (!isValid) {
+      setAttempted(true)
       // Send the guest to the hole they reach first, not to whichever error the
       // object happens to list first.
       const target = firstErrorField(errors)
@@ -231,14 +290,16 @@ export default function Form({ onNext, onCancel, initialValues }: FormProps) {
       value: values[name],
       required: !optional,
       'aria-required': !optional,
-      'aria-invalid': showError(name as keyof Errors) ? true : undefined,
+      'aria-invalid': showError(name) ? true : undefined,
       // Labels the Android Enter key before the guest presses it the first time.
       enterKeyHint: isLast ? ('done' as const) : ('next' as const),
       ref: (el: HTMLInputElement | null) => {
         inputs.current[name] = el
       },
-      onChange: (e: ChangeEvent<HTMLInputElement>) =>
-        setValues((prev) => ({ ...prev, [name]: e.target.value })),
+      onChange: (e: ChangeEvent<HTMLInputElement>) => {
+        setValues((prev) => ({ ...prev, [name]: e.target.value }))
+        clearServerError(name)
+      },
       onFocus: () => setActive(name),
       onKeyDown: (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key !== 'Enter') return
@@ -257,8 +318,26 @@ export default function Form({ onNext, onCancel, initialValues }: FormProps) {
     }
   }
 
-  function showError(name: keyof Errors): string | undefined {
-    return touched[name] ? errors[name] : undefined
+  function clearServerError(name: keyof RawValues) {
+    setServerErr((prev) => {
+      if (!(name in prev)) return prev
+      const next = { ...prev }
+      delete next[name as keyof ServerFieldErrors]
+      return next
+    })
+  }
+
+  // A field the guest left empty is not flagged on the way past: someone tapping
+  // ahead to fill the form in their own order should not meet a column of red.
+  // Empty fields are named once the guest presses "Weiter"; a value that is
+  // there and wrong is named as soon as the guest leaves the field.
+  function showError(name: keyof RawValues): string | undefined {
+    const server = serverErr[name as keyof ServerFieldErrors]
+    if (server) return server
+    const own = errors[name as keyof Errors]
+    if (!own) return undefined
+    if (attempted) return own
+    return touched[name] && values[name].trim() !== '' ? own : undefined
   }
 
   function handleSubmit(e: FormEvent) {
@@ -270,6 +349,12 @@ export default function Form({ onNext, onCancel, initialValues }: FormProps) {
     <section className="screen form-screen">
       <h1>Deine Daten</h1>
       <p className="form-intro">Alle Felder sind Pflichtfelder – bis auf die Gutschein-Nr.</p>
+      {hadServerErrors.current && (
+        <p className="form-server-note" role="alert">
+          Bitte korrigiere die markierten Felder. Danach unterschreibst du den Vertrag noch
+          einmal.
+        </p>
+      )}
       <form onSubmit={handleSubmit} noValidate>
         <fieldset className="field-group">
           <legend>Person</legend>
@@ -323,6 +408,7 @@ export default function Form({ onNext, onCancel, initialValues }: FormProps) {
                     onChange={() => {
                       setValues((prev) => ({ ...prev, gender: g.value }))
                       setTouched((prev) => ({ ...prev, gender: true }))
+                      clearServerError('gender')
                     }}
                   />
                   {g.label}
@@ -425,20 +511,45 @@ export default function Form({ onNext, onCancel, initialValues }: FormProps) {
             {/* No inputMode: the club's numbers are not reliably numeric, and a
                 digit pad would shut out exactly the ones that carry letters. */}
             <input id="voucher_number" type="text" {...field('voucherNumber', true)} />
-            <p className="field-note">Falls du einen Gutschein hast.</p>
+            {showError('voucherNumber') ? (
+              <p className="error">{showError('voucherNumber')}</p>
+            ) : (
+              <p className="field-note">Falls du einen Gutschein hast.</p>
+            )}
           </div>
         </fieldset>
 
-        <div className="actions">
-          {onCancel && (
-            <button type="button" className="btn secondary" onClick={onCancel}>
-              Abbrechen
+        {attempted && !isValid && (
+          <p className="missing-note form-missing" role="alert">
+            Bitte prüfe noch:{' '}
+            {(Object.keys(FIELD_LABELS) as (keyof Errors)[])
+              .filter((name) => errors[name])
+              .map((name) => FIELD_LABELS[name])
+              .join(', ')}
+          </p>
+        )}
+
+        {confirmingCancel && onCancel ? (
+          <CancelConfirm
+            detail="Deine Daten werden gelöscht und die Anmeldung beginnt von vorn."
+            onKeep={() => setConfirmingCancel(false)}
+            onDiscard={onCancel}
+          />
+        ) : (
+          <div className="actions">
+            {onCancel && (
+              <button type="button" className="btn secondary" onClick={() => setConfirmingCancel(true)}>
+                Abbrechen
+              </button>
+            )}
+            {/* Never disabled: a grey button tells the guest that they may not
+                go on, never what to fix. Pressing it says both, the same rule
+                as "Anmeldung abschicken" on the contract. */}
+            <button type="submit" className="btn primary">
+              Weiter
             </button>
-          )}
-          <button type="submit" className="btn primary" disabled={!isValid}>
-            Weiter
-          </button>
-        </div>
+          </div>
+        )}
       </form>
 
       <FieldNav

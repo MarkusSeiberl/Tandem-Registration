@@ -47,7 +47,7 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   await expect(formWeiter).toBeEnabled()
   await formWeiter.click()
 
-  await expect(page.getByRole('heading', { name: 'Teilnahmebedingungen' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Beförderungsvertrag' })).toBeVisible()
 
   // Proof-of-reading gate: before scrolling, the hint is shown and sending
   // stays locked. The contract has no scroll box of its own — the page scrolls
@@ -90,7 +90,7 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   ])
   expect(submitResponse.status()).toBe(201)
 
-  await expect(page.getByRole('heading', { name: 'Vielen Dank!' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^Vielen Dank/ })).toBeVisible()
 
   // --- Manifest PC: list shows the new row ---
   await page.goto('/manifest/')
@@ -298,7 +298,7 @@ test('guest fills the whole form using only the Enter key', async ({ page }) => 
   await expect(page.getByLabel('Gutschein-Nr. (optional)')).toBeFocused()
   await page.keyboard.press('Enter')
 
-  await expect(page.getByRole('heading', { name: 'Teilnahmebedingungen' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Beförderungsvertrag' })).toBeVisible()
 })
 
 // The arrows are the fallback for the four numeric fields, whose on-screen pad

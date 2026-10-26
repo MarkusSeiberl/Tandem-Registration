@@ -36,7 +36,14 @@ export default function HiddenSettings({ onClose }: HiddenSettingsProps) {
             Speichern
           </button>
         </div>
-        {saved && <p className="hint">Gespeichert. Seite ggf. neu laden.</p>}
+        {/* The kiosk has no address bar and pull-to-refresh is blocked, so this
+            is the only way staff can reload the app on the tablet. */}
+        <div className="actions">
+          <button type="button" className="btn secondary" onClick={() => window.location.reload()}>
+            App neu laden
+          </button>
+        </div>
+        {saved && <p className="hint">Gespeichert. Tippe auf „App neu laden“, damit die neue Adresse gilt.</p>}
       </div>
     </div>
   )

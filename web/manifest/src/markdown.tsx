@@ -12,8 +12,8 @@ import type { ReactNode } from 'react'
 // Split on the two inline forms at once so the parts alternate predictably.
 const INLINE = /(\*\*[^*]+\*\*|`[^`]+`)/g
 
-// Matches an ATX heading line. Only ## and ### are recognised: the screen's
-// own title is an h2, and h1 is reserved for it — never produced here.
+// Matches an ATX heading line. Only ## and ### are recognised and come out as
+// h3 and h4: the screen's title is the h1 and its "Was neu ist" the h2.
 const HEADING = /^(#{2,3})\s+(.*)$/
 
 // "- " and "* " both open a list item: GitHub's generated release notes use

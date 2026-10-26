@@ -458,13 +458,25 @@ describe('App und das Update', () => {
     expect(window.localStorage.getItem('tandem.updateFrom')).toBeNull()
   })
 
-  it('opens the Update screen when the install was rolled back', async () => {
+  it('opens the Update screen and explains a rolled-back install', async () => {
     window.localStorage.setItem('tandem.updateFrom', '1.1.0')
     vi.mocked(api.getUpdateStatus).mockResolvedValue(
       updateStatus({ phase: 'install-failed', error: 'EBUSY' }),
     )
     render(<App />)
-    expect(await screen.findByText(/Die Installation hat nicht geklappt/)).toBeInTheDocument()
+    expect(await screen.findByText(/ließ sich nicht starten/)).toBeInTheDocument()
+    expect(window.localStorage.getItem('tandem.updateFrom')).toBeNull()
+  })
+
+  // A page that loads while the old server is still on its way out has no
+  // outcome to show yet: it keeps the marker and waits on the restart screen.
+  it('keeps the marker and shows the restart screen while still installing', async () => {
+    window.localStorage.setItem('tandem.updateFrom', '1.1.0')
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(updateStatus({ phase: 'installing' }))
+    render(<App />)
+    expect(await screen.findByText(/Tandem startet neu/)).toBeInTheDocument()
+    expect(window.localStorage.getItem('tandem.updateFrom')).toBe('1.1.0')
+    window.localStorage.removeItem('tandem.updateFrom')
   })
 
   // The entry stays so "am I up to date?" has an answer; only the dot goes.

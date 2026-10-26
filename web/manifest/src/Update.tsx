@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import {
-  checkForUpdate, installUpdate, reloadPage, serverAlive, startUpdateDownload,
+  checkForUpdate, installUpdate, reloadPage, restartFinished, startUpdateDownload,
 } from './api'
 import type { UpdateStatus } from './api'
 import InstallDialog from './InstallDialog'
 import { Markdown } from './markdown'
+import { operatorNotes } from './releaseNotes'
 import { rememberInstallFrom } from './updateMarker'
 
 export interface UpdateProps {
@@ -14,6 +15,8 @@ export interface UpdateProps {
   /** An action that failed before this screen opened (the download started
    *  from the update prompt). */
   actionError?: string | null
+  /** This page loaded right after an install that was rolled back. */
+  rolledBack?: boolean
 }
 
 const mb = (bytes: number) => Math.round(bytes / 1_000_000)
@@ -36,7 +39,23 @@ function checkedAtText(iso: string | null): string {
   return d.toLocaleString('de-AT', { dateStyle: 'short', timeStyle: 'short' })
 }
 
-export default function Update({ status, onRefresh, actionError }: UpdateProps) {
+// The two decisions and the restart between them, as the operator meets them.
+const STEPS = ['Herunterladen', 'Installieren', 'Neustart'] as const
+
+function stepOf(phase: UpdateStatus['phase']): number | null {
+  switch (phase) {
+    case 'available': case 'downloading': case 'verifying': case 'download-failed':
+      return 0
+    case 'ready':
+      return 1
+    case 'installing':
+      return 2
+    default:
+      return null
+  }
+}
+
+export default function Update({ status, onRefresh, actionError, rolledBack }: UpdateProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(actionError ?? null)
   const [confirmingInstall, setConfirmingInstall] = useState(false)
@@ -45,14 +64,16 @@ export default function Update({ status, onRefresh, actionError }: UpdateProps) 
   // The server is being replaced under us. Nothing on this screen is worth
   // showing until the new one answers, and then only a fresh page is honest.
   // The first check runs right away (the restart may already be done by the
-  // time this mounts) — only retries after a miss wait out the second.
+  // time this mounts) — only retries after a miss wait out the second. A
+  // check only passes once a server answers that is no longer installing, so
+  // the old one, still answering on its way out, never triggers the reload.
   useEffect(() => {
     if (status.phase !== 'installing') return
     let stopped = false
     let timer: number | undefined
     const poll = async () => {
       if (stopped) return
-      const alive = await serverAlive()
+      const alive = await restartFinished()
       // The component may have unmounted (or left the `installing` phase)
       // while that request was in flight; cleanup only cancels the *next*
       // timer, so re-check here before acting on a stale result.
@@ -108,6 +129,9 @@ export default function Update({ status, onRefresh, actionError }: UpdateProps) 
     status.allowed &&
     (status.phase === 'idle' || status.phase === 'up-to-date' || status.phase === 'check-failed')
 
+  const step = stepOf(status.phase)
+  const notes = status.notes ? operatorNotes(status.notes) : ''
+
   const restricted = !status.allowed && (
     status.phase === 'available' || status.phase === 'ready' ||
     status.phase === 'download-failed' || status.phase === 'install-failed'
@@ -129,6 +153,21 @@ export default function Update({ status, onRefresh, actionError }: UpdateProps) 
         <dd>{checkedAtText(status.checkedAt)}</dd>
       </dl>
 
+      {step !== null && (
+        <ol className="update-steps" aria-label="Ablauf">
+          {STEPS.map((label, i) => (
+            <li
+              key={label}
+              className={i < step ? 'done' : i === step ? 'current' : undefined}
+              aria-current={i === step ? 'step' : undefined}
+            >
+              <span className="update-step-no" aria-hidden="true">{i + 1}</span>
+              {label}
+            </li>
+          ))}
+        </ol>
+      )}
+
       {error && <p className="error">{error}</p>}
 
       {status.phase === 'available' && (
@@ -138,10 +177,12 @@ export default function Update({ status, onRefresh, actionError }: UpdateProps) 
             onClick={() => void run(startUpdateDownload)}>
             Herunterladen
           </button>
-          <p className="update-note">
-            Der Download läuft im Hintergrund, der Betrieb geht normal weiter. Installiert wird
-            erst in einem zweiten Schritt.
-          </p>
+          {status.allowed && (
+            <p className="update-note">
+              Der Download läuft im Hintergrund, der Betrieb geht normal weiter. Installiert
+              wird erst in einem zweiten Schritt.
+            </p>
+          )}
         </div>
       )}
 
@@ -165,9 +206,11 @@ export default function Update({ status, onRefresh, actionError }: UpdateProps) 
             onClick={() => setConfirmingInstall(true)}>
             Jetzt installieren und neu starten
           </button>
-          <p className="update-note">
-            Heruntergeladen und geprüft. Beim Installieren startet Tandem kurz neu.
-          </p>
+          {status.allowed && (
+            <p className="update-note">
+              Heruntergeladen und geprüft. Beim Installieren startet Tandem kurz neu.
+            </p>
+          )}
         </div>
       )}
 
@@ -198,7 +241,7 @@ export default function Update({ status, onRefresh, actionError }: UpdateProps) 
             erneut.
           </p>
           {status.error && <p className="update-tech">Technische Meldung: {status.error}</p>}
-          <button type="button" className="btn secondary" disabled={busy || !status.allowed}
+          <button type="button" className="btn primary" disabled={busy || !status.allowed}
             title={status.allowed ? undefined : notAllowedTitle}
             onClick={() => void run(startUpdateDownload)}>
             Erneut versuchen
@@ -208,14 +251,31 @@ export default function Update({ status, onRefresh, actionError }: UpdateProps) 
 
       {status.phase === 'install-failed' && (
         <div className="update-step">
-          <p className="error">
-            Die Installation hat nicht geklappt. Die bisherige Version {status.currentVersion}{' '}
-            läuft weiter.
-          </p>
+          {rolledBack ? (
+            <>
+              <p className="error">
+                Version {status.latestVersion ?? 'die neue Version'} ließ sich nicht starten.
+                Tandem wurde neu gestartet und läuft wieder mit Version {status.currentVersion}.
+              </p>
+              <p className="update-note">
+                Die Tablets verbinden sich von selbst wieder. Wer gerade eine Anmeldung
+                ausgefüllt hat, muss sie neu beginnen. Am besten heute nicht erneut versuchen
+                und die technische Meldung unten weitergeben.
+              </p>
+            </>
+          ) : (
+            <p className="error">
+              Die Installation hat nicht geklappt. Die bisherige Version {status.currentVersion}{' '}
+              läuft weiter.
+            </p>
+          )}
           {status.error && <p className="update-tech">Technische Meldung: {status.error}</p>}
           {/* The server installs only from `ready` (src/server/main.ts), so a
               second attempt starts with the download, and the button says so. */}
-          <button type="button" className="btn secondary" disabled={busy || !status.allowed}
+          {/* Quiet after a rollback: the screen just advised against another
+              attempt today, and the loudest button should not say otherwise. */}
+          <button type="button" className={rolledBack ? 'btn secondary' : 'btn primary'}
+            disabled={busy || !status.allowed}
             title={status.allowed ? undefined : notAllowedTitle}
             onClick={() => void run(startUpdateDownload)}>
             Neu herunterladen
@@ -252,10 +312,10 @@ export default function Update({ status, onRefresh, actionError }: UpdateProps) 
 
       {/* Not while restarting: the notes are what the operator already chose,
           and below a restart message they only push it out of focus. */}
-      {status.notes && status.phase !== 'installing' && (
+      {notes && status.phase !== 'installing' && (
         <section className="update-notes">
           <h2>Was neu ist</h2>
-          <Markdown text={status.notes} />
+          <Markdown text={notes} />
         </section>
       )}
 

@@ -55,7 +55,8 @@ export default function InstallDialog({
         <button ref={laterRef} type="button" className="btn secondary" onClick={onCancel}>
           Später
         </button>
-        <button type="button" className="btn danger" onClick={onConfirm}>
+        {/* Filled, like "Programm beenden": both take every device offline. */}
+        <button type="button" className="btn danger danger-solid" onClick={onConfirm}>
           Installieren und neu starten
         </button>
       </div>

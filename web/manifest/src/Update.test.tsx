@@ -9,7 +9,7 @@ vi.mock('./api', () => ({
   startUpdateDownload: vi.fn(),
   installUpdate: vi.fn(),
   checkForUpdate: vi.fn(),
-  serverAlive: vi.fn(),
+  restartFinished: vi.fn(),
   reloadPage: vi.fn(),
 }))
 
@@ -121,8 +121,46 @@ describe('Update', () => {
     expect(screen.getByRole('button', { name: 'Neu herunterladen' })).toBeInTheDocument()
   })
 
+  it('tells a rolled-back install what happened and what to do', () => {
+    render(
+      <Update
+        status={status({ phase: 'install-failed', error: 'EBUSY' })}
+        onRefresh={vi.fn()}
+        rolledBack
+      />,
+    )
+    expect(screen.getByText(/Version 1\.2\.0 ließ sich nicht starten/)).toBeInTheDocument()
+    expect(screen.getByText(/läuft wieder mit Version 1\.1\.0/)).toBeInTheDocument()
+    expect(screen.getByText(/Tablets verbinden sich von selbst wieder/)).toBeInTheDocument()
+  })
+
+  it('marks the step the operator is at', () => {
+    render(<Update status={status({ phase: 'ready' })} onRefresh={vi.fn()} />)
+    const current = screen.getByRole('listitem', { current: 'step' })
+    expect(current).toHaveTextContent('Installieren')
+  })
+
+  it('leaves out GitHub\'s generated tail of the release notes', () => {
+    render(
+      <Update
+        status={status({
+          notes: '## Neu\n- Kassieren\n\n## What\'s Changed\n* Fix by @dev in https://github.com/x/pull/1\n\n**Full Changelog**: https://github.com/x/compare',
+        })}
+        onRefresh={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('Kassieren')).toBeInTheDocument()
+    expect(screen.queryByText(/What's Changed/)).toBeNull()
+    expect(screen.queryByText(/Full Changelog/)).toBeNull()
+  })
+
+  it('does not describe a download the device cannot start', () => {
+    render(<Update status={status({ allowed: false })} onRefresh={vi.fn()} />)
+    expect(screen.queryByText(/Der Download läuft im Hintergrund/)).toBeNull()
+  })
+
   it('hides the release notes while restarting', () => {
-    vi.mocked(api.serverAlive).mockResolvedValue(false)
+    vi.mocked(api.restartFinished).mockResolvedValue(false)
     render(<Update status={status({ phase: 'installing' })} onRefresh={vi.fn()} />)
     expect(screen.queryByRole('heading', { name: 'Was neu ist' })).toBeNull()
   })
@@ -130,22 +168,22 @@ describe('Update', () => {
   // jsdom makes window.location non-configurable, so the reload goes through
   // api.reloadPage — a seam that can be mocked like every other call here.
   it('waits for the restarted server and then reloads', async () => {
-    vi.mocked(api.serverAlive).mockResolvedValueOnce(false).mockResolvedValue(true)
+    vi.mocked(api.restartFinished).mockResolvedValueOnce(false).mockResolvedValue(true)
     render(<Update status={status({ phase: 'installing' })} onRefresh={vi.fn()} />)
     expect(screen.getByText(/startet neu/)).toBeInTheDocument()
     await waitFor(() => expect(api.reloadPage).toHaveBeenCalled(), { timeout: 5000 })
   })
 
   it('keeps waiting while the new server is still down', async () => {
-    vi.mocked(api.serverAlive).mockResolvedValue(false)
+    vi.mocked(api.restartFinished).mockResolvedValue(false)
     render(<Update status={status({ phase: 'installing' })} onRefresh={vi.fn()} />)
-    await waitFor(() => expect(api.serverAlive).toHaveBeenCalled())
+    await waitFor(() => expect(api.restartFinished).toHaveBeenCalled())
     expect(api.reloadPage).not.toHaveBeenCalled()
   })
 
   it('does not reload after unmount if the in-flight check resolves alive', async () => {
     let resolveAlive: (alive: boolean) => void = () => {}
-    vi.mocked(api.serverAlive).mockReturnValue(
+    vi.mocked(api.restartFinished).mockReturnValue(
       new Promise((resolve) => {
         resolveAlive = resolve
       }),
@@ -153,7 +191,7 @@ describe('Update', () => {
     const { unmount } = render(
       <Update status={status({ phase: 'installing' })} onRefresh={vi.fn()} />,
     )
-    await waitFor(() => expect(api.serverAlive).toHaveBeenCalled())
+    await waitFor(() => expect(api.restartFinished).toHaveBeenCalled())
     unmount()
     resolveAlive(true)
     // Flush microtasks so the (now stale) poll continuation would run if the

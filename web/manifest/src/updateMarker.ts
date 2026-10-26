@@ -14,13 +14,21 @@ export function rememberInstallFrom(version: string): void {
   }
 }
 
-/** The remembered version, removed in the same step so the note shows once. */
-export function takeInstallFrom(): string | null {
+/** The remembered version, left in place: a page that loads while the restart
+ *  is still under way has nothing to compare yet. */
+export function peekInstallFrom(): string | null {
   try {
-    const v = window.localStorage.getItem(KEY)
-    if (v !== null) window.localStorage.removeItem(KEY)
-    return v
+    return window.localStorage.getItem(KEY)
   } catch {
     return null
+  }
+}
+
+/** Removed once the outcome has been shown, so the note shows once. */
+export function clearInstallFrom(): void {
+  try {
+    window.localStorage.removeItem(KEY)
+  } catch {
+    // Nothing to do: the note may show once more, nothing worse.
   }
 }

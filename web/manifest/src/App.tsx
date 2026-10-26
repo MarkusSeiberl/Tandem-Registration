@@ -13,7 +13,7 @@ import { shutdownAllowed, shutdownApp } from './api'
 import { getUpdateStatus, markUpdatePromptSeen, startUpdateDownload } from './api'
 import type { UpdatePhase, UpdateStatus } from './api'
 import { useUpdateEvents } from './useEvents'
-import { takeInstallFrom } from './updateMarker'
+import { clearInstallFrom, peekInstallFrom } from './updateMarker'
 import { rememberDate, storedDate } from './date'
 
 type View = 'overview' | 'list' | 'detail' | 'tarife' | 'crew' | 'settings' | 'update'
@@ -119,20 +119,35 @@ function App() {
   // either the version it was updated to, or nothing when it rolled back (in
   // which case the Update screen, with its explanation, opens instead).
   const [updatedTo, setUpdatedTo] = useState<string | null>(null)
+  // The install just failed and Tandem was restarted on the old version: the
+  // Update screen says so in those words, not as any other failed install.
+  const [rolledBack, setRolledBack] = useState(false)
   const [updateActionError, setUpdateActionError] = useState<string | null>(null)
 
   useEffect(() => {
     getUpdateStatus()
       .then((status) => {
         setUpdate(status)
-        const from = takeInstallFrom()
+        const from = peekInstallFrom()
         if (from === null) return
-        if (status.currentVersion !== from) setUpdatedTo(status.currentVersion)
-        else if (status.phase === 'install-failed') {
-          // setView's steps without its leave-guard: the page has just loaded,
-          // so there is no unsaved edit to ask about.
+        // setView's steps without its leave-guard: the page has just loaded,
+        // so there is no unsaved edit to ask about.
+        const openUpdate = () => {
           window.history.pushState(AWAY_FROM_LIST, '')
           setViewState('update')
+        }
+        // Loaded while the restart is still under way (a second tab, or a
+        // reload that beat it): no outcome yet. Keep the marker and show the
+        // restart screen, which waits and reloads again.
+        if (status.phase === 'installing') {
+          openUpdate()
+          return
+        }
+        clearInstallFrom()
+        if (status.currentVersion !== from) setUpdatedTo(status.currentVersion)
+        else if (status.phase === 'install-failed') {
+          setRolledBack(true)
+          openUpdate()
         }
       })
       .catch(() => {
@@ -373,6 +388,7 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
               status={update}
               onRefresh={refreshUpdate}
               actionError={updateActionError}
+              rolledBack={rolledBack}
             />
           )}
         </main>

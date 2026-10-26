@@ -13,6 +13,7 @@ import { shutdownAllowed, shutdownApp } from './api'
 import { getUpdateStatus, markUpdatePromptSeen, startUpdateDownload } from './api'
 import type { UpdatePhase, UpdateStatus } from './api'
 import { useUpdateEvents } from './useEvents'
+import { takeInstallFrom } from './updateMarker'
 import { rememberDate, storedDate } from './date'
 
 type View = 'overview' | 'list' | 'detail' | 'tarife' | 'crew' | 'settings' | 'update'
@@ -114,9 +115,26 @@ function App() {
   // otherwise cost one request per percent, from every open manifest.
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
 
+  // Set once after a restart the operator started from the Update screen:
+  // either the version it was updated to, or nothing when it rolled back (in
+  // which case the Update screen, with its explanation, opens instead).
+  const [updatedTo, setUpdatedTo] = useState<string | null>(null)
+  const [updateActionError, setUpdateActionError] = useState<string | null>(null)
+
   useEffect(() => {
     getUpdateStatus()
-      .then(setUpdate)
+      .then((status) => {
+        setUpdate(status)
+        const from = takeInstallFrom()
+        if (from === null) return
+        if (status.currentVersion !== from) setUpdatedTo(status.currentVersion)
+        else if (status.phase === 'install-failed') {
+          // setView's steps without its leave-guard: the page has just loaded,
+          // so there is no unsaved edit to ask about.
+          window.history.pushState(AWAY_FROM_LIST, '')
+          setViewState('update')
+        }
+      })
       .catch(() => {
         // An older server without the update routes. No entry, no dialog —
         // exactly what a server that cannot update itself should show.
@@ -143,11 +161,14 @@ function App() {
 
   function refreshUpdate() { void getUpdateStatus().then(setUpdate).catch(() => {}) }
 
-  // Only while something is actually pending — and only where it can be acted on.
+  // Always there on the machine that can act, so "am I up to date?" has an
+  // answer; the dot only while something is actually pending.
   const PENDING: UpdatePhase[] = [
     'available', 'downloading', 'verifying', 'ready', 'download-failed', 'install-failed',
   ]
-  const showUpdateTab = update?.allowed === true && PENDING.includes(update.phase)
+  const showUpdateTab = update?.allowed === true && update.phase !== 'disabled'
+  const updatePending = update !== null && PENDING.includes(update.phase)
+  const installing = update?.phase === 'installing'
 
   const [promptDismissed, setPromptDismissed] = useState(false)
   const showPrompt =
@@ -166,7 +187,16 @@ function App() {
     // once more after the next server start, which is not worth surfacing to
     // the operator as an error.
     void markUpdatePromptSeen().catch(() => {})
-    void startUpdateDownload().then(refreshUpdate).catch(() => {})
+    // Unlike the courtesy call above, a failed download start is the
+    // operator's business: the Update screen they land on says so.
+    setUpdateActionError(null)
+    void startUpdateDownload()
+      .then(refreshUpdate)
+      .catch((err) => {
+        setUpdateActionError(
+          err instanceof Error ? err.message : 'Download konnte nicht gestartet werden'
+        )
+      })
     setView('update')
   }
 
@@ -283,7 +313,7 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
               onClick={() => setView('update')}
             >
               Update
-              <span className="update-dot" aria-hidden="true" />
+              {updatePending && <span className="update-dot" aria-hidden="true" />}
             </button>
           )}
 
@@ -295,7 +325,9 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
               type="button"
               className="btn danger shutdown"
               onClick={handleShutdown}
-              disabled={!canShutdown || shuttingDown}
+              // Not mid-install: the installer is already stopping and
+              // restarting the server, and a second stop could leave it down.
+              disabled={!canShutdown || shuttingDown || installing}
               title={canShutdown
                 ? 'Server beenden'
                 : 'Nur an dem Rechner möglich, auf dem Tandem läuft.'}
@@ -314,6 +346,14 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
         </nav>
 
         <main className={view === 'list' ? 'view' : 'view view-wide'}>
+          {updatedTo && (
+            <div className="update-done-note" role="status">
+              <p>Tandem wurde auf Version {updatedTo} aktualisiert.</p>
+              <button type="button" className="btn secondary" onClick={() => setUpdatedTo(null)}>
+                OK
+              </button>
+            </div>
+          )}
           {view === 'overview' && <Overview onOpenDay={openDay} />}
           {view === 'list' && <List onSelect={openDetail} date={date} onDateChange={chooseDate} />}
           {view === 'detail' && selected && (
@@ -328,7 +368,12 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
           {view === 'crew' && <Crew />}
           {view === 'settings' && <Settings onDirtyChange={onSettingsDirtyChange} />}
           {view === 'update' && update && (
-            <Update status={update} onRefresh={refreshUpdate} />
+            <Update
+              key={updateActionError ?? ''}
+              status={update}
+              onRefresh={refreshUpdate}
+              actionError={updateActionError}
+            />
           )}
         </main>
       </div>

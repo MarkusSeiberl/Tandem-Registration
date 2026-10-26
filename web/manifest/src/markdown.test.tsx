@@ -97,4 +97,20 @@ describe('Markdown', () => {
     expect(items).toHaveLength(2)
     expect(container.textContent).not.toContain('\r')
   })
+
+  // How GitHub release notes are written: no blank line between a heading and
+  // its list. The list must stay a list, not join the heading as a paragraph.
+  it('keeps a list that follows a heading directly as a list', () => {
+    const { container } = render(
+      <Markdown text={'## Neu\n- **Gutscheinliste**: liest Datum\n- Tagesabschluss warnt'} />,
+    )
+    expect(screen.getByRole('heading', { level: 3, name: 'Neu' })).toBeInTheDocument()
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+    expect(container.textContent).not.toContain('- ')
+  })
+
+  it('reads * lines as a list, as GitHub generates them', () => {
+    render(<Markdown text={'* Erstens\n* Zweitens'} />)
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+  })
 })

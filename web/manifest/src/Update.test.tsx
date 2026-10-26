@@ -8,6 +8,7 @@ import type { UpdateStatus } from './api'
 vi.mock('./api', () => ({
   startUpdateDownload: vi.fn(),
   installUpdate: vi.fn(),
+  checkForUpdate: vi.fn(),
   serverAlive: vi.fn(),
   reloadPage: vi.fn(),
 }))
@@ -25,6 +26,7 @@ describe('Update', () => {
     vi.clearAllMocks()
     vi.mocked(api.startUpdateDownload).mockResolvedValue()
     vi.mocked(api.installUpdate).mockResolvedValue()
+    vi.mocked(api.checkForUpdate).mockResolvedValue()
   })
 
   it('names both versions and shows the release notes', () => {
@@ -52,25 +54,77 @@ describe('Update', () => {
     expect(screen.queryByRole('button', { name: 'Herunterladen' })).toBeNull()
   })
 
-  it('asks before restarting and names the open tandems', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+  it('asks before restarting, names the open tandems and warns about the tablet', async () => {
     render(<Update status={status({ phase: 'ready', openToday: 3 })} onRefresh={vi.fn()} />)
     await userEvent.click(
       screen.getByRole('button', { name: 'Jetzt installieren und neu starten' }),
     )
-    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('3'))
+    expect(api.installUpdate).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toHaveProperty('open', true)
+    expect(screen.getByText('3 Tandems von heute sind noch offen. Sie bleiben gespeichert.'))
+      .toBeInTheDocument()
+    expect(screen.getByText(/muss danach von vorn beginnen/)).toBeInTheDocument()
+    // The safe answer has the focus: Enter on an unread dialog must not restart.
+    expect(screen.getByRole('button', { name: 'Später' })).toHaveFocus()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Installieren und neu starten' }))
     expect(api.installUpdate).toHaveBeenCalledTimes(1)
-    confirmSpy.mockRestore()
   })
 
-  it('installs nothing when the question is answered with no', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  it('installs nothing when the question is answered with Später', async () => {
     render(<Update status={status({ phase: 'ready' })} onRefresh={vi.fn()} />)
     await userEvent.click(
       screen.getByRole('button', { name: 'Jetzt installieren und neu starten' }),
     )
+    await userEvent.click(screen.getByRole('button', { name: 'Später' }))
     expect(api.installUpdate).not.toHaveBeenCalled()
-    confirmSpy.mockRestore()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('remembers the running version for the note after the restart', async () => {
+    window.localStorage.removeItem('tandem.updateFrom')
+    render(<Update status={status({ phase: 'ready' })} onRefresh={vi.fn()} />)
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Jetzt installieren und neu starten' }),
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Installieren und neu starten' }))
+    expect(window.localStorage.getItem('tandem.updateFrom')).toBe('1.1.0')
+    window.localStorage.removeItem('tandem.updateFrom')
+  })
+
+  it('says verifying instead of showing a stuck 100 %', () => {
+    render(
+      <Update
+        status={status({ phase: 'verifying', downloadedBytes: 116e6, totalBytes: 116e6 })}
+        onRefresh={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('Download fertig, wird geprüft…')).toBeInTheDocument()
+  })
+
+  it('offers a manual check and shows when the last one ran', async () => {
+    render(<Update status={status({ phase: 'up-to-date', notes: null })} onRefresh={vi.fn()} />)
+    expect(screen.getByText('Zuletzt geprüft')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Jetzt prüfen' }))
+    expect(api.checkForUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers a fresh download after a failed install and says the old version runs on', () => {
+    render(
+      <Update
+        status={status({ phase: 'install-failed', error: 'EBUSY' })}
+        onRefresh={vi.fn()}
+      />,
+    )
+    expect(screen.getByText(/bisherige Version 1.1.0 läuft weiter/)).toBeInTheDocument()
+    expect(screen.getByText('Technische Meldung: EBUSY')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Neu herunterladen' })).toBeInTheDocument()
+  })
+
+  it('hides the release notes while restarting', () => {
+    vi.mocked(api.serverAlive).mockResolvedValue(false)
+    render(<Update status={status({ phase: 'installing' })} onRefresh={vi.fn()} />)
+    expect(screen.queryByRole('heading', { name: 'Was neu ist' })).toBeNull()
   })
 
   // jsdom makes window.location non-configurable, so the reload goes through
@@ -116,7 +170,8 @@ describe('Update', () => {
         onRefresh={vi.fn()}
       />,
     )
-    expect(screen.getByText('Prüfsumme stimmt nicht.')).toBeInTheDocument()
+    expect(screen.getByText(/Prüfe die Internetverbindung/)).toBeInTheDocument()
+    expect(screen.getByText('Technische Meldung: Prüfsumme stimmt nicht.')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
     expect(api.startUpdateDownload).toHaveBeenCalledTimes(1)
   })

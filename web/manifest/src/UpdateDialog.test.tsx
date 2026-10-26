@@ -16,15 +16,18 @@ describe('UpdateDialog', () => {
     expect(screen.getByText(/1\.2\.0/)).toBeInTheDocument()
   })
 
-  it('says that the program restarts', () => {
+  // Accepting only downloads: saying so is what lets an operator say yes on a
+  // busy morning without fearing a restart.
+  it('says the download leaves operations running and installing comes later', () => {
     render(<UpdateDialog {...props()} />)
-    expect(screen.getByText(/startet danach neu/)).toBeInTheDocument()
+    expect(screen.getByText(/Betrieb geht normal weiter/)).toBeInTheDocument()
+    expect(screen.getByText(/erst, wenn du es auf der Update-Seite bestätigst/)).toBeInTheDocument()
   })
 
   it('reports the accepted update', async () => {
     const p = props()
     render(<UpdateDialog {...p} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Jetzt aktualisieren' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Herunterladen' }))
     expect(p.onAccept).toHaveBeenCalledTimes(1)
   })
 

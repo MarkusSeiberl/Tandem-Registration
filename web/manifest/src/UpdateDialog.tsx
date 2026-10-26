@@ -22,27 +22,30 @@ export default function UpdateDialog({
     ref.current?.showModal()
   }, [])
 
+  // Accepting here only downloads. Saying so is what lets an operator say yes
+  // on a busy morning: the restart is a second, separate decision on the
+  // Update screen, with its own warning.
   return (
     <dialog
       ref={ref}
-      className="collect-dialog"
+      className="collect-dialog update-dialog"
       onCancel={onLater}
       aria-labelledby="update-dialog-title"
     >
       <h2 id="update-dialog-title">Update verfügbar</h2>
-      <p>
-        Version {currentVersion} → {latestVersion}
+      <p className="update-dialog-versions">
+        Version {currentVersion} → <strong>{latestVersion}</strong>
       </p>
       <p>
-        Jetzt herunterladen? Das Programm startet danach neu; alle Tablets
-        verlieren dabei kurz die Verbindung.
+        Der Download läuft im Hintergrund, der Betrieb geht normal weiter. Installiert – mit
+        einem kurzen Neustart – wird erst, wenn du es auf der Update-Seite bestätigst.
       </p>
       <div className="collect-dialog-actions">
         <button type="button" className="btn secondary" onClick={onLater}>
           Später
         </button>
         <button type="button" className="btn primary" onClick={onAccept}>
-          Jetzt aktualisieren
+          Herunterladen
         </button>
       </div>
     </dialog>

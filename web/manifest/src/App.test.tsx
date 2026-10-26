@@ -447,13 +447,34 @@ describe('App und das Update', () => {
     expect(screen.queryByRole('button', { name: /Update/ })).toBeNull()
   })
 
-  it('shows no entry while everything is up to date', async () => {
+  it('says once that the update went in after the restart', async () => {
+    window.localStorage.setItem('tandem.updateFrom', '1.0.0')
     vi.mocked(api.getUpdateStatus).mockResolvedValue(
       updateStatus({ phase: 'up-to-date', latestVersion: '1.1.0' }),
     )
     render(<App />)
-    await screen.findByRole('button', { name: 'Manifest' })
-    expect(screen.queryByRole('button', { name: /Update/ })).toBeNull()
+    expect(await screen.findByText('Tandem wurde auf Version 1.1.0 aktualisiert.'))
+      .toBeInTheDocument()
+    expect(window.localStorage.getItem('tandem.updateFrom')).toBeNull()
+  })
+
+  it('opens the Update screen when the install was rolled back', async () => {
+    window.localStorage.setItem('tandem.updateFrom', '1.1.0')
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(
+      updateStatus({ phase: 'install-failed', error: 'EBUSY' }),
+    )
+    render(<App />)
+    expect(await screen.findByText(/Die Installation hat nicht geklappt/)).toBeInTheDocument()
+  })
+
+  // The entry stays so "am I up to date?" has an answer; only the dot goes.
+  it('keeps a quiet entry without the dot while everything is up to date', async () => {
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(
+      updateStatus({ phase: 'up-to-date', latestVersion: '1.1.0' }),
+    )
+    render(<App />)
+    const tab = await screen.findByRole('button', { name: 'Update' })
+    expect(tab.querySelector('.update-dot')).toBeNull()
   })
 
   it('opens the dialog exactly when the server says it is pending', async () => {
@@ -498,7 +519,7 @@ describe('App und das Update', () => {
   it('starts the download and opens the screen on yes', async () => {
     vi.mocked(api.getUpdateStatus).mockResolvedValue(updateStatus({ promptPending: true }))
     render(<App />)
-    await userEvent.click(await screen.findByRole('button', { name: 'Jetzt aktualisieren' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Herunterladen' }))
     expect(api.markUpdatePromptSeen).toHaveBeenCalledTimes(1)
     expect(api.startUpdateDownload).toHaveBeenCalledTimes(1)
     expect(await screen.findByRole('heading', { name: 'Update' })).toBeInTheDocument()

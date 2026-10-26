@@ -16,6 +16,10 @@ const INLINE = /(\*\*[^*]+\*\*|`[^`]+`)/g
 // own title is an h2, and h1 is reserved for it — never produced here.
 const HEADING = /^(#{2,3})\s+(.*)$/
 
+// "- " and "* " both open a list item: GitHub's generated release notes use
+// the star.
+const BULLET = /^[-*] /
+
 function inline(text: string, keyPrefix: string): ReactNode[] {
   return text.split(INLINE).map((part, i) => {
     const key = `${keyPrefix}-${i}`
@@ -53,10 +57,14 @@ function splitBlocks(text: string): string[][] {
       continue
     }
 
-    // A heading always starts a fresh block, even mid-paragraph.
-    if (HEADING.test(line) && current.length > 0) {
-      blocks.push(current)
+    // A heading is always a block of its own, even mid-paragraph and even
+    // with a list straight under it (how GitHub writes release notes): the
+    // lines after it start a fresh block.
+    if (HEADING.test(line)) {
+      if (current.length > 0) blocks.push(current)
+      blocks.push([line])
       current = []
+      continue
     }
 
     current.push(line)
@@ -77,10 +85,10 @@ export function Markdown({ text }: { text: string }): ReactNode {
         // line that doesn't is a lazy continuation of the item above it —
         // that's how GitHub reads it too — not a reason to fall back to a
         // paragraph and lose the whole list.
-        if (lines[0].startsWith('- ')) {
+        if (BULLET.test(lines[0])) {
           const items: string[] = []
           for (const line of lines) {
-            if (line.startsWith('- ')) {
+            if (BULLET.test(line)) {
               items.push(line.slice(2))
             } else if (items.length > 0) {
               items[items.length - 1] += ` ${line}`

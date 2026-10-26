@@ -6,7 +6,7 @@ import type { UpdateStatus } from './api'
 import InstallDialog from './InstallDialog'
 import { Markdown } from './markdown'
 import { operatorNotes } from './releaseNotes'
-import { rememberInstallFrom } from './updateMarker'
+import { forgetInstall, rememberInstallFrom } from './updateMarker'
 
 export interface UpdateProps {
   status: UpdateStatus
@@ -17,6 +17,8 @@ export interface UpdateProps {
   actionError?: string | null
   /** This page loaded right after an install that was rolled back. */
   rolledBack?: boolean
+  /** This page loaded while an install it started is still restarting. */
+  awaitingRestart?: boolean
 }
 
 const mb = (bytes: number) => Math.round(bytes / 1_000_000)
@@ -55,20 +57,30 @@ function stepOf(phase: UpdateStatus['phase']): number | null {
   }
 }
 
-export default function Update({ status, onRefresh, actionError, rolledBack }: UpdateProps) {
+export default function Update({
+  status, onRefresh, actionError, rolledBack, awaitingRestart,
+}: UpdateProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(actionError ?? null)
   const [confirmingInstall, setConfirmingInstall] = useState(false)
   const [waitedS, setWaitedS] = useState(0)
+  // When "Erneut versuchen" was last pressed, shown if that attempt failed too.
+  const [retriedAt, setRetriedAt] = useState<string | null>(null)
+  // Set once the server accepted the install. The server shuts down moments
+  // later and its "installing" push can be lost on the way, so the screen
+  // does not wait for it to start waiting for the restart.
+  const [installAccepted, setInstallAccepted] = useState(false)
+  const restarting = status.phase === 'installing' || installAccepted || awaitingRestart === true
 
   // The server is being replaced under us. Nothing on this screen is worth
   // showing until the new one answers, and then only a fresh page is honest.
   // The first check runs right away (the restart may already be done by the
   // time this mounts) — only retries after a miss wait out the second. A
-  // check only passes once a server answers that is no longer installing, so
-  // the old one, still answering on its way out, never triggers the reload.
+  // check only passes once a server answers that is no longer installing (or
+  // still "ready", just before it says so), so the old one, still answering
+  // on its way out, never triggers the reload.
   useEffect(() => {
-    if (status.phase !== 'installing') return
+    if (!restarting) return
     let stopped = false
     let timer: number | undefined
     const poll = async () => {
@@ -89,16 +101,16 @@ export default function Update({ status, onRefresh, actionError, rolledBack }: U
       stopped = true
       if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [status.phase])
+  }, [restarting])
 
   // Seconds since the restart began, shown so a wait reads as progress and
   // not as a hang.
   useEffect(() => {
-    if (status.phase !== 'installing') return
+    if (!restarting) return
     setWaitedS(0)
     const id = window.setInterval(() => setWaitedS((s) => s + 1), 1000)
     return () => window.clearInterval(id)
-  }, [status.phase])
+  }, [restarting])
 
   async function run(action: () => Promise<void>) {
     setError(null)
@@ -113,10 +125,21 @@ export default function Update({ status, onRefresh, actionError, rolledBack }: U
     }
   }
 
-  function confirmInstall() {
+  async function confirmInstall() {
     setConfirmingInstall(false)
+    setError(null)
+    setBusy(true)
     rememberInstallFrom(status.currentVersion)
-    void run(installUpdate)
+    try {
+      await installUpdate()
+      setInstallAccepted(true)
+    } catch (err) {
+      // Refused before anything happened: no restart is coming.
+      forgetInstall()
+      setError(err instanceof Error ? err.message : 'Aktion fehlgeschlagen')
+    } finally {
+      setBusy(false)
+    }
   }
 
   // downloadedBytes can transiently exceed totalBytes (e.g. a chunk race);
@@ -129,7 +152,7 @@ export default function Update({ status, onRefresh, actionError, rolledBack }: U
     status.allowed &&
     (status.phase === 'idle' || status.phase === 'up-to-date' || status.phase === 'check-failed')
 
-  const step = stepOf(status.phase)
+  const step = stepOf(restarting ? 'installing' : status.phase)
   const notes = status.notes ? operatorNotes(status.notes) : ''
 
   const restricted = !status.allowed && (
@@ -199,7 +222,7 @@ export default function Update({ status, onRefresh, actionError, rolledBack }: U
         </div>
       )}
 
-      {status.phase === 'ready' && (
+      {status.phase === 'ready' && !restarting && (
         <div className="update-step">
           <button type="button" className="btn primary" disabled={busy || !status.allowed}
             title={status.allowed ? undefined : notAllowedTitle}
@@ -214,7 +237,7 @@ export default function Update({ status, onRefresh, actionError, rolledBack }: U
         </div>
       )}
 
-      {status.phase === 'installing' && (
+      {restarting && (
         <div className="update-restarting" role="status">
           <span className="update-spinner" aria-hidden="true" />
           <div>
@@ -236,14 +259,37 @@ export default function Update({ status, onRefresh, actionError, rolledBack }: U
 
       {status.phase === 'download-failed' && (
         <div className="update-step">
-          <p className="error">
-            Der Download hat nicht geklappt. Prüfe die Internetverbindung und versuche es
-            erneut.
-          </p>
+          {/* A wrong checksum is not a network problem: the file arrived, but
+              it is not the one the release names, and a second download of
+              the same file will not change that. */}
+          {/Prüfsumme/.test(status.error ?? '') ? (
+            <p className="error">
+              Die heruntergeladene Datei stimmt nicht mit dem Release überein und wurde
+              verworfen. Hilft ein zweiter Versuch nicht, ist das Release fehlerhaft – bitte
+              die technische Meldung weitergeben.
+            </p>
+          ) : (
+            <p className="error">
+              Der Download hat nicht geklappt. Prüfe die Internetverbindung und versuche es
+              erneut.
+            </p>
+          )}
           {status.error && <p className="update-tech">Technische Meldung: {status.error}</p>}
+          {/* A retry that fails the same way within a second would otherwise
+              leave the screen exactly as it was, as if the button did nothing. */}
+          {retriedAt && (
+            <p className="update-note" role="status">
+              Erneut versucht um {retriedAt} – wieder nicht geklappt.
+            </p>
+          )}
           <button type="button" className="btn primary" disabled={busy || !status.allowed}
             title={status.allowed ? undefined : notAllowedTitle}
-            onClick={() => void run(startUpdateDownload)}>
+            onClick={() => {
+              setRetriedAt(new Date().toLocaleTimeString('de-AT', {
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+              }))
+              void run(startUpdateDownload)
+            }}>
             Erneut versuchen
           </button>
         </div>
@@ -312,7 +358,7 @@ export default function Update({ status, onRefresh, actionError, rolledBack }: U
 
       {/* Not while restarting: the notes are what the operator already chose,
           and below a restart message they only push it out of focus. */}
-      {notes && status.phase !== 'installing' && (
+      {notes && !restarting && (
         <section className="update-notes">
           <h2>Was neu ist</h2>
           <Markdown text={notes} />
@@ -323,7 +369,7 @@ export default function Update({ status, onRefresh, actionError, rolledBack }: U
         <InstallDialog
           latestVersion={status.latestVersion}
           openToday={status.openToday}
-          onConfirm={confirmInstall}
+          onConfirm={() => void confirmInstall()}
           onCancel={() => setConfirmingInstall(false)}
         />
       )}

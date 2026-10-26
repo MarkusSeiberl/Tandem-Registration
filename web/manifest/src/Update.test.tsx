@@ -81,6 +81,35 @@ describe('Update', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  // The server shuts down moments after accepting, and its "installing" push
+  // can be lost: the screen must start waiting for the restart on its own.
+  it('waits for the restart once the install is accepted, without a push', async () => {
+    vi.mocked(api.restartFinished).mockResolvedValue(false)
+    render(<Update status={status({ phase: 'ready' })} onRefresh={vi.fn()} />)
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Jetzt installieren und neu starten' }),
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Installieren und neu starten' }))
+
+    expect(await screen.findByText(/Tandem startet neu/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Jetzt installieren und neu starten' })).toBeNull()
+    await waitFor(() => expect(api.restartFinished).toHaveBeenCalled())
+    window.localStorage.removeItem('tandem.updateFrom')
+  })
+
+  it('forgets the install and says why when the server refuses it', async () => {
+    vi.mocked(api.installUpdate).mockRejectedValue(new Error('Updates sind nur an dem Rechner möglich.'))
+    render(<Update status={status({ phase: 'ready' })} onRefresh={vi.fn()} />)
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Jetzt installieren und neu starten' }),
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Installieren und neu starten' }))
+
+    expect(await screen.findByText('Updates sind nur an dem Rechner möglich.')).toBeInTheDocument()
+    expect(screen.queryByText(/Tandem startet neu/)).toBeNull()
+    expect(window.localStorage.getItem('tandem.updateFrom')).toBeNull()
+  })
+
   it('remembers the running version for the note after the restart', async () => {
     window.localStorage.removeItem('tandem.updateFrom')
     render(<Update status={status({ phase: 'ready' })} onRefresh={vi.fn()} />)
@@ -208,10 +237,24 @@ describe('Update', () => {
         onRefresh={vi.fn()}
       />,
     )
-    expect(screen.getByText(/Prüfe die Internetverbindung/)).toBeInTheDocument()
+    // A wrong checksum is not blamed on the internet connection.
+    expect(screen.queryByText(/Prüfe die Internetverbindung/)).toBeNull()
+    expect(screen.getByText(/stimmt nicht mit dem Release überein/)).toBeInTheDocument()
     expect(screen.getByText('Technische Meldung: Prüfsumme stimmt nicht.')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
     expect(api.startUpdateDownload).toHaveBeenCalledTimes(1)
+    // A retry that fails the same way still visibly happened.
+    expect(screen.getByText(/Erneut versucht um .* wieder nicht geklappt/)).toBeInTheDocument()
+  })
+
+  it('points a failed download at the internet connection', () => {
+    render(
+      <Update
+        status={status({ phase: 'download-failed', error: 'fetch failed: ECONNRESET' })}
+        onRefresh={vi.fn()}
+      />,
+    )
+    expect(screen.getByText(/Prüfe die Internetverbindung/)).toBeInTheDocument()
   })
 
   it('says so when there is nothing to install', () => {

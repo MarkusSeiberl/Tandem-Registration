@@ -447,7 +447,7 @@ describe('App und das Update', () => {
     expect(screen.queryByRole('button', { name: /Update/ })).toBeNull()
   })
 
-  it('says once that the update went in after the restart', async () => {
+  it('says that the update went in after the restart', async () => {
     window.localStorage.setItem('tandem.updateFrom', '1.0.0')
     vi.mocked(api.getUpdateStatus).mockResolvedValue(
       updateStatus({ phase: 'up-to-date', latestVersion: '1.1.0' }),
@@ -456,6 +456,40 @@ describe('App und das Update', () => {
     expect(await screen.findByText('Tandem wurde auf Version 1.1.0 aktualisiert.'))
       .toBeInTheDocument()
     expect(window.localStorage.getItem('tandem.updateFrom')).toBeNull()
+    window.localStorage.removeItem('tandem.updateOutcome')
+  })
+
+  // The restarted exe opens a tab of its own, which settles the marker first;
+  // the tab the operator watched reloads a moment later and must say it too.
+  it('still says it in a second tab after another one settled the restart', async () => {
+    window.localStorage.setItem(
+      'tandem.updateOutcome',
+      JSON.stringify({ from: '1.0.0', to: '1.1.0', at: Date.now() }),
+    )
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(
+      updateStatus({ phase: 'up-to-date', latestVersion: '1.1.0' }),
+    )
+    render(<App />)
+    expect(await screen.findByText('Tandem wurde auf Version 1.1.0 aktualisiert.'))
+      .toBeInTheDocument()
+
+    // Read once, it is done for every tab.
+    await userEvent.click(screen.getByRole('button', { name: 'OK' }))
+    expect(window.localStorage.getItem('tandem.updateOutcome')).toBeNull()
+  })
+
+  it('does not repeat an old outcome', async () => {
+    window.localStorage.setItem(
+      'tandem.updateOutcome',
+      JSON.stringify({ from: '1.0.0', to: '1.1.0', at: Date.now() - 10 * 60 * 1000 }),
+    )
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(
+      updateStatus({ phase: 'up-to-date', latestVersion: '1.1.0' }),
+    )
+    render(<App />)
+    await screen.findByRole('button', { name: 'Update' })
+    expect(screen.queryByText(/aktualisiert\./)).toBeNull()
+    window.localStorage.removeItem('tandem.updateOutcome')
   })
 
   it('opens the Update screen and explains a rolled-back install', async () => {
@@ -466,6 +500,16 @@ describe('App und das Update', () => {
     render(<App />)
     expect(await screen.findByText(/ließ sich nicht starten/)).toBeInTheDocument()
     expect(window.localStorage.getItem('tandem.updateFrom')).toBeNull()
+    window.localStorage.removeItem('tandem.updateOutcome')
+  })
+
+  it('treats a server still saying ready as one not yet restarted', async () => {
+    window.localStorage.setItem('tandem.updateFrom', '1.1.0')
+    vi.mocked(api.getUpdateStatus).mockResolvedValue(updateStatus({ phase: 'ready' }))
+    render(<App />)
+    expect(await screen.findByText(/Tandem startet neu/)).toBeInTheDocument()
+    expect(window.localStorage.getItem('tandem.updateFrom')).toBe('1.1.0')
+    window.localStorage.removeItem('tandem.updateFrom')
   })
 
   // A page that loads while the old server is still on its way out has no

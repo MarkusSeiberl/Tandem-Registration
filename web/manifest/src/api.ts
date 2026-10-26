@@ -444,16 +444,16 @@ export const markUpdatePromptSeen = () => updateAction('/api/update/prompt-seen'
  * Used while waiting for the restarted server to come back. Not /api/health:
  * the old process keeps answering that for a moment while it shuts down
  * (src/server/update/install.ts), and a reload against it lands on a server
- * about to vanish. The old process reports `installing` until it is gone; a
- * freshly started one never does, whether the new version came up or the old
- * one was restored.
+ * about to vanish. The old process reports `installing` until it is gone, and
+ * `ready` for the instant before it says so; a freshly started one reports
+ * neither, whether the new version came up or the old one was restored.
  */
 export async function restartFinished(): Promise<boolean> {
   try {
     const res = await fetch(apiUrl('/api/update/status'), { cache: 'no-store' })
     if (!res.ok) return false
     const status = (await res.json()) as Partial<UpdateStatus>
-    return status.phase !== 'installing'
+    return status.phase !== 'installing' && status.phase !== 'ready'
   } catch {
     return false
   }

@@ -10,6 +10,12 @@ import { fileURLToPath } from 'url'
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
 
+// TANDEM_BUILD_VERSION stamps a different number, for the update test setup
+// (scripts/update-test/setup.mjs), which needs an "installed" build older than
+// the release it updates to. Never set for a real release: build:exe's
+// version/tag check guards package.json, not this.
+const version = process.env.TANDEM_BUILD_VERSION || pkg.version
+
 await build({
   entryPoints: [path.join(root, 'src/server/main.ts')],
   bundle: true,
@@ -18,7 +24,7 @@ await build({
   target: 'node22',
   external: ['better-sqlite3'],
   outfile: path.join(root, 'dist/server.cjs'),
-  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
+  define: { __APP_VERSION__: JSON.stringify(version) },
 })
 
-console.log(`[tandem] dist/server.cjs gebaut, Version ${pkg.version}`)
+console.log(`[tandem] dist/server.cjs gebaut, Version ${version}`)

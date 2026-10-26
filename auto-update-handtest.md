@@ -1,234 +1,163 @@
 # Auto-Update: Handtest-Runbook
 
 Dieser Handtest prüft den einen Schritt, den kein Unit-Test abdeckt: ein
-laufendes 114-MB-`tandem.exe`, das sich selbst ersetzt und neu startet — und
-danach den Rückroll, wenn das nicht klappt. Er läuft ausschließlich über
-`TANDEM_RELEASE_URL` und Temp-Ordner; kein Source-File wird angefasst.
+laufendes `tandem.exe`, das sich selbst ersetzt und neu startet – und die Wege,
+auf denen das schiefgeht. Er läuft über `TANDEM_RELEASE_URL` und einen
+Testordner; kein Source-File wird angefasst, nichts wird auf GitHub
+veröffentlicht.
 
-Hintergrund und Details zu jedem der genannten Mechanismen stehen in
-`build.md` unter „Selbstupdate“.
+Hintergrund und Details zu den Mechanismen stehen in `build.md` unter
+„Selbstupdate“.
 
-## Vorbereitete Ordner (bereits angelegt, nichts davon anfassen)
+## Szenarien
 
-```
-C:\Temp\tandem-updatetest\        installierte 1.1.0 — für den Erfolgslauf (Teil 1)
-C:\Temp\tandem-rollbacktest\      installierte 1.1.0 — für den Rollback-Lauf (Teil 2)
-C:\Temp\tandem-release\           die "veröffentlichte" 1.1.1 (echt, unverändert)
-C:\Temp\tandem-release-broken\    dieselbe 1.1.1, aber tandem.exe auf 1.000.000 Byte abgeschnitten
-C:\Temp\tandem-fakeserver\        server.mjs, release.json, release-broken.json
-```
+| Szenario | Was passiert | Erwartet |
+|---|---|---|
+| `ok` | Echtes Release, richtige Prüfsummen | Update läuft durch, danach läuft die neue Version |
+| `checksum` | Echtes Release, falsche Prüfsumme für `tandem.exe` | Download wird abgelehnt, installierte Version bleibt |
+| `broken` | `tandem.exe` auf 1.000.000 Byte abgeschnitten, Prüfsumme passt | Download geht durch, die neue exe startet nicht, Rückroll auf die alte Version |
+| `offline` | Release-Adresse, an der niemand antwortet | Prüfung scheitert still, kein Update angeboten |
 
-**Warum zwei getrennte "installierte" Ordner statt einem:** Nach dem
-erfolgreichen Update in Teil 1 steht in `tandem-updatetest` die Version
-1.1.1. Das kaputte Release trägt ebenfalls den Tag `v1.1.1` — dieselbe Zahl.
-`compareVersions` (`src/server/update/github.ts`) vergleicht nur Zahlen, nicht
-Dateiinhalte: „1.1.1“ gegen „1.1.1“ ist nicht neuer, also würde das Update gar
-nicht erst angeboten, wenn man den Rollback-Lauf auf dem bereits aktualisierten
-Ordner wiederholt. Deshalb bekommt der Rollback-Lauf eine eigene, noch bei
-1.1.0 stehende Kopie.
-
-Beide `tandem-*test`-Ordner sind reine Kopien von `dist/tandem.exe` +
-`dist/better_sqlite3.node`, gebaut auf 1.1.0 (Arbeitsstand mit den Fixes aus
-dem ersten Handtest-Lauf vom 2026-09-24, siehe unten). Geht einer
-kaputt, genügt ein erneutes Kopieren aus `dist/` (nach `npm run build:all` bei
-`package.json`-Version 1.1.0).
-
-## Teil 1: Erfolgreicher Ablauf
-
-### 1. Fake-Server starten
-
-In einem eigenen Terminal-Fenster (bleibt für den ganzen Test offen):
+## 1. Setup bauen
 
 ```
-cd C:\Temp\tandem-fakeserver
-node server.mjs C:\Temp\tandem-release C:\Temp\tandem-fakeserver\release.json
+npm run update-test:setup
 ```
 
-Erwartete Ausgabe: `[fake-release] läuft auf http://127.0.0.1:8099 …`. Jede
-Anfrage wird geloggt — daran lässt sich später ablesen, ob und wann der
-Download tatsächlich stattgefunden hat.
+Das dauert ein paar Minuten (zwei exe-Builds). Das Skript
+(`scripts/update-test/setup.mjs`):
 
-Kurzer Eigen-Check in einem zweiten Fenster (optional, aber beruhigend):
-
-```
-curl http://127.0.0.1:8099/latest
-```
-
-Antwort sollte mit `"tag_name": "v1.1.1"` beginnen.
-
-### 2. Exe starten, auf den Fake-Server gepointed
-
-In einem dritten Fenster, **cmd.exe** (`set ... &&` gilt nur für den einen
-Befehl, ändert also nichts dauerhaft):
+1. baut den aktuellen Code mit einer **um eins niedrigeren Version** (z. B.
+   1.4.99) als „installierte“ Version – nur so wird das Release als Update
+   angeboten,
+2. baut danach mit `npm run build:all` das **Release** in der Version aus
+   `package.json` (z. B. 1.5.0). Weil das Release zuletzt gebaut wird, liegt in
+   `dist\` danach immer der echte Release-Build,
+3. prüft nach jedem Build, dass das Bundle die erwartete Version trägt, und
+   bricht sonst ab,
+4. legt alles in `C:\Temp\tandem-update-test` ab:
 
 ```
-set TANDEM_RELEASE_URL=http://127.0.0.1:8099/latest
-set PORT=8080
-C:\Temp\tandem-updatetest\tandem.exe
+C:\Temp\tandem-update-test\
+  release\                 das "veröffentlichte" Release
+  release-broken\          dasselbe, tandem.exe abgeschnitten
+  installed-ok\            je Szenario eine unberührte "alte" Installation
+  installed-checksum\
+  installed-broken\
+  installed-offline\
+  start-fake-server.cmd    Fake-GitHub-Server (Port 8099)
+  start-ok.cmd             startet installed-ok\tandem.exe auf Port 8091
+  start-checksum.cmd       ... Port 8092
+  start-broken.cmd         ... Port 8093
+  start-offline.cmd        ... Port 8094
 ```
 
-In PowerShell stattdessen:
+Jedes Szenario hat seine eigene Installation: Nach einem erfolgreichen Update
+läuft dort bereits die neue Version, und dasselbe Release würde nicht noch
+einmal angeboten. Für einen neuen Durchgang einfach das Setup neu bauen. Ein
+vorhandener Testordner wird dabei gelöscht (nur, wenn er vom Skript stammt).
+Läuft noch eine `tandem.exe` daraus, bricht das Skript mit einem Hinweis ab.
+
+Option: `--root <Ordner>` für einen anderen Testordner. Beide Builds laufen
+bei jedem Aufruf neu; nichts wird aus einem früheren Lauf übernommen.
+
+## 2. Automatischer Durchlauf (optional, ca. 3 Minuten)
 
 ```
-$env:TANDEM_RELEASE_URL = "http://127.0.0.1:8099/latest"
-$env:PORT = "8080"
-C:\Temp\tandem-updatetest\tandem.exe
+npm run update-test:verify
 ```
 
-`PORT=8080` vermeidet, dass Windows Administrator-Rechte für Port 80
-verlangt. Der Browser öffnet sich von selbst auf
-`http://localhost:8080/manifest`. **Wichtig:** Die Update-Funktionen sind
-serverseitig auf Anfragen vom eigenen Rechner beschränkt
-(`isLocal`, `src/server/routes/isLocal.ts`) — nur `localhost`/`127.0.0.1`
-sieht den Update-Tab und darf ihn benutzen. Über die LAN-IP eines anderen
-Geräts bleibt der Tab unsichtbar; das ist Absicht, kein Bug.
+Fährt alle vier Szenarien gegen die echten exes über dieselbe API, die der
+Update-Bildschirm benutzt, und prüft Version, Phase, Dateigröße und
+Aufräumen. Jede exe öffnet dabei kurz ihren Browser-Tab. Am Ende steht z. B.
+`19/19 Prüfungen bestanden`. Danach ist das Setup verbraucht: für den
+Handtest erst `npm run update-test:setup` erneut ausführen.
 
-### 3. Ablauf beobachten
+## 3. Handtest
 
-Rund 1 Sekunde nach dem Start prüft das Programm einmal automatisch (danach
-stündlich). Erwartet, in dieser Reihenfolge:
+### Fake-Server starten
 
-1. **Dialog** „Jetzt aktualisieren?“ (o.ä., siehe `UpdateDialog.tsx`) erscheint
-   von selbst. „Jetzt aktualisieren“ klicken.
-2. Der Update-Tab in der Sidebar erscheint/aktiviert sich, die Seite zeigt
-   einen **Fortschrittsbalken** mit MB-Angabe und Prozent — die 114 MB der
-   exe brauchen je nach Leitung/Datenträger einen Moment, sichtbar an
-   steigenden Zahlen.
-   - Im Fake-Server-Fenster erscheinen `GET /tandem.exe` und danach
-     `GET /better_sqlite3.node`.
-3. Wenn die Prüfsumme beider Dateien passt, wechselt die Seite auf „Bereit“
-   mit dem Knopf „Jetzt installieren und neu starten“. Klicken, den
-   Bestätigungsdialog („Das Programm startet dabei neu…“) bestätigen.
-4. Die Seite zeigt **„Tandem startet neu…“**.
-5. Nach einigen Sekunden **lädt der Tab sich von selbst neu** (die Seite
-   pollt im Hintergrund, ob der Server wieder antwortet, und ruft dann
-   `location.reload()` selbst auf — kein manuelles F5 nötig) und zeigt wieder
-   das Manifest.
-6. Update-Tab erneut öffnen: **„Dies ist bereits die aktuellste Version.“**
+`start-fake-server.cmd` doppelklicken und das Fenster offen lassen. Es zeigt
+`[fake-release] läuft auf http://127.0.0.1:8099` und loggt jede Anfrage –
+daran sieht man, wann die exe nach Updates fragt und die Dateien lädt.
 
-Falls Windows Defender die frisch geschriebene, unsignierte 114-MB-Datei
-scannt, kann Schritt 4 spürbar dauern (bis zu 90 Sekunden, siehe unten) —
-das ist normal und kein Hänger.
+Die Update-Funktionen sind nur am eigenen Rechner bedienbar (`isLocal`). Den
+Manifest-Tab daher immer über `localhost` öffnen, so wie es die exe von selbst
+tut.
 
-### 4. Ordnerinhalt danach prüfen
+### Szenario `ok`: erfolgreiches Update
 
-```
-dir C:\Temp\tandem-updatetest
-```
+1. `start-ok.cmd` doppelklicken. Der Browser öffnet
+   `http://localhost:8091/manifest`.
+2. Nach etwa einer Sekunde erscheint der Dialog **Update verfügbar**
+   (z. B. 1.4.99 → 1.5.0). Er sagt, dass der Download im Hintergrund läuft und
+   erst danach installiert wird. **Herunterladen** klicken.
+3. Die Update-Seite öffnet sich: Schritt **1 Herunterladen** ist markiert, der
+   Balken zeigt MB und Prozent, danach „Download fertig, wird geprüft…“. Im
+   Fake-Server-Fenster: `GET /ok/tandem.exe` und `GET /ok/better_sqlite3.node`.
+4. Schritt **2 Installieren**: **Jetzt installieren und neu starten** klicken.
+   Der Dialog warnt vor Gästen am Tablet und nennt offene Tandems; „Später“
+   hat den Fokus. **Installieren und neu starten** klicken.
+5. Schritt **3 Neustart**: „Tandem startet neu… (n s)“ mit Sekundenzähler.
+   Die Seite lädt von selbst neu, sobald die neue Version antwortet. (Windows
+   Defender kann die frische Datei scannen, dann dauert es länger.)
+6. Nach dem Neuladen steht oben **„Tandem wurde auf Version 1.5.0
+   aktualisiert.“**, in der Seitenleiste unten „Version 1.5.0“. Die
+   Update-Seite sagt „Dies ist bereits die aktuellste Version.“
+7. `installed-ok\` enthält danach genau `tandem.exe`, `better_sqlite3.node`,
+   `config.json`, `tandem.db` (plus `-wal`/`-shm`). Kein `*.old.*`, kein
+   `*.new`, keine `update-failed.json`. Die `.old`-Dateien verschwinden ein
+   paar Sekunden nach dem Neustart: Der neue Prozess räumt sie weg, sobald der
+   alte beendet ist.
 
-Muss **genau** enthalten: `tandem.exe`, `better_sqlite3.node`, `config.json`,
-`tandem.db` (plus `-wal`/`-shm`, falls die DB gerade offen war/ist).
-**Nicht** enthalten sein dürfen: `tandem.old.exe`, `better_sqlite3.old.node`,
-`*.new`, `update-failed.json`. Das Vorhandensein eines `.old` oder `.new`
-bedeutet, dass der Tausch nicht sauber abgeschlossen hat.
+### Szenario `checksum`: Download abgelehnt
 
-`tandem.exe` sollte jetzt ungefähr die Größe von
-`C:\Temp\tandem-release\tandem.exe` haben (114.561.521 Byte). Die
-`.old`-Dateien verschwinden erst ein paar Sekunden nach dem Neustart: Windows
-lässt sie nicht löschen, solange der alte Prozess noch aus ihnen läuft, also
-räumt der neue Prozess sie nach, sobald der alte beendet ist.
+1. `start-checksum.cmd`, im Dialog **Herunterladen**.
+2. Der Download läuft durch, dann zeigt die Update-Seite: „Der Download hat
+   nicht geklappt. Prüfe die Internetverbindung und versuche es erneut.“ und
+   darunter **Technische Meldung: Prüfsumme von tandem.exe stimmt nicht. …**
+3. Die installierte Version bleibt 1.4.99, `installed-checksum\tandem.exe` ist
+   unverändert. **Erneut versuchen** führt erwartungsgemäß zum selben Ergebnis.
 
-Teil 1 fertig. Exe-Fenster kann geschlossen bleiben oder laufen — für Teil 2
-wird eine andere Kopie verwendet.
+### Szenario `broken`: Rückroll nach gescheiterter Installation
 
-## Teil 2: Rollback-Test
+1. `start-broken.cmd`, **Herunterladen**. Der Download besteht die Prüfung
+   (die Prüfsumme passt zur abgeschnittenen Datei).
+2. **Jetzt installieren und neu starten**, im Dialog bestätigen.
+3. Windows kann die abgeschnittene exe nicht starten (`spawn EFTYPE`).
+   `installUpdate` (`src/server/update/install.ts`) stellt sofort die alte
+   Version wieder her und startet sie. Das dauert nur Sekunden; Fenster und
+   Prozess in der Zeit nicht beenden.
+4. Die Seite lädt neu und öffnet direkt die Update-Seite: **„Version 1.5.0
+   ließ sich nicht starten. Tandem wurde neu gestartet und läuft wieder mit
+   Version 1.4.99.“**, dazu der Hinweis auf die Tablets und die technische
+   Meldung „Unerwarteter Fehler bei der Installation: „Error: spawn EFTYPE“. …“
+5. `installed-broken\tandem.exe` hat wieder die ursprüngliche Größe, keine
+   `.old`/`.new`-Reste.
 
-### 1. Fake-Server auf das kaputte Release umstellen
+Eine exe, die startet, aber nie antwortet, lässt der Server bis zu 90 Sekunden
+laufen, bevor er zurückrollt; dann meldet er „Die neue Version ist nicht
+gestartet. …“. Diesen Fall stellt das Setup nicht her.
 
-Im Fake-Server-Fenster STRG+C, dann neu starten, diesmal mit dem kaputten
-Ordner und der kaputten JSON:
+### Szenario `offline`: kein Internet
 
-```
-node server.mjs C:\Temp\tandem-release-broken C:\Temp\tandem-fakeserver\release-broken.json
-```
+1. `start-offline.cmd`. Es erscheint **kein** Dialog.
+2. Die Update-Seite (Seitenleiste **Update**) sagt, dass die Prüfung nicht
+   geklappt hat, und dass das an diesem Standort meist an der fehlenden
+   Internetverbindung liegt. Der Rest des Manifests arbeitet normal.
 
-`C:\Temp\tandem-release-broken\tandem.exe` ist eine auf 1.000.000 Byte
-abgeschnittene Kopie der echten 1.1.1 — die Prüfsumme in
-`release-broken.json` passt exakt zu dieser abgeschnittenen Datei (der
-Download besteht also die Verifikation), aber die Datei ist kein lauffähiges
-Programm mehr, also scheitert der **Start** der "neuen" Version.
+## 4. Aufräumen
 
-### 2. Exe starten — diesmal die unberührte Rollback-Kopie
+1. Alle Test-exes beenden: im Manifest **Programm beenden**, oder im
+   Task-Manager „Tandem Registrierung“.
+2. Fake-Server-Fenster schließen.
+3. `C:\Temp\tandem-update-test` kann gelöscht werden; nichts darin wird von
+   der Anwendung selbst referenziert. `dist\` enthält bereits wieder den
+   Release-Build.
 
-```
-set TANDEM_RELEASE_URL=http://127.0.0.1:8099/latest
-set PORT=8081
-C:\Temp\tandem-rollbacktest\tandem.exe
-```
-
-(`PORT=8081` statt 8080, damit beide Testläufe notfalls gleichzeitig offen
-sein können, ohne sich einen Port zu teilen.)
-
-Dialog akzeptieren, Download abwarten (läuft normal durch, die Prüfsumme der
-kaputten Datei stimmt ja), „Jetzt installieren und neu starten“ klicken.
-
-### 3. Kurz warten
-
-Die Seite zeigt „Tandem startet neu…“. Der Tausch läuft durch, aber die
-abgeschnittene exe lässt sich von Windows gar nicht erst starten (`spawn`
-scheitert mit `EFTYPE`). `installUpdate` (`src/server/update/install.ts`)
-rollt deshalb sofort zurück, nicht erst nach dem 90-Sekunden-Warten auf
-`/api/health` — das greift nur bei einer exe, die startet, aber nie antwortet.
-Rechnen mit wenigen Sekunden; falls Windows Defender dazwischenfunkt, auch
-länger. Fenster/Prozess in der Zeit nicht beenden.
-
-### 4. Was den erfolgreichen Rollback beweist
-
-Nach wenigen Sekunden (spätestens ~90):
-
-1. **Der alte Prozess kommt von selbst zurück** — der Tab lädt neu (derselbe
-   Poll-Mechanismus wie in Teil 1) und das Manifest ist wieder erreichbar,
-   ganz ohne manuellen Eingriff.
-2. `dir C:\Temp\tandem-rollbacktest` zeigt wieder ein `tandem.exe` in der
-   **ursprünglichen Größe** (114.561.417 Byte, wie beim Start) — nicht die
-   1.000.000-Byte-Datei. Kein `.old`, kein `.new` liegt mehr da (`restore()`
-   und `cleanupLeftovers` räumen auf).
-3. Der Update-Bildschirm zeigt oben in Rot/als Fehlertext:
-
-   > Unerwarteter Fehler bei der Installation: „Error: spawn EFTYPE“. Die
-   > vorherige Version wurde, soweit möglich, wiederhergestellt und gestartet.
-
-   (Eine exe, die startet, aber nie antwortet, liefert stattdessen „Die neue
-   Version ist nicht gestartet. …“ — diesen Fall stellt das abgeschnittene
-   Release nicht her.) Der Text bleibt stehen, auch wenn die Startprüfung
-   eine Sekunde später dasselbe Release wieder findet; „Erneut versuchen“ ist
-   danach bedienbar.
-
-   Dieser Text kommt aus `update-failed.json`, das `installUpdate` beim
-   Fehlschlag schreibt, und wird von `takeFailureMarker` beim Neustart genau
-   einmal gelesen und angezeigt (ein zweiter Neustart zeigt ihn nicht mehr).
-
-Wenn alle drei Punkte zutreffen, ist der Rollback bewiesen.
-
-## Aufräumen
-
-1. Beide `tandem.exe`-Prozesse beenden (Fenster schließen oder über den
-   Update-/Manifest-Bildschirm „Programm beenden“, oder Task-Manager).
-2. Fake-Server mit STRG+C beenden.
-3. In jedem Terminal, in dem die Variablen gesetzt wurden, wieder entfernen,
-   bevor dort eine andere `tandem.exe` gestartet wird:
-
-   cmd.exe:
-   ```
-   set TANDEM_RELEASE_URL=
-   set PORT=
-   ```
-
-   PowerShell:
-   ```
-   Remove-Item Env:TANDEM_RELEASE_URL
-   Remove-Item Env:PORT
-   ```
-
-   Eine vergessene `TANDEM_RELEASE_URL` würde die nächste `tandem.exe` in
-   diesem Terminal weiter gegen `127.0.0.1:8099` statt gegen GitHub prüfen
-   lassen — harmlos, solange der Fake-Server nicht mehr läuft (der Check
-   schlägt dann still fehl), aber unnötig verwirrend.
-4. Die Ordner unter `C:\Temp\tandem-*` können danach gelöscht werden; nichts
-   darin wird von der Anwendung selbst referenziert.
-5. `git status --porcelain src/ scripts/` sollte leer sein — der ganze
-   Handtest lief über `TANDEM_RELEASE_URL` und Temp-Ordner, keine Quelldatei
-   wurde angefasst.
+Die Umgebungsvariablen (`TANDEM_RELEASE_URL`, `PORT`) setzen nur die
+`start-*.cmd` für ihr eigenes Fenster. Eine von Hand gestartete
+`tandem.exe` fragt wie immer GitHub.
 
 ## Erster Lauf (2026-09-24): was schiefging und was behoben ist
 

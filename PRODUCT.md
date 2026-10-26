@@ -10,7 +10,7 @@ web
 
 Two audiences, each with its own app:
 
-- **Guests** (`web/guest`): tandem passengers, often first-time jumpers, who register themselves before their jump. They use a club Android tablet in kiosk mode (installed as a PWA, no address bar, on-screen keyboard, held in the hand). Their job: enter personal data, read and sign the transport contract (Beförderungsvertrag), and hand back to staff.
+- **Guests** (`web/guest`): tandem passengers, often first-time jumpers, who register themselves before their jump. They use a club Android tablet in kiosk mode (installed as a PWA, no address bar, on-screen keyboard, held in the hand). The guest app runs **only on this tablet**, in portrait (about 800x1280) and landscape (about 1280x800). It is never used on a phone or a desktop, so phone layouts, mouse hover, and desktop sizes are out of scope. Their job: enter personal data, read and sign the transport contract (Beförderungsvertrag), and hand back to staff.
 - **Operators** (`web/manifest`): the club staff who run a jump day.
   - **Manifest staff** at the manifest desk: check incoming registrations, verify vouchers, assign tandem master and camera flyer, collect payment, print the signed contract and the Urkunde.
   - **Betriebsleiter**: runs the day, is recorded per day, and does the Tagesabschluss and export.

@@ -183,6 +183,10 @@ export default function Form({ onNext, onCancel, initialValues, serverErrors }: 
   // the line above the buttons naming every field still to fix.
   const [attempted, setAttempted] = useState(false)
   const [confirmingCancel, setConfirmingCancel] = useState(false)
+  // Set by "Weiter" on a form with nothing typed in it yet: a guest tapping on
+  // to see what comes next gets a pointer to the first field, not eleven red
+  // boxes for a form they have not started.
+  const [startHint, setStartHint] = useState(false)
 
   // Which field the cursor sits in. Fed by every field's onFocus rather than by
   // the arrows themselves, so that tapping straight into a field mid-form leaves
@@ -198,6 +202,12 @@ export default function Form({ onNext, onCancel, initialValues, serverErrors }: 
 
   const errors = validate(values)
   const isValid = Object.keys(errors).length === 0
+  const isUntouched = (Object.keys(values) as (keyof RawValues)[]).every(
+    (name) => values[name].trim() === ''
+  )
+  const missing = (Object.keys(FIELD_LABELS) as (keyof Errors)[])
+    .filter((name) => errors[name])
+    .map((name) => FIELD_LABELS[name])
 
   function focusField(name: FieldName) {
     if (name === 'gender') {
@@ -238,6 +248,11 @@ export default function Form({ onNext, onCancel, initialValues, serverErrors }: 
   // Shared by the submit button and by Enter in the last field, so the two can
   // never drift apart.
   function attemptSubmit() {
+    if (isUntouched) {
+      setStartHint(true)
+      focusField(FIELD_CHAIN[0])
+      return
+    }
     setTouched({
       firstName: true,
       lastName: true,
@@ -519,13 +534,19 @@ export default function Form({ onNext, onCancel, initialValues, serverErrors }: 
           </div>
         </fieldset>
 
+        {startHint && isUntouched && (
+          <p className="form-start-note" role="status">
+            Fang einfach oben bei Vorname an.
+          </p>
+        )}
+
+        {/* Up to three fields are named; beyond that a list only repeats what
+            the red boxes above already say, so it becomes a count. */}
         {attempted && !isValid && (
           <p className="missing-note form-missing" role="alert">
-            Bitte prüfe noch:{' '}
-            {(Object.keys(FIELD_LABELS) as (keyof Errors)[])
-              .filter((name) => errors[name])
-              .map((name) => FIELD_LABELS[name])
-              .join(', ')}
+            {missing.length <= 3
+              ? `Bitte prüfe noch: ${missing.join(', ')}`
+              : `Noch ${missing.length} Angaben offen – die erste ist ausgewählt.`}
           </p>
         )}
 

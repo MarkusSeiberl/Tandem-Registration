@@ -107,8 +107,7 @@ p {
 
 .done-screen h1,
 .done-screen .done-lead,
-.done-screen .done-handback,
-.done-screen .done-countdown {
+.done-screen .done-handback {
   color: #fff;
 }
 
@@ -280,11 +279,13 @@ p {
   color: var(--text-muted);
 }
 
+/* The step still ahead: --field-border, not --border, which nearly vanishes
+   on the page (1.1:1). */
 .step-tick {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--border);
+  background: var(--field-border);
 }
 
 .step-tick.done {
@@ -471,23 +472,36 @@ p {
 
 /* Shown until the guest has scrolled to the end of the contract (read gate).
    Pinned to the bottom edge of the screen, because the page below a full-length
-   contract is exactly where the guest who still has to read it is not. */
+   contract is exactly where the guest who still has to read it is not.
+   Wayfinding, not a warning: it sits over a liability waiver a nervous guest
+   is reading, so it wears the panel colours and keeps ember for the states
+   that really need attention. */
 .scroll-hint {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   margin: 0;
-  padding: 12px 24px;
-  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  padding: 14px 24px;
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
   font-size: 19px;
-  font-weight: 700;
-  background: var(--ember);
-  /* Ink, not white: white on ember is 2.9:1, ink is 6.6:1. */
-  color: var(--ink);
-  text-align: center;
-  box-shadow: 0 -2px 12px rgb(0 0 0 / 0.12);
+  font-weight: 600;
+  background: var(--panel-bg);
+  color: var(--text-h);
+  border-top: 2px solid var(--field-border);
+  box-shadow: 0 -6px 18px rgb(8 25 47 / 0.12);
+}
+
+.scroll-hint svg {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  color: var(--accent-dark);
 }
 
 /* No scroll box of its own: the contract lies at full length on the page, and
@@ -834,10 +848,16 @@ p {
   margin: 8px 0 24px;
 }
 
+/* On its own light chip: it sits where the sky fades towards the horizon, and
+   neither white nor muted text holds 4.5:1 across that fade in both
+   orientations. */
 .done-countdown {
   margin-top: 16px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.9);
   font-size: 17px;
-  color: var(--text-muted);
+  color: var(--text-h);
   font-variant-numeric: tabular-nums;
 }
 
@@ -867,6 +887,14 @@ p {
 
 .cancel-confirm .actions {
   margin-top: 20px;
+}
+
+/* "Weiter" on an untouched form: a pointer, not a verdict. */
+.form-start-note {
+  margin: 4px 0 0;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text-h);
 }
 
 /* What is still missing after a press on "Weiter", right above the button. */

@@ -24,7 +24,9 @@ async function fillValid(user: ReturnType<typeof userEvent.setup>) {
 async function expectHeldBack(user: ReturnType<typeof userEvent.setup>, onNext?: ReturnType<typeof vi.fn>) {
   const calls = onNext?.mock.calls.length ?? 0
   await user.click(screen.getByRole('button', { name: 'Weiter' }))
-  expect(screen.getByText(/^Bitte prüfe noch:/)).toBeInTheDocument()
+  expect(
+    screen.getByText(/^(Bitte prüfe noch:|Noch \d+ Angaben offen|Fang einfach oben bei Vorname an)/)
+  ).toBeInTheDocument()
   if (onNext) expect(onNext).toHaveBeenCalledTimes(calls)
 }
 
@@ -142,7 +144,7 @@ describe('Form', () => {
 
     // Choosing one — and only that — releases it.
     await user.click(screen.getByRole('radio', { name: 'divers' }))
-    expect(screen.queryByText(/^Bitte prüfe noch:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^(Bitte prüfe noch:|Noch \d+ Angaben offen)/)).not.toBeInTheDocument()
 
     await user.click(submit)
     expect(onNext).toHaveBeenCalledWith(expect.objectContaining({ gender: 'diverse' }))
@@ -216,6 +218,7 @@ describe('Form', () => {
     const input = screen.getByLabelText('Vorname')
     await user.click(input)
     await user.tab()
+    await user.type(screen.getByLabelText('Nachname'), 'Muster')
 
     // Tapping ahead is not a mistake: nothing turns red on the way past.
     expect(input).not.toHaveAttribute('aria-invalid')
@@ -224,6 +227,22 @@ describe('Form', () => {
     await user.click(screen.getByRole('button', { name: 'Weiter' }))
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByText('Vorname fehlt')).toBeInTheDocument()
+    // Ten fields left: a count, not a list that repeats the red boxes.
+    expect(screen.getByText('Noch 10 Angaben offen – die erste ist ausgewählt.')).toBeInTheDocument()
+  })
+
+  it('points an untouched form to its first field instead of marking it all red', async () => {
+    const user = userEvent.setup()
+    const onNext = vi.fn()
+    render(<Form onNext={onNext} />)
+
+    await user.click(screen.getByRole('button', { name: 'Weiter' }))
+
+    expect(onNext).not.toHaveBeenCalled()
+    expect(screen.getByText('Fang einfach oben bei Vorname an.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Vorname')).toHaveFocus()
+    expect(screen.getByLabelText('Vorname')).not.toHaveAttribute('aria-invalid')
+    expect(screen.queryByText('Vorname fehlt')).not.toBeInTheDocument()
   })
 
   it('flags a wrong value as soon as the guest leaves the field', async () => {

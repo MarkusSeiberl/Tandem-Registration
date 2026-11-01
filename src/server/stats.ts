@@ -6,6 +6,10 @@
 // it was paid is not a statistic: an unpaid tandem is a mistake to fix on the
 // day, not a figure to report on.
 
+import type { Prices } from './config'
+import { collectedVia, voucherCovered } from './pricing'
+import type { PricedFields } from './pricing'
+
 export interface StatsRow {
   jump_date: string
   tandem_master_id: number | null
@@ -228,6 +232,57 @@ export function jumpStats(
     },
     ageGroups,
     cities: topCities(rows),
+    previous: null,
+    comparedTo: null,
+  }
+}
+
+// --- money --------------------------------------------------------------------
+
+export interface MoneyTotals {
+  /** Leistungswert: what was charged plus what the redeemed vouchers were worth. */
+  value: number
+  collected: number
+  voucherValue: number
+  /** Leistungswert per month, January first. */
+  months: number[]
+}
+
+export interface MoneyStats extends MoneyTotals {
+  year: number
+  perTandem: number
+  tills: { cash: number; card: number; unrecorded: number }
+  /** Set by the route when the comparison period has registrations. */
+  previous: MoneyTotals | null
+  comparedTo: Comparison | null
+}
+
+// `price` is what the manifest charged, manual corrections included. A
+// voucher's worth is not in it, so it is valued at the price list frozen for
+// its own jump day — the same reading the manifest shows under the price.
+export function moneyTotals(rows: StatsRow[], pricesFor: (date: string) => Prices): MoneyTotals {
+  const months = Array<number>(12).fill(0)
+  let collected = 0
+  let voucherValue = 0
+  for (const r of rows) {
+    const charged = r.price ?? 0
+    const covered = voucherCovered(r as PricedFields, pricesFor(r.jump_date))
+    collected += charged
+    voucherValue += covered
+    months[monthIndex(r.jump_date)] += charged + covered
+  }
+  return { value: collected + voucherValue, collected, voucherValue, months }
+}
+
+export function moneyStats(rows: StatsRow[], pricesFor: (date: string) => Prices, year: number): MoneyStats {
+  const totals = moneyTotals(rows, pricesFor)
+  const tills = { cash: 0, card: 0, unrecorded: 0 }
+  for (const r of rows) tills[collectedVia(r) ?? 'unrecorded'] += r.price ?? 0
+  return {
+    year,
+    ...totals,
+    perTandem: rows.length === 0 ? 0 : totals.value / rows.length,
+    tills,
     previous: null,
     comparedTo: null,
   }

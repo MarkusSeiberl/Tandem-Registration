@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { jumpStats } from '../src/server/stats'
+import { jumpStats, moneyStats } from '../src/server/stats'
 import type { StatsRow } from '../src/server/stats'
 
 // One registration with only what a test sets; the rest is what an untouched row holds.
@@ -121,4 +121,66 @@ test('merges town spellings', () => {
 test('lists at most eight towns', () => {
   const s = jump(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'].map(city => row({ city })))
   expect(s.cities).toHaveLength(8)
+})
+
+// --- money ------------------------------------------------------------------
+
+const PRICES = { jump: 270, video: 100, video_photo: 120, weight_over_90: 40, weight_over_100: 60 }
+const money = (list: StatsRow[], pricesFor: (date: string) => typeof PRICES = () => PRICES) =>
+  moneyStats(list, pricesFor, 2026)
+
+test('money of an empty year', () => {
+  expect(money([])).toEqual({
+    year: 2026, value: 0, collected: 0, voucherValue: 0, perTandem: 0,
+    tills: { cash: 0, card: 0, unrecorded: 0 }, months: Array(12).fill(0),
+    previous: null, comparedTo: null,
+  })
+})
+
+test('adds collected and voucher value', () => {
+  const s = money([
+    row({ payment_method: 'cash', price: 370 }),
+    row({ payment_method: 'cash', price: 270 }),
+    row({ payment_method: 'card', price: 270 }),
+    row({ payment_method: 'voucher', voucher_service: 'jump_video', extra_booking: 'video', price: 0 }),
+  ])
+  expect(s).toMatchObject({ collected: 910, voucherValue: 370, value: 1280, perTandem: 320 })
+  expect(s.tills).toEqual({ cash: 640, card: 270, unrecorded: 0 })
+})
+
+test('a rejected voucher is worth nothing until it is accepted', () => {
+  const rejected = { payment_method: 'voucher', voucher_service: 'jump_video', extra_booking: 'video', price: 0,
+    voucher_check_status: 'cancelled' }
+  expect(money([row({ ...rejected, voucher_accepted: 0 })]).voucherValue).toBe(0)
+  expect(money([row({ ...rejected, voucher_accepted: 1 })]).voucherValue).toBe(370)
+})
+
+test('a voucher top-up lands in its till', () => {
+  const s = money([row({ payment_method: 'voucher', voucher_service: 'jump', voucher_payment_method: 'card', price: 40 })])
+  expect(s.tills).toEqual({ cash: 0, card: 40, unrecorded: 0 })
+})
+
+test('money nobody recorded a till for is counted apart', () => {
+  const s = money([row({ payment_method: null, price: 270 })])
+  expect(s.tills).toEqual({ cash: 0, card: 0, unrecorded: 270 })
+})
+
+test("uses each day's own prices", () => {
+  const pricesFor = (date: string) => ({ ...PRICES, jump: date.startsWith('2025') ? 250 : 270 })
+  const s = money([
+    row({ jump_date: '2025-06-06', payment_method: 'voucher', voucher_service: 'jump', price: 0 }),
+    row({ jump_date: '2026-06-06', payment_method: 'voucher', voucher_service: 'jump', price: 0 }),
+  ], pricesFor)
+  expect(s.voucherValue).toBe(520)
+})
+
+test('value per month', () => {
+  const s = money([
+    row({ jump_date: '2026-06-06', payment_method: 'cash', price: 370 }),
+    row({ jump_date: '2026-07-04', payment_method: 'voucher', voucher_service: 'jump', price: 0 }),
+  ])
+  const expected = Array(12).fill(0)
+  expected[5] = 370
+  expected[6] = 270
+  expect(s.months).toEqual(expected)
 })

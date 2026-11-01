@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Statistik from './Statistik'
 import * as api from './api'
@@ -223,5 +223,46 @@ describe('Statistik money', () => {
     render(<Statistik />)
     await screen.findByRole('button', { name: 'Umsatz anzeigen' })
     expect(document.querySelector('.money-figures')).toBeNull()
+  })
+})
+
+describe('Statistik reloads', () => {
+  // A retry still in flight must not overwrite the year the user moved on to.
+  it('a late retry does not blank a newer year', async () => {
+    let finishRetry: (s: JumpStats) => void = () => {}
+    let call = 0
+    vi.mocked(api.statistik).mockImplementation((year) => {
+      call++
+      if (call === 1) return Promise.resolve(stats({ year, years: [2025, 2026] }))
+      if (call === 2) return Promise.reject(new Error('Statistik konnte nicht geladen werden'))
+      if (call === 3) return new Promise((resolve) => { finishRetry = resolve })
+      return Promise.resolve(stats({ year, years: [2025, 2026] }))
+    })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<Statistik />)
+    await screen.findByText(/^Saison/)
+
+    await user.click(screen.getByRole('button', { name: 'Vorheriges Jahr' }))
+    await user.click(await screen.findByRole('button', { name: 'Erneut versuchen' }))
+    await user.click(screen.getByRole('button', { name: 'Nächstes Jahr' }))
+    await screen.findByRole('heading', { name: 'Jahresbericht 2026' })
+    await screen.findByText(/^Saison/)
+
+    expect(call).toBe(4)
+    await act(async () => { finishRetry(stats({ year: 2025, years: [2025, 2026] })) })
+    expect(screen.getByText(/^Saison/)).toBeInTheDocument()
+  })
+
+  // On the PC a failed load is not the same as "not allowed here".
+  it('says when money could not be loaded, and retries', async () => {
+    vi.mocked(api.statistikMoney).mockRejectedValueOnce(new Error('Umsatz konnte nicht geladen werden'))
+    vi.mocked(api.statistikMoney).mockResolvedValueOnce(money())
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<Statistik />)
+    const alert = await screen.findByText('Umsatz konnte nicht geladen werden')
+    expect(alert.closest('[role="alert"]')).not.toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Umsatz erneut laden' }))
+    expect(await screen.findByRole('button', { name: 'Umsatz anzeigen' })).toBeInTheDocument()
   })
 })

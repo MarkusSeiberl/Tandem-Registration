@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { statistik, statistikMoney } from './api'
 import type { JumpStats, MoneyStats } from './api'
 import { formatEuro } from './pricing'
@@ -280,29 +280,38 @@ export default function Statistik() {
   const [year, setYear] = useState(() => new Date().getFullYear())
   const [stats, setStats] = useState<JumpStats | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // A retry reloads through the effect, so a year change still marks it stale:
+  // a slow retry must not land on top of the year the user moved on to.
+  const [attempt, setAttempt] = useState(0)
 
-  const load = useCallback(() => {
+  useEffect(() => {
     let stale = false
     setError(null)
     statistik(year)
       .then((s) => { if (!stale) setStats(s) })
       .catch((e: Error) => { if (!stale) setError(e.message) })
     return () => { stale = true }
-  }, [year])
+  }, [year, attempt])
 
-  useEffect(() => load(), [load])
-
-  // Asked for separately: on any other device the server refuses, and the page
-  // then shows nothing about money at all.
+  // Asked for separately: on any other device the server refuses (null), and
+  // the page then shows nothing about money at all. A failed load on the PC is
+  // a different thing and says so, rather than looking like "not allowed".
   const [money, setMoney] = useState<MoneyStats | null>(null)
+  const [moneyError, setMoneyError] = useState<string | null>(null)
+  const [moneyAttempt, setMoneyAttempt] = useState(0)
   const [moneyOpen, setMoneyOpen] = useState(false)
   useEffect(() => {
     let stale = false
+    setMoneyError(null)
     statistikMoney(year)
       .then((m) => { if (!stale) setMoney(m) })
-      .catch(() => { if (!stale) setMoney(null) })
+      .catch((e: Error) => {
+        if (stale) return
+        setMoney(null)
+        setMoneyError(e.message)
+      })
     return () => { stale = true }
-  }, [year])
+  }, [year, moneyAttempt])
 
   const shown = stats?.year === year ? stats : null
   const years = stats?.years ?? []
@@ -344,7 +353,7 @@ export default function Statistik() {
       {error && (
         <div className="calendar-error" role="alert">
           <p className="error">{error}</p>
-          <button type="button" className="btn secondary small" onClick={() => load()}>
+          <button type="button" className="btn secondary small" onClick={() => setAttempt((n) => n + 1)}>
             Erneut versuchen
           </button>
         </div>
@@ -357,6 +366,16 @@ export default function Statistik() {
           m={money} months={shownMonths(shown.months, shown.previous?.months)}
           open={moneyOpen} onToggle={() => setMoneyOpen((o) => !o)}
         />
+      )}
+      {hasTandems && moneyError && (
+        <section className="report-money" aria-label="Umsatz">
+          <div className="calendar-error" role="alert">
+            <p className="error">{moneyError}</p>
+            <button type="button" className="btn secondary small" onClick={() => setMoneyAttempt((n) => n + 1)}>
+              Umsatz erneut laden
+            </button>
+          </div>
+        </section>
       )}
     </div>
   )

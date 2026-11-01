@@ -6,6 +6,7 @@ import { registerStammdatenRoutes } from './routes/stammdaten'
 import { registerExportRoutes } from './routes/export'
 import { registerDayManagerRoutes } from './routes/dayManager'
 import { registerCalendarRoutes } from './routes/calendar'
+import { registerStatsRoutes } from './routes/stats'
 import { registerShutdownRoutes } from './routes/shutdown'
 import { registerUpdateRoutes } from './routes/update'
 import type { UpdateControls } from './routes/update'
@@ -31,6 +32,8 @@ export function buildServer(
   shutdown?: () => void,
   // Likewise: the one build that owns the files it runs from.
   update?: UpdateControls,
+  // Tests pin the date the yearly report counts as today.
+  now?: () => Date,
 ): FastifyInstance {
   const app = Fastify({ bodyLimit: 5 * 1024 * 1024 }) // signatures
   const sse = new SseHub()
@@ -44,6 +47,7 @@ export function buildServer(
   registerExportRoutes(app, db, cfgRef)
   registerDayManagerRoutes(app, db)
   registerCalendarRoutes(app, db)
+  registerStatsRoutes(app, db, cfgRef, now)
   registerBackupRoutes(app, db, cfgRef)
   registerSettingsRoutes(app, cfgRef, persist)
   registerVoucherRoutes(app, db, cfgRef)

@@ -20,7 +20,8 @@ export function testServer(
   notify?: (guestName: string) => void,
   pickPath?: PickPath,
   shutdown?: () => void,
-  update?: UpdateControls
+  update?: UpdateControls,
+  now?: () => Date
 ) {
   const cfgRef = {
     current: {
@@ -37,7 +38,7 @@ export function testServer(
   }
   const db = openDb(':memory:')
   return {
-    app: buildServer(db, cfgRef, templateBytes, urkundeBytes, undefined, notify, pickPath, shutdown, update),
+    app: buildServer(db, cfgRef, templateBytes, urkundeBytes, undefined, notify, pickPath, shutdown, update, now),
     cfgRef,
     db,
   }

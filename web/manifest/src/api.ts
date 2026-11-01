@@ -481,3 +481,95 @@ export async function calendar(month: string): Promise<CalendarDay[]> {
   if (!res.ok) throw new Error(await errorMessage(res, 'Kalender konnte nicht geladen werden'))
   return (await asJson<{ days: CalendarDay[] }>(res)).days
 }
+
+// The yearly report on the Statistik page. Mirrors src/server/stats.ts — the
+// manifest is a separate build and cannot import from the server.
+export interface DayCount {
+  date: string
+  count: number
+}
+
+export interface MasterStats {
+  /** null: registrations without a tandem master. */
+  name: string | null
+  tandems: number
+  days: number
+  bestDay: DayCount
+  video: number
+  /** Tandems in the comparison period, null without one. */
+  previous: number | null
+}
+
+export interface FlyerStats {
+  /** null: video booked, but no camera flyer entered. */
+  name: string | null
+  jumps: number
+  days: number
+  bestDay: DayCount
+  videoPhoto: number
+}
+
+export interface JumpTotals {
+  tandems: number
+  jumpDays: number
+  video: number
+  voucher: number
+  /** Tandems per month, January first. */
+  months: number[]
+}
+
+export interface Comparison {
+  year: number
+  /** 'MM-DD' the previous year was cut at, or null for the whole year. */
+  asOf: string | null
+}
+
+export interface JumpStats extends JumpTotals {
+  year: number
+  years: number[]
+  firstDay: string | null
+  lastDay: string | null
+  busiestDay: DayCount | null
+  monthDays: number[]
+  /** Monday first. */
+  weekdays: { tandems: number; days: number }[]
+  services: { none: number; video: number; video_photo: number }
+  masters: MasterStats[]
+  flyers: FlyerStats[]
+  gender: { female: number; male: number; diverse: number }
+  /** <18, 18–25, 26–35, 36–50, 51–65, >65. */
+  ageGroups: number[]
+  cities: { city: string; count: number }[]
+  previous: JumpTotals | null
+  comparedTo: Comparison | null
+}
+
+export interface MoneyTotals {
+  /** Leistungswert: what was charged plus what the redeemed vouchers were worth. */
+  value: number
+  collected: number
+  voucherValue: number
+  months: number[]
+}
+
+export interface MoneyStats extends MoneyTotals {
+  year: number
+  perTandem: number
+  tills: { cash: number; card: number; unrecorded: number }
+  previous: MoneyTotals | null
+  comparedTo: Comparison | null
+}
+
+export async function statistik(year: number): Promise<JumpStats> {
+  const res = await fetch(apiUrl(`/api/stats?year=${year}`))
+  if (!res.ok) throw new Error(await errorMessage(res, 'Statistik konnte nicht geladen werden'))
+  return asJson<JumpStats>(res)
+}
+
+/** null: this device is not the manifest PC, and money is not shown on it. */
+export async function statistikMoney(year: number): Promise<MoneyStats | null> {
+  const res = await fetch(apiUrl(`/api/stats/money?year=${year}`))
+  if (res.status === 403) return null
+  if (!res.ok) throw new Error(await errorMessage(res, 'Umsatz konnte nicht geladen werden'))
+  return asJson<MoneyStats>(res)
+}

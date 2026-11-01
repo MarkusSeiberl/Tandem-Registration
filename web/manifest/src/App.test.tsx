@@ -14,6 +14,8 @@ vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof api>()),
   list: vi.fn(),
   calendar: vi.fn(),
+  statistik: vi.fn(),
+  statistikMoney: vi.fn(),
   masters: vi.fn(),
   flyers: vi.fn(),
   dayTables: vi.fn(),
@@ -65,6 +67,9 @@ beforeEach(() => {
   sessionStorage.clear()
   vi.mocked(api.list).mockResolvedValue([])
   vi.mocked(api.calendar).mockResolvedValue([])
+  // Rejected rather than faked: no test here is about the report's figures.
+  vi.mocked(api.statistik).mockRejectedValue(new Error('Statistik konnte nicht geladen werden'))
+  vi.mocked(api.statistikMoney).mockResolvedValue(null)
   vi.mocked(api.masters).mockResolvedValue([])
   vi.mocked(api.flyers).mockResolvedValue([])
   vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 0 })
@@ -223,6 +228,14 @@ describe('App', () => {
     render(<App />)
     expect(await screen.findByRole('heading', { name: 'Übersicht' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Übersicht' })).toHaveClass('active')
+  })
+
+  it('the sidebar opens Statistik', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Statistik' }))
+    expect(await screen.findByRole('heading', { name: /^Jahresbericht/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Statistik' })).toHaveClass('active')
   })
 
   it('"Heute öffnen" opens the manifest on today', async () => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { statistik } from './api'
-import type { JumpStats } from './api'
+import { statistik, statistikMoney } from './api'
+import type { JumpStats, MoneyStats } from './api'
+import { formatEuro } from './pricing'
 import { ColumnChart, KpiTile, RankList, ShareBar } from './statsCharts'
 import { change, pointsChange, share } from './statsFormat'
 
@@ -49,6 +50,16 @@ function comparisonLine(s: JumpStats): string | null {
   if (!s.comparedTo) return null
   const { year, asOf } = s.comparedTo
   return asOf ? `Vergleich: ${year} bis ${longDay.format(asDay(`${year}-${asOf}`))}` : `Vergleich: ${year}`
+}
+
+// Says which bars are this year and which outlines last year.
+function ChartKey({ year, before }: { year: number; before: number }) {
+  return (
+    <p className="chart-key">
+      <span className="chart-key-bar" aria-hidden="true" /> {year}
+      <span className="chart-key-ghost" aria-hidden="true" /> {before}
+    </p>
+  )
 }
 
 const days = (n: number) => `${n} ${n === 1 ? 'Tag' : 'Tage'}`
@@ -103,12 +114,7 @@ function Report({ s }: { s: JumpStats }) {
             values={months.map((m) => s.months[m])}
             previous={s.previous ? months.map((m) => s.previous!.months[m]) : null}
           />
-          {s.previous && (
-            <p className="chart-key">
-              <span className="chart-key-bar" aria-hidden="true" /> {s.year}
-              <span className="chart-key-ghost" aria-hidden="true" /> {s.comparedTo!.year}
-            </p>
-          )}
+          {s.comparedTo && <ChartKey year={s.year} before={s.comparedTo.year} />}
         </section>
 
         <section className="panel report-section">
@@ -194,6 +200,82 @@ function Report({ s }: { s: JumpStats }) {
   )
 }
 
+function MoneyFigures({ m, months }: { m: MoneyStats; months: number[] }) {
+  const p = m.previous
+  return (
+    <div className="money-figures">
+      <section className="report-figures report-figures-money" aria-label="Umsatz-Kennzahlen">
+        <KpiTile
+          label="Leistungswert" value={formatEuro(m.value)}
+          previous={p ? formatEuro(p.value) : undefined} delta={change(m.value, p?.value)}
+        />
+        <KpiTile
+          label="Kassiert" value={formatEuro(m.collected)}
+          previous={p ? formatEuro(p.collected) : undefined} delta={change(m.collected, p?.collected)}
+        />
+        <KpiTile
+          label="Gutscheinwert" value={formatEuro(m.voucherValue)}
+          previous={p ? formatEuro(p.voucherValue) : undefined} delta={change(m.voucherValue, p?.voucherValue)}
+        />
+        <KpiTile label="Ø pro Tandem" value={formatEuro(Math.round(m.perTandem * 100) / 100)} />
+      </section>
+
+      <div className="report-grid report-grid-wide">
+        <section className="panel report-section">
+          <h2>Leistungswert pro Monat</h2>
+          <ColumnChart
+            ariaLabel="Leistungswert pro Monat"
+            labels={months.map((i) => MONTHS[i])}
+            values={months.map((i) => m.months[i])}
+            previous={p ? months.map((i) => p.months[i]) : null}
+            format={(n) => formatEuro(Math.round(n))}
+          />
+          {m.comparedTo && <ChartKey year={m.year} before={m.comparedTo.year} />}
+        </section>
+
+        <section className="panel report-section">
+          <h2>Kasse</h2>
+          <ShareBar
+            ariaLabel="Kasse"
+            format={formatEuro}
+            // A till nobody used is left out, not drawn as "0 €".
+            parts={[
+              { label: 'Bar', value: m.tills.cash },
+              { label: 'Karte', value: m.tills.card },
+              { label: 'nicht erfasst', value: m.tills.unrecorded },
+            ].filter((part) => part.value !== 0)}
+          />
+        </section>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The confidential part of the report. The server answers it only on the
+ * manifest PC; there it still stays closed until someone asks, and while closed
+ * its figures are not in the page at all, so a printout never carries them by
+ * accident.
+ */
+function Money({ m, months, open, onToggle }: {
+  m: MoneyStats; months: number[]; open: boolean; onToggle: () => void
+}) {
+  return (
+    <section className="report-money" aria-label="Umsatz">
+      <div className="money-head">
+        <div>
+          <h2>Umsatz</h2>
+          <p className="report-note">Nur an diesem PC sichtbar.</p>
+        </div>
+        <button type="button" className="btn secondary small money-toggle" aria-expanded={open} onClick={onToggle}>
+          {open ? 'Umsatz ausblenden' : 'Umsatz anzeigen'}
+        </button>
+      </div>
+      {open && <MoneyFigures m={m} months={months} />}
+    </section>
+  )
+}
+
 export default function Statistik() {
   const [year, setYear] = useState(() => new Date().getFullYear())
   const [stats, setStats] = useState<JumpStats | null>(null)
@@ -209,6 +291,18 @@ export default function Statistik() {
   }, [year])
 
   useEffect(() => load(), [load])
+
+  // Asked for separately: on any other device the server refuses, and the page
+  // then shows nothing about money at all.
+  const [money, setMoney] = useState<MoneyStats | null>(null)
+  const [moneyOpen, setMoneyOpen] = useState(false)
+  useEffect(() => {
+    let stale = false
+    statistikMoney(year)
+      .then((m) => { if (!stale) setMoney(m) })
+      .catch(() => { if (!stale) setMoney(null) })
+    return () => { stale = true }
+  }, [year])
 
   const shown = stats?.year === year ? stats : null
   const years = stats?.years ?? []
@@ -258,6 +352,12 @@ export default function Statistik() {
 
       {shown && !hasTandems && <p className="report-note">Keine Tandems in {year}.</p>}
       {hasTandems && <Report s={shown} />}
+      {hasTandems && money?.year === year && (
+        <Money
+          m={money} months={shownMonths(shown.months, shown.previous?.months)}
+          open={moneyOpen} onToggle={() => setMoneyOpen((o) => !o)}
+        />
+      )}
     </div>
   )
 }

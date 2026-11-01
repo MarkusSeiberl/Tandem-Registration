@@ -3,7 +3,8 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Statistik from './Statistik'
 import * as api from './api'
-import type { JumpStats } from './api'
+import type { JumpStats, MoneyStats } from './api'
+import { formatEuro } from './pricing'
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof api>()),
@@ -146,5 +147,81 @@ describe('Statistik', () => {
     vi.mocked(api.statistik).mockRejectedValue(new Error('Statistik konnte nicht geladen werden'))
     render(<Statistik />)
     expect(await screen.findByRole('alert')).toHaveTextContent('Statistik konnte nicht geladen werden')
+  })
+})
+
+function money(overrides: Partial<MoneyStats> = {}): MoneyStats {
+  const months = zeros(12)
+  months[5] = 5000
+  months[6] = 3570
+  return {
+    year: 2026, value: 8570, collected: 6000, voucherValue: 2570, months,
+    perTandem: 119.03, tills: { cash: 4000, card: 2000, unrecorded: 0 },
+    previous: { value: 7000, collected: 5000, voucherValue: 2000, months: zeros(12) },
+    comparedTo: { year: 2025, asOf: '11-01' },
+    ...overrides,
+  }
+}
+
+// Testing Library collapses the narrow space de-AT groups thousands with; a
+// regex lets the expected text do the same.
+const euro = (text: string) => new RegExp(`^${text.replace(/\s/g, '\\s')}$`)
+
+describe('Statistik money', () => {
+  it('hides money from other devices', async () => {
+    render(<Statistik />)
+    await screen.findByRole('heading', { name: 'Jahresbericht 2026' })
+    await vi.waitFor(() => expect(api.statistikMoney).toHaveBeenCalledWith(2026))
+    expect(screen.queryByRole('button', { name: 'Umsatz anzeigen' })).toBeNull()
+    expect(screen.queryByText(/Umsatz/)).toBeNull()
+  })
+
+  it('money stays closed until asked', async () => {
+    vi.mocked(api.statistikMoney).mockResolvedValue(money())
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<Statistik />)
+    const open = await screen.findByRole('button', { name: 'Umsatz anzeigen' })
+    expect(open).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Leistungswert')).toBeNull()
+    expect(screen.getByText('Nur an diesem PC sichtbar.')).toBeInTheDocument()
+
+    await user.click(open)
+    const value = tile('Leistungswert')
+    expect(within(value).getByText(euro(formatEuro(8570)))).toBeInTheDocument()
+    expect(within(value).getByText(euro(`${formatEuro(7000)} im Vorjahr`))).toBeInTheDocument()
+    expect(within(value).getByText('+22 %')).toBeInTheDocument()
+    expect(within(tile('Ø pro Tandem')).getByText(euro(formatEuro(119.03)))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Umsatz ausblenden' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('leaves out a till nobody used', async () => {
+    vi.mocked(api.statistikMoney).mockResolvedValue(money())
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<Statistik />)
+    await user.click(await screen.findByRole('button', { name: 'Umsatz anzeigen' }))
+    const tills = screen.getByRole('img', { name: /^Kasse/ })
+    expect(tills).toHaveAccessibleName(expect.stringContaining('Bar'))
+    expect(tills).not.toHaveAccessibleName(expect.stringContaining('nicht erfasst'))
+  })
+
+  it('keeps money open across years', async () => {
+    vi.mocked(api.statistik).mockImplementation(async (year) => stats({ year, years: [2025, 2026] }))
+    vi.mocked(api.statistikMoney).mockImplementation(async (year) => money({ year }))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<Statistik />)
+    await user.click(await screen.findByRole('button', { name: 'Umsatz anzeigen' }))
+    await user.click(screen.getByRole('button', { name: 'Vorheriges Jahr' }))
+
+    await screen.findByRole('heading', { name: 'Jahresbericht 2025' })
+    await vi.waitFor(() => expect(api.statistikMoney).toHaveBeenLastCalledWith(2025))
+    expect(await screen.findByRole('button', { name: 'Umsatz ausblenden' })).toBeInTheDocument()
+  })
+
+  // Printing must not carry money nobody opened: absent, not just hidden by CSS.
+  it('closed money is left out of the page', async () => {
+    vi.mocked(api.statistikMoney).mockResolvedValue(money())
+    render(<Statistik />)
+    await screen.findByRole('button', { name: 'Umsatz anzeigen' })
+    expect(document.querySelector('.money-figures')).toBeNull()
   })
 })

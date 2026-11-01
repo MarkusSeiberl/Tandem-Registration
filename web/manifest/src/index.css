@@ -2813,6 +2813,37 @@ html:has(.save-bar) {
   gap: 10px;
 }
 
+/* Umsatz: closed by default, set apart from the jump figures by a rule so the
+   confidential part never reads as just another panel of the report. */
+.report-money {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+
+.money-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.money-head h2 {
+  margin: 0;
+}
+
+.money-figures {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.report-figures-money {
+  grid-template-columns: repeat(4, 1fr);
+}
+
 /* Printed for the club meeting: A4 landscape, light whatever the screen
    shows, the report alone. Closed money is not in the page at all. */
 @media print {
@@ -2839,8 +2870,13 @@ html:has(.save-bar) {
 
   .sidebar,
   .report-actions,
-  .money-toggle {
+  .money-toggle,
+  .report-money:not(:has(.money-figures)) {
     display: none !important;
+  }
+
+  .report-money {
+    break-before: page;
   }
 
   .view {

@@ -84,7 +84,7 @@ function Figures({ s }: { s: JumpStats }) {
         delta={change(average, averageBefore)}
       />
       <KpiTile
-        label="Mit Video" value={share(s.video, s.tandems)}
+        label="Mit Video (+Foto)" value={share(s.video, s.tandems)}
         previous={p ? share(p.video, p.tandems) : undefined}
         delta={pointsChange(s.video, s.tandems, p?.video ?? null, p?.tandems ?? null)}
       />
@@ -200,15 +200,47 @@ function Report({ s }: { s: JumpStats }) {
   )
 }
 
+const vouchers = (n: number) => `${n} ${n === 1 ? 'Gutschein' : 'Gutscheine'}`
+
+// What the vouchers stood for against what the guests paid for them, years
+// earlier perhaps. Only vouchers whose price the club's list gave are summed.
+function VoucherComparison({ v }: { v: MoneyStats['vouchers'] }) {
+  const difference = v.value - v.paid
+  const verdict = difference > 0
+    ? `${formatEuro(difference)} mehr Leistung als bezahlt`
+    : difference < 0
+      ? `${formatEuro(-difference)} weniger Leistung als bezahlt`
+      : 'Leistung wie bezahlt'
+  return (
+    <section className="panel report-section">
+      <h2>Gutscheine</h2>
+      {v.count > 0 && (
+        <>
+          <RankList
+            label="Gutscheine: Leistungswert und Kaufpreis"
+            format={formatEuro}
+            rows={[
+              { name: 'Leistungswert', value: v.value },
+              { name: 'Kaufpreis', value: v.paid },
+            ]}
+          />
+          <p className="report-note">{vouchers(v.count)} · {verdict}</p>
+        </>
+      )}
+      {v.unknown > 0 && (
+        <p className="report-note">
+          {vouchers(v.unknown)} ohne bekannten Kaufpreis {v.unknown === 1 ? 'ist' : 'sind'} nicht enthalten.
+        </p>
+      )}
+    </section>
+  )
+}
+
 function MoneyFigures({ m, months }: { m: MoneyStats; months: number[] }) {
   const p = m.previous
   return (
     <div className="money-figures">
       <section className="report-figures report-figures-money" aria-label="Umsatz-Kennzahlen">
-        <KpiTile
-          label="Leistungswert" value={formatEuro(m.value)}
-          previous={p ? formatEuro(p.value) : undefined} delta={change(m.value, p?.value)}
-        />
         <KpiTile
           label="Kassiert" value={formatEuro(m.collected)}
           previous={p ? formatEuro(p.collected) : undefined} delta={change(m.collected, p?.collected)}
@@ -217,14 +249,13 @@ function MoneyFigures({ m, months }: { m: MoneyStats; months: number[] }) {
           label="Gutscheinwert" value={formatEuro(m.voucherValue)}
           previous={p ? formatEuro(p.voucherValue) : undefined} delta={change(m.voucherValue, p?.voucherValue)}
         />
-        <KpiTile label="Ø pro Tandem" value={formatEuro(Math.round(m.perTandem * 100) / 100)} />
       </section>
 
       <div className="report-grid report-grid-wide">
         <section className="panel report-section">
-          <h2>Leistungswert pro Monat</h2>
+          <h2>Kassiert pro Monat</h2>
           <ColumnChart
-            ariaLabel="Leistungswert pro Monat"
+            ariaLabel="Kassiert pro Monat"
             labels={months.map((i) => MONTHS[i])}
             values={months.map((i) => m.months[i])}
             previous={p ? months.map((i) => p.months[i]) : null}
@@ -233,19 +264,22 @@ function MoneyFigures({ m, months }: { m: MoneyStats; months: number[] }) {
           {m.comparedTo && <ChartKey year={m.year} before={m.comparedTo.year} />}
         </section>
 
-        <section className="panel report-section">
-          <h2>Kasse</h2>
-          <ShareBar
-            ariaLabel="Kasse"
-            format={formatEuro}
-            // A till nobody used is left out, not drawn as "0 €".
-            parts={[
-              { label: 'Bar', value: m.tills.cash },
-              { label: 'Karte', value: m.tills.card },
-              { label: 'nicht erfasst', value: m.tills.unrecorded },
-            ].filter((part) => part.value !== 0)}
-          />
-        </section>
+        <div className="report-stack">
+          <section className="panel report-section">
+            <h2>Kasse</h2>
+            <ShareBar
+              ariaLabel="Kasse"
+              format={formatEuro}
+              // A till nobody used is left out, not drawn as "0 €".
+              parts={[
+                { label: 'Bar', value: m.tills.cash },
+                { label: 'Karte', value: m.tills.card },
+                { label: 'nicht erfasst', value: m.tills.unrecorded },
+              ].filter((part) => part.value !== 0)}
+            />
+          </section>
+          {m.vouchers.count + m.vouchers.unknown > 0 && <VoucherComparison v={m.vouchers} />}
+        </div>
       </div>
     </div>
   )

@@ -16,6 +16,7 @@ function row(overrides: Partial<StatsRow> = {}): StatsRow {
     price: null,
     voucher_payment_method: null,
     voucher_service: null,
+    voucher_amount: null,
     voucher_check_status: null,
     voucher_accepted: null,
     ...overrides,
@@ -131,7 +132,8 @@ const money = (list: StatsRow[], pricesFor: (date: string) => typeof PRICES = ()
 
 test('money of an empty year', () => {
   expect(money([])).toEqual({
-    year: 2026, value: 0, collected: 0, voucherValue: 0, perTandem: 0,
+    year: 2026, collected: 0, voucherValue: 0,
+    vouchers: { count: 0, value: 0, paid: 0, unknown: 0 },
     tills: { cash: 0, card: 0, unrecorded: 0 }, months: Array(12).fill(0),
     previous: null, comparedTo: null,
   })
@@ -144,7 +146,7 @@ test('adds collected and voucher value', () => {
     row({ payment_method: 'card', price: 270 }),
     row({ payment_method: 'voucher', voucher_service: 'jump_video', extra_booking: 'video', price: 0 }),
   ])
-  expect(s).toMatchObject({ collected: 910, voucherValue: 370, value: 1280, perTandem: 320 })
+  expect(s).toMatchObject({ collected: 910, voucherValue: 370 })
   expect(s.tills).toEqual({ cash: 640, card: 270, unrecorded: 0 })
 })
 
@@ -174,13 +176,36 @@ test("uses each day's own prices", () => {
   expect(s.voucherValue).toBe(520)
 })
 
-test('value per month', () => {
+test('collected per month', () => {
   const s = money([
     row({ jump_date: '2026-06-06', payment_method: 'cash', price: 370 }),
-    row({ jump_date: '2026-07-04', payment_method: 'voucher', voucher_service: 'jump', price: 0 }),
+    row({ jump_date: '2026-07-04', payment_method: 'voucher', voucher_service: 'jump', price: 40 }),
   ])
   const expected = Array(12).fill(0)
   expected[5] = 370
-  expected[6] = 270
+  expected[6] = 40
   expect(s.months).toEqual(expected)
+})
+
+test('compares what the vouchers were worth with what was paid for them', () => {
+  const s = money([
+    row({ payment_method: 'voucher', voucher_service: 'jump', price: 0, voucher_amount: 230 }),
+    row({ payment_method: 'voucher', voucher_service: 'jump_video', extra_booking: 'video', price: 0, voucher_amount: 350 }),
+    row({ payment_method: 'cash', price: 270 }),
+  ])
+  expect(s.vouchers).toEqual({ count: 2, value: 640, paid: 580, unknown: 0 })
+})
+
+test('a voucher without a known price is counted apart', () => {
+  const s = money([
+    row({ payment_method: 'voucher', voucher_service: 'jump', price: 0, voucher_amount: 230 }),
+    row({ payment_method: 'voucher', voucher_service: 'jump', price: 0, voucher_amount: null }),
+  ])
+  expect(s.vouchers).toEqual({ count: 1, value: 270, paid: 230, unknown: 1 })
+})
+
+test('a rejected voucher is not compared', () => {
+  const s = money([row({ payment_method: 'voucher', voucher_service: 'jump', price: 270, voucher_amount: 230,
+    voucher_check_status: 'redeemed' })])
+  expect(s.vouchers).toEqual({ count: 0, value: 0, paid: 0, unknown: 0 })
 })

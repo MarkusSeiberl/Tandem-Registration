@@ -23,6 +23,7 @@ export interface StatsRow {
   price: number | null
   voucher_payment_method: string | null
   voucher_service: string | null
+  voucher_amount: number | null
   voucher_check_status: string | null
   voucher_accepted: number | null
 }
@@ -240,18 +241,28 @@ export function jumpStats(
 // --- money --------------------------------------------------------------------
 
 export interface MoneyTotals {
-  /** Leistungswert: what was charged plus what the redeemed vouchers were worth. */
-  value: number
   collected: number
   voucherValue: number
-  /** Leistungswert per month, January first. */
+  /** Collected per month, January first. */
   months: number[]
+}
+
+/** The redeemed vouchers set against what the guests once paid for them. */
+export interface VoucherComparison {
+  /** Vouchers whose purchase price the club's list gave. */
+  count: number
+  /** What those vouchers covered at their jump day's prices. */
+  value: number
+  /** What was paid for them. */
+  paid: number
+  /** Redeemed vouchers without a known purchase price, left out of the sums. */
+  unknown: number
 }
 
 export interface MoneyStats extends MoneyTotals {
   year: number
-  perTandem: number
   tills: { cash: number; card: number; unrecorded: number }
+  vouchers: VoucherComparison
   /** Set by the route when the comparison period has registrations. */
   previous: MoneyTotals | null
   comparedTo: Comparison | null
@@ -269,9 +280,28 @@ export function moneyTotals(rows: StatsRow[], pricesFor: (date: string) => Price
     const covered = voucherCovered(r as PricedFields, pricesFor(r.jump_date))
     collected += charged
     voucherValue += covered
-    months[monthIndex(r.jump_date)] += charged + covered
+    months[monthIndex(r.jump_date)] += charged
   }
-  return { value: collected + voucherValue, collected, voucherValue, months }
+  return { collected, voucherValue, months }
+}
+
+// voucher_amount is what the club's list said the voucher was sold for, stored
+// on the row when the manifest checked the number. A voucher that covered
+// nothing (rejected, or not a voucher row) is not part of the comparison.
+function voucherComparison(rows: StatsRow[], pricesFor: (date: string) => Prices): VoucherComparison {
+  const result: VoucherComparison = { count: 0, value: 0, paid: 0, unknown: 0 }
+  for (const r of rows) {
+    const covered = voucherCovered(r as PricedFields, pricesFor(r.jump_date))
+    if (covered === 0) continue
+    if (r.voucher_amount == null) {
+      result.unknown++
+      continue
+    }
+    result.count++
+    result.value += covered
+    result.paid += r.voucher_amount
+  }
+  return result
 }
 
 export function moneyStats(rows: StatsRow[], pricesFor: (date: string) => Prices, year: number): MoneyStats {
@@ -281,8 +311,8 @@ export function moneyStats(rows: StatsRow[], pricesFor: (date: string) => Prices
   return {
     year,
     ...totals,
-    perTandem: rows.length === 0 ? 0 : totals.value / rows.length,
     tills,
+    vouchers: voucherComparison(rows, pricesFor),
     previous: null,
     comparedTo: null,
   }

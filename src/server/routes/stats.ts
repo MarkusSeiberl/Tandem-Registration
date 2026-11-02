@@ -9,7 +9,7 @@ import { isLocal } from './isLocal'
 const YEAR = /^\d{4}$/
 
 const COLUMNS = `jump_date, tandem_master_id, camera_flyer_id, extra_booking, payment_method,
-  gender, age, city, price, voucher_payment_method, voucher_service, voucher_check_status,
+  gender, age, city, price, voucher_payment_method, voucher_service, voucher_amount, voucher_check_status,
   voucher_accepted`
 
 function pad(n: number): string {

@@ -72,9 +72,9 @@ describe('Statistik', () => {
     expect(within(tile('Sprungtage')).getByText('20')).toBeInTheDocument()
     expect(within(tile('Sprungtage')).getByText('±0 %')).toBeInTheDocument()
     expect(within(tile('Ø pro Sprungtag')).getByText('6,3')).toBeInTheDocument()
-    expect(within(tile('Mit Video')).getByText('40 %')).toBeInTheDocument()
+    expect(within(tile('Mit Video (+Foto)')).getByText('40 %')).toBeInTheDocument()
     // Shares change in percentage points: 50 % then, 40 % now.
-    expect(within(tile('Mit Video')).getByText('−10 Pp.')).toBeInTheDocument()
+    expect(within(tile('Mit Video (+Foto)')).getByText('−10 Pp.')).toBeInTheDocument()
     expect(within(tile('Mit Gutschein')).getByText('+20 Pp.')).toBeInTheDocument()
     expect(screen.getByText('Vergleich: 2025 bis 1. November')).toBeInTheDocument()
   })
@@ -155,9 +155,10 @@ function money(overrides: Partial<MoneyStats> = {}): MoneyStats {
   months[5] = 5000
   months[6] = 3570
   return {
-    year: 2026, value: 8570, collected: 6000, voucherValue: 2570, months,
-    perTandem: 119.03, tills: { cash: 4000, card: 2000, unrecorded: 0 },
-    previous: { value: 7000, collected: 5000, voucherValue: 2000, months: zeros(12) },
+    year: 2026, collected: 6000, voucherValue: 2570, months,
+    tills: { cash: 4000, card: 2000, unrecorded: 0 },
+    vouchers: { count: 8, value: 2300, paid: 2000, unknown: 0 },
+    previous: { collected: 5000, voucherValue: 2000, months: zeros(12) },
     comparedTo: { year: 2025, asOf: '11-01' },
     ...overrides,
   }
@@ -182,16 +183,37 @@ describe('Statistik money', () => {
     render(<Statistik />)
     const open = await screen.findByRole('button', { name: 'Umsatz anzeigen' })
     expect(open).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByText('Leistungswert')).toBeNull()
+    expect(screen.queryByText('Kassiert')).toBeNull()
     expect(screen.getByText('Nur an diesem PC sichtbar.')).toBeInTheDocument()
 
     await user.click(open)
-    const value = tile('Leistungswert')
-    expect(within(value).getByText(euro(formatEuro(8570)))).toBeInTheDocument()
-    expect(within(value).getByText(euro(`${formatEuro(7000)} im Vorjahr`))).toBeInTheDocument()
-    expect(within(value).getByText('+22 %')).toBeInTheDocument()
-    expect(within(tile('Ø pro Tandem')).getByText(euro(formatEuro(119.03)))).toBeInTheDocument()
+    const collected = tile('Kassiert')
+    expect(within(collected).getByText(euro(formatEuro(6000)))).toBeInTheDocument()
+    expect(within(collected).getByText(euro(`${formatEuro(5000)} im Vorjahr`))).toBeInTheDocument()
+    expect(within(collected).getByText('+20 %')).toBeInTheDocument()
+    expect(within(tile('Gutscheinwert')).getByText(euro(formatEuro(2570)))).toBeInTheDocument()
+    // Not decided yet whether these are the right figures to report.
+    expect(screen.queryByText('Leistungswert', { selector: '.kpi-label' })).toBeNull()
+    expect(screen.queryByText('Ø pro Tandem')).toBeNull()
     expect(screen.getByRole('button', { name: 'Umsatz ausblenden' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('sets the vouchers against what was paid for them', async () => {
+    vi.mocked(api.statistikMoney).mockResolvedValue(money({
+      vouchers: { count: 8, value: 2300, paid: 2000, unknown: 2 },
+    }))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<Statistik />)
+    await user.click(await screen.findByRole('button', { name: 'Umsatz anzeigen' }))
+
+    const vouchers = screen.getByRole('list', { name: 'Gutscheine: Leistungswert und Kaufpreis' })
+    const rows = within(vouchers).getAllByRole('listitem')
+    expect(within(rows[0]).getByText('Leistungswert')).toBeInTheDocument()
+    expect(within(rows[0]).getByText(euro(formatEuro(2300)))).toBeInTheDocument()
+    expect(within(rows[1]).getByText('Kaufpreis')).toBeInTheDocument()
+    expect(within(rows[1]).getByText(euro(formatEuro(2000)))).toBeInTheDocument()
+    expect(screen.getByText(euro(`8 Gutscheine · ${formatEuro(300)} mehr Leistung als bezahlt`))).toBeInTheDocument()
+    expect(screen.getByText('2 Gutscheine ohne bekannten Kaufpreis sind nicht enthalten.')).toBeInTheDocument()
   })
 
   it('leaves out a till nobody used', async () => {

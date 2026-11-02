@@ -2841,7 +2841,13 @@ html:has(.save-bar) {
 }
 
 .report-figures-money {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.report-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 /* Printed for the club meeting: A4 landscape, light whatever the screen

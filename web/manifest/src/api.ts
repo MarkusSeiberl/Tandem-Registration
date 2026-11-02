@@ -545,17 +545,17 @@ export interface JumpStats extends JumpTotals {
 }
 
 export interface MoneyTotals {
-  /** Leistungswert: what was charged plus what the redeemed vouchers were worth. */
-  value: number
   collected: number
   voucherValue: number
+  /** Collected per month, January first. */
   months: number[]
 }
 
 export interface MoneyStats extends MoneyTotals {
   year: number
-  perTandem: number
   tills: { cash: number; card: number; unrecorded: number }
+  /** Redeemed vouchers against what was paid for them; unknown: no price on the list. */
+  vouchers: { count: number; value: number; paid: number; unknown: number }
   previous: MoneyTotals | null
   comparedTo: Comparison | null
 }

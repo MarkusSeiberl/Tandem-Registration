@@ -122,9 +122,10 @@ export function ShareBar({ parts, format = String, ariaLabel }: ShareBarProps) {
 interface RankListProps {
   label: string
   rows: { name: string; value: number; detail?: string; delta?: string | null }[]
+  format?: (n: number) => string
 }
 
-export function RankList({ label, rows }: RankListProps) {
+export function RankList({ label, rows, format = String }: RankListProps) {
   const max = Math.max(1, ...rows.map((r) => r.value))
   return (
     <ol className="rank-list" aria-label={label}>
@@ -132,7 +133,7 @@ export function RankList({ label, rows }: RankListProps) {
         <li key={r.name} className="rank-row">
           <span className="rank-name">{r.name}</span>
           <span className="rank-value">
-            {r.value}
+            {format(r.value)}
             <Delta value={r.delta} />
           </span>
           <span className="rank-track" aria-hidden="true">

@@ -152,3 +152,11 @@ test('reading statistics freezes no day', async () => {
   expect(db.prepare('SELECT COUNT(*) AS n FROM day_tables').get()).toEqual({ n: 0 })
   await app.close()
 })
+
+test('compares vouchers with what was paid for them', async () => {
+  const { app, db } = server()
+  seed(db, ['2026-06-06'], { payment_method: 'voucher', voucher_service: 'jump', price: 0, voucher_amount: 230 })
+  const res = await app.inject({ method: 'GET', url: '/api/stats/money?year=2026' })
+  expect(res.json().vouchers).toEqual({ count: 1, value: 270, paid: 230, unknown: 0 })
+  await app.close()
+})

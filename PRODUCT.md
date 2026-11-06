@@ -38,7 +38,7 @@ It is built around how a small club drop zone really works: the club's own contr
 ## Capabilities and Constraints
 
 - Guest flow: welcome → form (gender, height, weight, split address, contact, voucher number) → contract and signature on one screen → done.
-- Manifest views: Übersicht, Manifest list and detail, Tarife (prices, payout rates, price table per combination), Crew (tandem masters, camera flyers with optional email), Einstellungen, Update.
+- Manifest views: Übersicht, Manifest list and detail, Statistik (yearly report against the previous year, printable; money only on the manifest PC), Tarife (prices, payout rates, price table per combination), Crew (tandem masters, camera flyers with optional email), Einstellungen, Update.
 - Prices can differ per jump day. Extra charges for weight over 90 and 100 kg, video, and video plus photo. Payouts per jump for masters and flyers.
 - Voucher check against the club Excel list: a payment date means valid, empty means unpaid, and any other text (for example `STORNO`) means invalid and is shown word for word.
 - Export warns about tandems still open. The Betriebsleiter must be set before the Tagesabschluss.

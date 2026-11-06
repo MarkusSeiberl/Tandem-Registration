@@ -4,6 +4,7 @@ import Overview from './Overview'
 import Detail from './Detail'
 import Crew from './Crew'
 import Tarife from './Tarife'
+import Statistik from './Statistik'
 import Settings from './Settings'
 import Update from './Update'
 import UpdateDialog from './UpdateDialog'
@@ -16,7 +17,7 @@ import { useUpdateEvents } from './useEvents'
 import { dismissOutcome, peekInstallFrom, recentOutcome, settleInstall } from './updateMarker'
 import { rememberDate, storedDate } from './date'
 
-type View = 'overview' | 'list' | 'detail' | 'tarife' | 'crew' | 'settings' | 'update'
+type View = 'overview' | 'list' | 'detail' | 'statistik' | 'tarife' | 'crew' | 'settings' | 'update'
 
 // Marks the one history entry the app pushes when it leaves the manifest.
 const AWAY_FROM_LIST = 'tandem-away-from-list'
@@ -313,6 +314,13 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
           </button>
           <button
             type="button"
+            className={view === 'statistik' ? 'tab active' : 'tab'}
+            onClick={() => setView('statistik')}
+          >
+            Statistik
+          </button>
+          <button
+            type="button"
             className={view === 'tarife' ? 'tab active' : 'tab'}
             onClick={() => setView('tarife')}
           >
@@ -397,6 +405,7 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
               onDirtyChange={onDetailDirtyChange}
             />
           )}
+          {view === 'statistik' && <Statistik />}
           {view === 'tarife' && <Tarife onDirtyChange={onTarifeDirtyChange} />}
           {view === 'crew' && <Crew />}
           {view === 'settings' && <Settings onDirtyChange={onSettingsDirtyChange} />}

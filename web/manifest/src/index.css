@@ -29,6 +29,13 @@
   --warn-text: #c2410c;
   /* A divider meant to be seen, where --border is meant to recede. */
   --rule: #8a94a3;
+  /* Secondary text that still prints: a colour, not an opacity. */
+  --text-quiet: #5b6270;
+  /* Report charts: three categories, checked for colour-blind separation and
+     3:1 against the panel in each scheme (dataviz validate_palette). */
+  --chart-1: #137a45;
+  --chart-2: #2f5f9e;
+  --chart-3: #c2410c;
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
 
@@ -60,6 +67,10 @@
     --error-text: #f2766b;
     --disabled-bg: #2b323d;
     --disabled-text: #9aa3b2;
+    --text-quiet: #a7aebb;
+    --chart-1: #29a062;
+    --chart-2: #4f8bf0;
+    --chart-3: #e8683a;
   }
 }
 
@@ -2428,4 +2439,487 @@ html:has(.save-bar) {
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
+}
+
+/* Statistik: the yearly report. Reads like a document, not a control panel —
+   a heading block, one band of headline figures, then the detail. */
+.report {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.report-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.report-head h1 {
+  margin: 0;
+  font-size: 30px;
+  letter-spacing: -0.01em;
+}
+
+.report-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-actions .calendar-nav + .btn:not(.calendar-nav) {
+  margin-left: 12px;
+}
+
+.report-meta {
+  grid-column: 1 / -1;
+}
+
+.report-meta p {
+  margin: 0;
+  font-size: 15px;
+}
+
+.report-meta p + p {
+  color: var(--text-quiet);
+}
+
+.report-note {
+  margin: 0;
+  color: var(--text-quiet);
+}
+
+/* The headline figures share one ruled band, so they read as one line of the
+   report rather than five separate widgets. */
+.report-figures {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-bg);
+}
+
+.kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 18px 24px 20px;
+}
+
+.kpi + .kpi {
+  border-left: 1px solid var(--border);
+}
+
+.kpi-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-quiet);
+}
+
+.kpi-value {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-compare {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text-quiet);
+}
+
+/* Up and down are said by the sign; the colour only repeats it. */
+.delta {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.delta.up {
+  color: var(--accent);
+}
+
+.delta.down {
+  color: var(--warn-text);
+}
+
+.report-grid {
+  display: grid;
+  gap: 20px;
+  align-items: start;
+}
+
+.report-grid-wide {
+  grid-template-columns: 2fr 1fr;
+}
+
+.report-grid-guests {
+  grid-template-columns: 1fr 2fr;
+}
+
+.report-section h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.report-section h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-quiet);
+}
+
+/* Column chart: values written on the bars instead of an axis and gridlines.
+   Last year stands behind each bar as an outline, never a second loud colour. */
+.column-chart {
+  display: flex;
+  gap: 6px;
+  height: 230px;
+}
+
+.column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.column-plot {
+  flex: 1;
+  display: flex;
+  padding-top: 24px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.column-area {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.column-bar {
+  position: relative;
+  z-index: 1;
+  width: 56%;
+  max-width: 48px;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+  transition: background-color 120ms ease-out;
+}
+
+.chart-ghost {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  translate: -50% 0;
+  width: 76%;
+  max-width: 66px;
+  border: 1.5px solid var(--rule);
+  border-bottom: none;
+  border-radius: 5px 5px 0 0;
+}
+
+.column-value {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  translate: -50% 0;
+  padding-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.column-label {
+  padding-top: 6px;
+  font-size: 13px;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--text-quiet);
+}
+
+.column:hover .column-bar {
+  background: var(--text-h);
+}
+
+.column:hover .column-label {
+  color: var(--text-h);
+}
+
+.chart-key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-quiet);
+}
+
+.chart-key-bar,
+.chart-key-ghost {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.chart-key-bar {
+  background: var(--accent);
+}
+
+.chart-key-ghost {
+  margin-left: 12px;
+  border: 1.5px solid var(--rule);
+}
+
+/* Share bar: one stacked bar, a 2px gap between parts, and a legend that
+   carries the numbers, so no part is told apart by colour alone. */
+.share-bar {
+  display: flex;
+  gap: 2px;
+  height: 20px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.share-segment {
+  min-width: 4px;
+}
+
+.share-1 {
+  background: var(--chart-1);
+}
+
+.share-2 {
+  background: var(--chart-2);
+}
+
+.share-3 {
+  background: var(--chart-3);
+}
+
+.share-legend {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.share-legend li {
+  display: grid;
+  grid-template-columns: 12px 1fr auto 3.5em;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+}
+
+.share-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.share-legend-value,
+.share-legend-share {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.share-legend-value {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.share-legend-share {
+  color: var(--text-quiet);
+}
+
+/* Rankings: name and count on one line, the bar under them scaled to the
+   leader, the detail below. */
+.rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rank-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+}
+
+.rank-name {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.rank-value {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-weight: 700;
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+
+.rank-value .delta {
+  font-size: 13px;
+}
+
+.rank-track {
+  grid-column: 1 / -1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+}
+
+.rank-bar {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.rank-detail {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  color: var(--text-quiet);
+}
+
+.guest-cols {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 32px;
+}
+
+.guest-cols .column-chart {
+  height: 190px;
+}
+
+.guest-cols .rank-list {
+  gap: 10px;
+}
+
+/* Umsatz: closed by default, set apart from the jump figures by a rule so the
+   confidential part never reads as just another panel of the report. */
+.report-money {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+
+.money-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.money-head h2 {
+  margin: 0;
+}
+
+.money-figures {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.report-figures-money {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.report-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Printed for the club meeting: A4 landscape, light whatever the screen
+   shows, the report alone. Closed money is not in the page at all. */
+@media print {
+  :root {
+    color-scheme: light;
+    --text: #2b2b33;
+    --text-h: #08060d;
+    --bg: #ffffff;
+    --panel-bg: #ffffff;
+    --border: #dde2e8;
+    --rule: #8a94a3;
+    --accent: #137a45;
+    --warn-text: #c2410c;
+    --text-quiet: #5b6270;
+    --chart-1: #137a45;
+    --chart-2: #2f5f9e;
+    --chart-3: #c2410c;
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+
+  .sidebar,
+  .report-actions,
+  .money-toggle,
+  .report-money:not(:has(.money-figures)) {
+    display: none !important;
+  }
+
+  .report-money {
+    break-before: page;
+  }
+
+  .view {
+    padding: 0;
+    max-width: none;
+  }
+
+  .report {
+    gap: 12px;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .report-figures,
+  .report-grid {
+    break-inside: avoid;
+  }
+
+  .report-section {
+    padding: 12px 16px;
+    gap: 10px;
+  }
+
+  .rank-list {
+    gap: 8px;
+  }
+
+  .kpi {
+    padding: 10px 16px 12px;
+  }
+
+  .kpi-value {
+    font-size: 28px;
+  }
+
+  .column-chart,
+  .guest-cols .column-chart {
+    height: 120px;
+  }
 }

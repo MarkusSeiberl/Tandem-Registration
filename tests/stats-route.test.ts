@@ -1,5 +1,6 @@
 import { test, expect } from 'vitest'
 import { testServer } from './helpers/testServer'
+import { pdfText } from './helpers/pdfText'
 
 // A LAN address: a tablet, a phone, anything that can open the manifest.
 const REMOTE = '192.168.0.42'
@@ -158,5 +159,53 @@ test('compares vouchers with what was paid for them', async () => {
   seed(db, ['2026-06-06'], { payment_method: 'voucher', voucher_service: 'jump', price: 0, voucher_amount: 230 })
   const res = await app.inject({ method: 'GET', url: '/api/stats/money?year=2026' })
   expect(res.json().vouchers).toEqual({ count: 1, value: 270, paid: 230, unknown: 0 })
+  await app.close()
+})
+
+test('serves the report as a PDF with the season and its figures', async () => {
+  const { app, db } = server()
+  const anna = addMaster(db, 'Anna')
+  seed(db, ['2025-06-06'])
+  seed(db, ['2026-04-11', '2026-10-24'], { tandem_master_id: anna })
+  const res = await app.inject({ method: 'GET', url: '/api/stats/report.pdf?year=2026' })
+  expect(res.statusCode).toBe(200)
+  expect(res.headers['content-type']).toBe('application/pdf')
+  expect(res.headers['content-disposition']).toMatch(/^inline/)
+  const text = await pdfText(res.rawPayload)
+  expect(text).toContain('Jahresbericht 2026')
+  expect(text).toContain('Saison 11. Apr – 24. Okt')
+  expect(text).toContain('Vergleich: 2025')
+  expect(text).toContain('Anna')
+  expect(text).not.toContain('Umsatz')
+  await app.close()
+})
+
+test('the PDF carries the takings only when asked for on the manifest PC', async () => {
+  const { app, db } = server()
+  seed(db, ['2026-06-06'], { payment_method: 'cash', price: 370 })
+  const local = await pdfText((await app.inject({ method: 'GET', url: '/api/stats/report.pdf?year=2026&money=1' })).rawPayload)
+  expect(local).toContain('Umsatz')
+  expect(local).toContain('370,00 €')
+  const remote = await pdfText((await app.inject({
+    method: 'GET', url: '/api/stats/report.pdf?year=2026&money=1', remoteAddress: REMOTE,
+  })).rawPayload)
+  expect(remote).toContain('Jahresbericht 2026')
+  expect(remote).not.toContain('Umsatz')
+  expect(remote).not.toContain('370,00 €')
+  await app.close()
+})
+
+test('a PDF for a year without tandems says so', async () => {
+  const { app } = server()
+  const res = await app.inject({ method: 'GET', url: '/api/stats/report.pdf?year=2026' })
+  expect(res.statusCode).toBe(200)
+  expect(await pdfText(res.rawPayload)).toContain('Keine Tandems in 2026.')
+  await app.close()
+})
+
+test('the PDF rejects a malformed year', async () => {
+  const { app } = server()
+  const res = await app.inject({ method: 'GET', url: '/api/stats/report.pdf?year=26' })
+  expect(res.statusCode).toBe(400)
   await app.close()
 })

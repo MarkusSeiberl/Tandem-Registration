@@ -5,6 +5,7 @@ import { tablesForDay } from '../dayTables'
 import { jumpStats, jumpTotals, moneyStats, moneyTotals } from '../stats'
 import type { Comparison, StatsRow } from '../stats'
 import { isLocal } from './isLocal'
+import { statsPdf } from '../statsPdf'
 
 const YEAR = /^\d{4}$/
 
@@ -58,9 +59,9 @@ export function registerStatsRoutes(
       .map((r) => [r.id, r.name])
   )
 
-  app.get('/api/stats', async (req, reply) => {
-    const p = period(req.query)
-    if (!p) return reply.code(400).send({ error: 'Jahr ungültig' })
+  type Period = NonNullable<ReturnType<typeof period>>
+
+  function buildJumpStats(p: Period) {
     const masters = names('tandem_masters')
     const stats = jumpStats(p.rows, masters, names('camera_flyers'), p.year)
 
@@ -77,12 +78,9 @@ export function registerStatsRoutes(
       for (const m of stats.masters) m.previous = earlier.find((e) => e.name === m.name)?.tandems ?? 0
     }
     return stats
-  })
+  }
 
-  app.get('/api/stats/money', async (req, reply) => {
-    if (!isLocal(req.ip)) return reply.code(403).send({ error: 'Nur am Manifest-PC verfügbar' })
-    const p = period(req.query)
-    if (!p) return reply.code(400).send({ error: 'Jahr ungültig' })
+  function buildMoneyStats(p: Period) {
     // tablesForDay only reads: statistics must never freeze a day's price list.
     const cache = new Map<string, Prices>()
     const pricesFor = (date: string) => {
@@ -96,5 +94,33 @@ export function registerStatsRoutes(
       stats.comparedTo = p.comparedTo
     }
     return stats
+  }
+
+  app.get('/api/stats', async (req, reply) => {
+    const p = period(req.query)
+    if (!p) return reply.code(400).send({ error: 'Jahr ungültig' })
+    return buildJumpStats(p)
+  })
+
+  app.get('/api/stats/money', async (req, reply) => {
+    if (!isLocal(req.ip)) return reply.code(403).send({ error: 'Nur am Manifest-PC verfügbar' })
+    const p = period(req.query)
+    if (!p) return reply.code(400).send({ error: 'Jahr ungültig' })
+    return buildMoneyStats(p)
+  })
+
+  // The report as a PDF, opened in its own tab. `money=1` adds the takings, but
+  // only for the manifest PC: anywhere else the flag is ignored rather than
+  // refused, so a tablet still gets the rest of the report.
+  app.get('/api/stats/report.pdf', async (req, reply) => {
+    const p = period(req.query)
+    if (!p) return reply.code(400).send({ error: 'Jahr ungültig' })
+    const withMoney = (req.query as { money?: string }).money === '1' && isLocal(req.ip)
+    const today = now()
+    const createdOn = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+    const pdf = await statsPdf(buildJumpStats(p), withMoney ? buildMoneyStats(p) : null, createdOn)
+    reply.header('Content-Type', 'application/pdf')
+    reply.header('Content-Disposition', `inline; filename="Jahresbericht-${p.year}.pdf"`)
+    return reply.send(pdf)
   })
 }

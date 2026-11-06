@@ -566,6 +566,11 @@ export async function statistik(year: number): Promise<JumpStats> {
   return asJson<JumpStats>(res)
 }
 
+/** The yearly report as a PDF; `withMoney` adds the takings (honoured on the manifest PC only). */
+export function statistikPdfUrl(year: number, withMoney: boolean): string {
+  return apiUrl(`/api/stats/report.pdf?year=${year}${withMoney ? '&money=1' : ''}`)
+}
+
 /** null: this device is not the manifest PC, and money is not shown on it. */
 export async function statistikMoney(year: number): Promise<MoneyStats | null> {
   const res = await fetch(apiUrl(`/api/stats/money?year=${year}`))

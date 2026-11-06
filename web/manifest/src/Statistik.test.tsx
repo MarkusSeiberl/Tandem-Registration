@@ -76,7 +76,6 @@ describe('Statistik', () => {
     // Shares change in percentage points: 50 % then, 40 % now.
     expect(within(tile('Mit Video (+Foto)')).getByText('−10 Pp.')).toBeInTheDocument()
     expect(within(tile('Mit Gutschein')).getByText('+20 Pp.')).toBeInTheDocument()
-    expect(screen.getByText('Vergleich: 2025 bis 1. November')).toBeInTheDocument()
   })
 
   it('first season shows no comparison', async () => {
@@ -86,14 +85,16 @@ describe('Statistik', () => {
     expect(document.querySelectorAll('.chart-ghost')).toHaveLength(0)
   })
 
-  it('shows the season facts', async () => {
-    vi.mocked(api.statistik).mockResolvedValue(stats({ firstDay: '2026-04-11', lastDay: '2026-10-24' }))
+  it('the subheadline names only the season start and end', async () => {
+    vi.mocked(api.statistik).mockResolvedValue(stats({
+      firstDay: '2026-04-11', lastDay: '2026-10-24',
+      previous: { tandems: 50, jumpDays: 10, video: 10, voucher: 5, months: zeros(12) },
+      comparedTo: { year: 2025, asOf: '11-01' },
+    }))
     render(<Statistik />)
     const season = await screen.findByText(/^Saison/)
-    expect(season).toHaveTextContent('11. Apr')
-    expect(season).toHaveTextContent('24. Okt')
-    expect(season).toHaveTextContent('Juni (42)')
-    expect(season).toHaveTextContent('(14)')
+    expect(season).toHaveTextContent(/^Saison 11\. Apr\.? – 24\. Okt\.?$/)
+    expect(screen.queryByText(/bester Monat|stärkster Tag|Vergleich/)).toBeNull()
   })
 
   it('steps between years with data', async () => {
@@ -127,12 +128,21 @@ describe('Statistik', () => {
     expect(items[1]).toHaveTextContent('ohne Tandemmaster')
   })
 
-  it('prints the report', async () => {
-    const print = vi.spyOn(window, 'print').mockImplementation(() => {})
+  it('opens the report as a PDF in a new tab', async () => {
+    render(<Statistik />)
+    const link = await screen.findByRole('link', { name: 'PDF öffnen' })
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link.getAttribute('href')).toMatch(/\/api\/stats\/report\.pdf\?year=2026$/)
+  })
+
+  it('the PDF carries the takings only while they are shown', async () => {
+    vi.mocked(api.statistikMoney).mockResolvedValue(money())
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     render(<Statistik />)
-    await user.click(await screen.findByRole('button', { name: 'Drucken' }))
-    expect(print).toHaveBeenCalledTimes(1)
+    await user.click(await screen.findByRole('button', { name: 'Umsatz anzeigen' }))
+    expect(screen.getByRole('link', { name: 'PDF öffnen' }).getAttribute('href')).toMatch(/year=2026&money=1$/)
+    await user.click(screen.getByRole('button', { name: 'Umsatz ausblenden' }))
+    expect(screen.getByRole('link', { name: 'PDF öffnen' }).getAttribute('href')).not.toContain('money')
   })
 
   it('shows an empty state', async () => {
@@ -140,7 +150,7 @@ describe('Statistik', () => {
     render(<Statistik />)
     expect(await screen.findByText('Keine Tandems in 2026.')).toBeInTheDocument()
     expect(screen.queryByRole('img')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Drucken' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'PDF öffnen' })).toBeNull()
   })
 
   it('says when loading failed', async () => {

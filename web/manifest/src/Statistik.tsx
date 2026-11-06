@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { statistik, statistikMoney } from './api'
+import { statistik, statistikMoney, statistikPdfUrl } from './api'
 import type { JumpStats, MoneyStats } from './api'
 import { formatEuro } from './pricing'
 import { ColumnChart, KpiTile, RankList, ShareBar } from './statsCharts'
@@ -14,11 +14,6 @@ const AGE_GROUPS = ['< 18', '18–25', '26–35', '36–50', '51–65', '> 65']
 // shift them across midnight.
 const asDay = (iso: string) => new Date(`${iso}T00:00:00Z`)
 const shortDay = new Intl.DateTimeFormat('de-AT', { day: 'numeric', month: 'short', timeZone: 'UTC' })
-const longDay = new Intl.DateTimeFormat('de-AT', { day: 'numeric', month: 'long', timeZone: 'UTC' })
-const weekdayDay = new Intl.DateTimeFormat('de-AT', {
-  weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC',
-})
-const monthName = new Intl.DateTimeFormat('de-AT', { month: 'long', timeZone: 'UTC' })
 
 const oneDecimal = (n: number) => n.toLocaleString('de-AT', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 
@@ -34,22 +29,8 @@ function shownMonths(...series: (number[] | null | undefined)[]): number[] {
   return Array.from({ length: to - from + 1 }, (_, i) => from + i)
 }
 
-function bestMonth(months: number[]): number {
-  return months.reduce((best, n, i) => (n > months[best] ? i : best), 0)
-}
-
 function seasonLine(s: JumpStats): string {
-  const parts = [`Saison ${shortDay.format(asDay(s.firstDay!))} – ${shortDay.format(asDay(s.lastDay!))}`]
-  const best = bestMonth(s.months)
-  parts.push(`bester Monat ${monthName.format(new Date(Date.UTC(s.year, best, 1)))} (${s.months[best]})`)
-  if (s.busiestDay) parts.push(`stärkster Tag ${weekdayDay.format(asDay(s.busiestDay.date))} (${s.busiestDay.count})`)
-  return parts.join(' · ')
-}
-
-function comparisonLine(s: JumpStats): string | null {
-  if (!s.comparedTo) return null
-  const { year, asOf } = s.comparedTo
-  return asOf ? `Vergleich: ${year} bis ${longDay.format(asDay(`${year}-${asOf}`))}` : `Vergleich: ${year}`
+  return `Saison ${shortDay.format(asDay(s.firstDay!))} – ${shortDay.format(asDay(s.lastDay!))}`
 }
 
 // Says which bars are this year and which outlines last year.
@@ -288,7 +269,7 @@ function MoneyFigures({ m, months }: { m: MoneyStats; months: number[] }) {
 /**
  * The confidential part of the report. The server answers it only on the
  * manifest PC; there it still stays closed until someone asks, and while closed
- * its figures are not in the page at all, so a printout never carries them by
+ * its figures are not in the page at all, so a printout or PDF never carries them by
  * accident.
  */
 function Money({ m, months, open, onToggle }: {
@@ -370,16 +351,25 @@ export default function Statistik() {
           >
             ›
           </button>
+          {/*
+            The server draws the report as a PDF, opened in its own tab where it
+            can be saved or printed. The takings go in only while they are shown
+            here, so a PDF never carries them by accident.
+          */}
           {hasTandems && (
-            <button type="button" className="btn secondary small" onClick={() => window.print()}>
-              Drucken
-            </button>
+            <a
+              className="btn secondary small"
+              href={statistikPdfUrl(year, moneyOpen && money?.year === year)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              PDF öffnen
+            </a>
           )}
         </div>
         {hasTandems && (
           <div className="report-meta">
             <p>{seasonLine(shown)}</p>
-            {comparisonLine(shown) && <p>{comparisonLine(shown)}</p>}
           </div>
         )}
       </header>

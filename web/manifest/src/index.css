@@ -168,6 +168,51 @@ h2 {
   font-weight: 600;
 }
 
+/* "Verwaltung": the folded group of pages not needed on a jump day. Set a
+   little apart from Übersicht and Manifest, which are. */
+.admin-toggle {
+  display: flex;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.admin-chevron {
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  opacity: 0.6;
+  transition: transform 150ms ease;
+}
+
+.admin-toggle[aria-expanded='true'] .admin-chevron {
+  transform: rotate(45deg);
+}
+
+.admin-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 12px;
+}
+
+.admin-tabs[hidden] {
+  display: none;
+}
+
+.admin-tabs .tab {
+  font-size: 14px;
+  padding: 9px 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-chevron {
+    transition: none;
+  }
+}
+
 .view {
   flex: 1;
   min-width: 0;

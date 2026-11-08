@@ -19,6 +19,15 @@ import { rememberDate, storedDate } from './date'
 
 type View = 'overview' | 'list' | 'detail' | 'statistik' | 'tarife' | 'crew' | 'settings' | 'update'
 
+// The pages behind "Verwaltung" in the sidebar, in their order there.
+const ADMIN_TABS: { view: View; label: string }[] = [
+  { view: 'statistik', label: 'Statistik' },
+  { view: 'tarife', label: 'Tarife' },
+  { view: 'crew', label: 'Crew' },
+  { view: 'settings', label: 'Einstellungen' },
+  { view: 'update', label: 'Update' },
+]
+
 // Marks the one history entry the app pushes when it leaves the manifest.
 const AWAY_FROM_LIST = 'tandem-away-from-list'
 
@@ -30,6 +39,12 @@ function App() {
   // The app opens on the Übersicht, where a jump day starts.
   const [view, setViewState] = useState<View>('overview')
   const [selected, setSelected] = useState<Registration | null>(null)
+
+  // "Verwaltung" opens by itself on any of its pages (an update can open one
+  // without a click) and folds away again once the operator is back at the day.
+  const inAdmin = ADMIN_TABS.some((t) => t.view === view)
+  const [adminOpen, setAdminOpen] = useState(false)
+  useEffect(() => { setAdminOpen(inAdmin) }, [inAdmin])
 
   // Prices apply to every future day and the guest signs the texts on
   // Einstellungen, so an edit on either screen is not dropped by a stray click
@@ -312,44 +327,32 @@ Danach sind Gäste-Anmeldung und Manifest auf allen Geräten nicht mehr erreichb
           >
             Manifest
           </button>
+          {/* Everything but the jump day itself, folded away: day to day the
+              operator only needs Übersicht and Manifest. */}
           <button
             type="button"
-            className={view === 'statistik' ? 'tab active' : 'tab'}
-            onClick={() => setView('statistik')}
+            className={!adminOpen && inAdmin ? 'tab admin-toggle active' : 'tab admin-toggle'}
+            aria-expanded={adminOpen}
+            aria-controls="admin-tabs"
+            onClick={() => setAdminOpen((o) => !o)}
           >
-            Statistik
+            Verwaltung
+            {!adminOpen && showUpdateTab && updatePending && <span className="update-dot" aria-hidden="true" />}
+            <span className="admin-chevron" aria-hidden="true" />
           </button>
-          <button
-            type="button"
-            className={view === 'tarife' ? 'tab active' : 'tab'}
-            onClick={() => setView('tarife')}
-          >
-            Tarife
-          </button>
-          <button
-            type="button"
-            className={view === 'crew' ? 'tab active' : 'tab'}
-            onClick={() => setView('crew')}
-          >
-            Crew
-          </button>
-          <button
-            type="button"
-            className={view === 'settings' ? 'tab active' : 'tab'}
-            onClick={() => setView('settings')}
-          >
-            Einstellungen
-          </button>
-          {showUpdateTab && (
-            <button
-              type="button"
-              className={view === 'update' ? 'tab active' : 'tab'}
-              onClick={() => setView('update')}
-            >
-              Update
-              {updatePending && <span className="update-dot" aria-hidden="true" />}
-            </button>
-          )}
+          <div id="admin-tabs" className="admin-tabs" hidden={!adminOpen}>
+            {ADMIN_TABS.filter((t) => t.view !== 'update' || showUpdateTab).map((t) => (
+              <button
+                key={t.view}
+                type="button"
+                className={view === t.view ? 'tab active' : 'tab'}
+                onClick={() => setView(t.view)}
+              >
+                {t.label}
+                {t.view === 'update' && updatePending && <span className="update-dot" aria-hidden="true" />}
+              </button>
+            ))}
+          </div>
 
           {/* Bottom of the sidebar, away from the tabs: it is not a place to go,
               and it ends the day for the guest tablets too. */}

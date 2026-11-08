@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { FormEvent } from 'react'
 import { statistik, statistikMoney, statistikPdfUrl } from './api'
 import type { JumpStats, MoneyStats } from './api'
 import { formatEuro } from './pricing'
@@ -272,9 +273,42 @@ function MoneyFigures({ m, months }: { m: MoneyStats; months: number[] }) {
  * its figures are not in the page at all, so a printout or PDF never carries them by
  * accident.
  */
+// Keeps a passer-by at the manifest PC from opening the takings with one
+// click. Not a real secret: it ships in the page, and the server's own guard
+// is that money is only answered on the manifest PC at all.
+const MONEY_CODE = '206'
+
 function Money({ m, months, open, onToggle }: {
   m: MoneyStats; months: number[]; open: boolean; onToggle: () => void
 }) {
+  const [asking, setAsking] = useState(false)
+  const [code, setCode] = useState('')
+  const [wrong, setWrong] = useState(false)
+
+  function toggle() {
+    if (open) onToggle()
+    else setAsking(true)
+  }
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    if (code === MONEY_CODE) {
+      setAsking(false)
+      setCode('')
+      setWrong(false)
+      onToggle()
+    } else {
+      setWrong(true)
+      setCode('')
+    }
+  }
+
+  function cancel() {
+    setAsking(false)
+    setCode('')
+    setWrong(false)
+  }
+
   return (
     <section className="report-money" aria-label="Umsatz">
       <div className="money-head">
@@ -282,9 +316,29 @@ function Money({ m, months, open, onToggle }: {
           <h2>Umsatz</h2>
           <p className="report-note">Nur an diesem PC sichtbar.</p>
         </div>
-        <button type="button" className="btn secondary small money-toggle" aria-expanded={open} onClick={onToggle}>
-          {open ? 'Umsatz ausblenden' : 'Umsatz anzeigen'}
-        </button>
+        {asking
+          ? (
+            <form className="money-unlock" onSubmit={submit}>
+              <div className="field">
+                <label htmlFor="money-code" className="visually-hidden">Passwort</label>
+                <input
+                  id="money-code" type="password" inputMode="numeric" autoComplete="off" autoFocus
+                  placeholder="Passwort" value={code} aria-invalid={wrong}
+                  aria-describedby={wrong ? 'money-code-error' : undefined}
+                  onChange={(e) => { setCode(e.target.value); setWrong(false) }}
+                  onKeyDown={(e) => { if (e.key === 'Escape') cancel() }}
+                />
+              </div>
+              <button type="submit" className="btn primary small">Öffnen</button>
+              <button type="button" className="btn secondary small" onClick={cancel}>Abbrechen</button>
+              {wrong && <p id="money-code-error" className="error money-unlock-error" role="alert">Falsches Passwort.</p>}
+            </form>
+          )
+          : (
+            <button type="button" className="btn secondary small money-toggle" aria-expanded={open} onClick={toggle}>
+              {open ? 'Umsatz ausblenden' : 'Umsatz anzeigen'}
+            </button>
+          )}
       </div>
       {open && <MoneyFigures m={m} months={months} />}
     </section>

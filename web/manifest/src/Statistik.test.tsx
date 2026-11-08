@@ -50,6 +50,11 @@ afterEach(() => {
 
 const tile = (label: string) => screen.getByText(label, { selector: '.kpi-label' }).closest('.kpi') as HTMLElement
 
+async function openMoney(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: 'Umsatz anzeigen' }))
+  await user.type(screen.getByLabelText('Passwort'), '206{Enter}')
+}
+
 describe('Statistik', () => {
   it('opens on the current year', async () => {
     render(<Statistik />)
@@ -139,7 +144,7 @@ describe('Statistik', () => {
     vi.mocked(api.statistikMoney).mockResolvedValue(money())
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     render(<Statistik />)
-    await user.click(await screen.findByRole('button', { name: 'Umsatz anzeigen' }))
+    await openMoney(user)
     expect(screen.getByRole('link', { name: 'PDF öffnen' }).getAttribute('href')).toMatch(/year=2026&money=1$/)
     await user.click(screen.getByRole('button', { name: 'Umsatz ausblenden' }))
     expect(screen.getByRole('link', { name: 'PDF öffnen' }).getAttribute('href')).not.toContain('money')
@@ -197,6 +202,7 @@ describe('Statistik money', () => {
     expect(screen.getByText('Nur an diesem PC sichtbar.')).toBeInTheDocument()
 
     await user.click(open)
+    await user.type(screen.getByLabelText('Passwort'), '206{Enter}')
     const collected = tile('Kassiert')
     expect(within(collected).getByText(euro(formatEuro(6000)))).toBeInTheDocument()
     expect(within(collected).getByText(euro(`${formatEuro(5000)} im Vorjahr`))).toBeInTheDocument()
@@ -208,13 +214,41 @@ describe('Statistik money', () => {
     expect(screen.getByRole('button', { name: 'Umsatz ausblenden' })).toHaveAttribute('aria-expanded', 'true')
   })
 
+  it('a wrong password keeps the takings closed', async () => {
+    vi.mocked(api.statistikMoney).mockResolvedValue(money())
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<Statistik />)
+    await user.click(await screen.findByRole('button', { name: 'Umsatz anzeigen' }))
+    await user.type(screen.getByLabelText('Passwort'), '123{Enter}')
+    expect(screen.getByRole('alert')).toHaveTextContent('Falsches Passwort.')
+    expect(screen.queryByText('Kassiert')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Abbrechen' }))
+    expect(screen.queryByLabelText('Passwort')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Umsatz anzeigen' })).toBeInTheDocument()
+  })
+
+  it('asks for the password again after the takings were hidden', async () => {
+    vi.mocked(api.statistikMoney).mockResolvedValue(money())
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<Statistik />)
+    await openMoney(user)
+    await user.click(screen.getByRole('button', { name: 'Umsatz ausblenden' }))
+    await user.click(screen.getByRole('button', { name: 'Umsatz anzeigen' }))
+    expect(screen.getByLabelText('Passwort')).toHaveValue('')
+    expect(screen.queryByText('Kassiert')).toBeNull()
+
+    await user.type(screen.getByLabelText('Passwort'), '206{Enter}')
+    expect(tile('Kassiert')).toBeInTheDocument()
+  })
+
   it('sets the vouchers against what was paid for them', async () => {
     vi.mocked(api.statistikMoney).mockResolvedValue(money({
       vouchers: { count: 8, value: 2300, paid: 2000, unknown: 2 },
     }))
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     render(<Statistik />)
-    await user.click(await screen.findByRole('button', { name: 'Umsatz anzeigen' }))
+    await openMoney(user)
 
     const vouchers = screen.getByRole('list', { name: 'Gutscheine: Leistungswert und Kaufpreis' })
     const rows = within(vouchers).getAllByRole('listitem')
@@ -230,7 +264,7 @@ describe('Statistik money', () => {
     vi.mocked(api.statistikMoney).mockResolvedValue(money())
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     render(<Statistik />)
-    await user.click(await screen.findByRole('button', { name: 'Umsatz anzeigen' }))
+    await openMoney(user)
     const tills = screen.getByRole('img', { name: /^Kasse/ })
     expect(tills).toHaveAccessibleName(expect.stringContaining('Bar'))
     expect(tills).not.toHaveAccessibleName(expect.stringContaining('nicht erfasst'))
@@ -241,7 +275,7 @@ describe('Statistik money', () => {
     vi.mocked(api.statistikMoney).mockImplementation(async (year) => money({ year }))
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     render(<Statistik />)
-    await user.click(await screen.findByRole('button', { name: 'Umsatz anzeigen' }))
+    await openMoney(user)
     await user.click(screen.getByRole('button', { name: 'Vorheriges Jahr' }))
 
     await screen.findByRole('heading', { name: 'Jahresbericht 2025' })

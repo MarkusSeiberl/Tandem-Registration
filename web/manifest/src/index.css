@@ -2877,6 +2877,7 @@ html:has(.save-bar) {
   .sidebar,
   .report-actions,
   .money-toggle,
+  .money-unlock,
   .report-money:not(:has(.money-figures)) {
     display: none !important;
   }
@@ -2922,4 +2923,23 @@ html:has(.save-bar) {
   .guest-cols .column-chart {
     height: 120px;
   }
+}
+
+/* The password barrier in front of the takings, in place of the toggle. */
+.money-unlock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.money-unlock .field input {
+  width: 9em;
+}
+
+.money-unlock-error {
+  flex-basis: 100%;
+  margin: 0;
+  text-align: right;
 }

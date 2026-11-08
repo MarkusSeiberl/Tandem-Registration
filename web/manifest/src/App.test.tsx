@@ -45,6 +45,13 @@ async function renderOnManifest() {
   return result
 }
 
+// The pages behind "Verwaltung": unfolds the group first when it is closed.
+async function adminTab(user: ReturnType<typeof userEvent.setup>, name: string) {
+  const toggle = screen.getByRole('button', { name: 'Verwaltung' })
+  if (toggle.getAttribute('aria-expanded') === 'false') await user.click(toggle)
+  return screen.getByRole('button', { name })
+}
+
 const dateInput = () => screen.getByLabelText('Datum') as HTMLInputElement
 
 const registration = (): api.Registration => ({
@@ -90,7 +97,7 @@ describe('unsaved Einstellungen', () => {
   async function editSettings() {
     const user = userEvent.setup()
     render(<App />)
-    await user.click(screen.getByRole('button', { name: 'Einstellungen' }))
+    await user.click(await adminTab(user, 'Einstellungen'))
     await user.type(await screen.findByLabelText('Ort (für Vertragsunterschrift)'), ' Ost')
     return user
   }
@@ -99,7 +106,7 @@ describe('unsaved Einstellungen', () => {
     const user = await editSettings()
     vi.mocked(window.confirm).mockReturnValue(false)
 
-    await user.click(screen.getByRole('button', { name: 'Crew' }))
+    await user.click(await adminTab(user, 'Crew'))
 
     expect(window.confirm)
       .toHaveBeenCalledWith('Ungespeicherte Änderungen an den Einstellungen verwerfen?')
@@ -113,7 +120,7 @@ describe('unsaved Einstellungen', () => {
     await screen.findByText('Gespeichert.')
     vi.mocked(window.confirm).mockClear()
 
-    await user.click(screen.getByRole('button', { name: 'Crew' }))
+    await user.click(await adminTab(user, 'Crew'))
 
     expect(window.confirm).not.toHaveBeenCalled()
     expect(await screen.findByRole('heading', { name: 'Tandemmaster' })).toBeInTheDocument()
@@ -163,7 +170,7 @@ describe('unsaved Tarife', () => {
   async function editTarife() {
     const user = userEvent.setup()
     render(<App />)
-    await user.click(screen.getByRole('button', { name: 'Tarife' }))
+    await user.click(await adminTab(user, 'Tarife'))
     const jump = await screen.findByLabelText('Tandemsprung')
     await user.clear(jump)
     await user.type(jump, '290')
@@ -174,7 +181,7 @@ describe('unsaved Tarife', () => {
     const user = await editTarife()
     vi.mocked(window.confirm).mockReturnValue(false)
 
-    await user.click(screen.getByRole('button', { name: 'Crew' }))
+    await user.click(await adminTab(user, 'Crew'))
 
     expect(window.confirm).toHaveBeenCalledWith('Ungespeicherte Änderungen an den Tarifen verwerfen?')
     expect((screen.getByLabelText('Tandemsprung') as HTMLInputElement).value).toBe('290')
@@ -184,7 +191,7 @@ describe('unsaved Tarife', () => {
     const user = await editTarife()
     vi.mocked(window.confirm).mockReturnValue(true)
 
-    await user.click(screen.getByRole('button', { name: 'Crew' }))
+    await user.click(await adminTab(user, 'Crew'))
 
     expect(await screen.findByRole('heading', { name: 'Tandemmaster' })).toBeInTheDocument()
   })
@@ -194,10 +201,10 @@ describe('unsaved Tarife', () => {
     vi.mocked(window.confirm).mockClear()
     const user = userEvent.setup()
     render(<App />)
-    await user.click(screen.getByRole('button', { name: 'Tarife' }))
+    await user.click(await adminTab(user, 'Tarife'))
     await screen.findByLabelText('Tandemsprung')
 
-    await user.click(screen.getByRole('button', { name: 'Crew' }))
+    await user.click(await adminTab(user, 'Crew'))
 
     expect(window.confirm).not.toHaveBeenCalled()
     expect(await screen.findByRole('heading', { name: 'Tandemmaster' })).toBeInTheDocument()
@@ -230,10 +237,36 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Übersicht' })).toHaveClass('active')
   })
 
+  it('keeps the admin pages folded under Verwaltung', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const toggle = await screen.findByRole('button', { name: 'Verwaltung' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: 'Tarife' })).toBeNull()
+
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Tarife' })).toBeInTheDocument()
+
+    await user.click(toggle)
+    expect(screen.queryByRole('button', { name: 'Tarife' })).toBeNull()
+  })
+
+  it('folds Verwaltung away again once back at the day', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(await adminTab(user, 'Crew'))
+    expect(screen.getByRole('button', { name: 'Verwaltung' })).toHaveAttribute('aria-expanded', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'Manifest' }))
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Verwaltung' })).toHaveAttribute('aria-expanded', 'false'))
+  })
+
   it('the sidebar opens Statistik', async () => {
     const user = userEvent.setup()
     render(<App />)
-    await user.click(screen.getByRole('button', { name: 'Statistik' }))
+    await user.click(await adminTab(user, 'Statistik'))
     expect(await screen.findByRole('heading', { name: /^Jahresbericht/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Statistik' })).toHaveClass('active')
   })
@@ -278,7 +311,7 @@ describe('App', () => {
     expect(dateInput().value).toBe('2026-07-09')
 
     // The list is unmounted here — which is exactly what used to lose the day.
-    await user.click(screen.getByRole('button', { name: 'Crew' }))
+    await user.click(await adminTab(user, 'Crew'))
     await user.click(screen.getByRole('button', { name: 'Manifest' }))
 
     expect(dateInput().value).toBe('2026-07-09')
@@ -374,8 +407,8 @@ describe('App', () => {
       await renderOnManifest()
       await screen.findByText('Keine Registrierungen für dieses Datum.')
 
-      await user.click(screen.getByRole('button', { name: 'Crew' }))
-      await user.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await user.click(await adminTab(user, 'Crew'))
+      await user.click(await adminTab(user, 'Einstellungen'))
       window.history.back()
 
       // One step back is always enough, however many tabs were visited.
@@ -389,7 +422,7 @@ describe('App', () => {
       const before = window.history.length
 
       for (let round = 0; round < 3; round++) {
-        await user.click(screen.getByRole('button', { name: 'Crew' }))
+        await user.click(await adminTab(user, 'Crew'))
         await user.click(screen.getByRole('button', { name: 'Manifest' }))
         await screen.findByText('Keine Registrierungen für dieses Datum.')
         await vi.waitFor(() => expect(window.history.state).toBeNull())
@@ -448,7 +481,19 @@ describe('App und das Update', () => {
 
   it('shows the sidebar entry once an update is available', async () => {
     render(<App />)
-    expect(await screen.findByRole('button', { name: /Update/ })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Update/, hidden: true })).toBeInTheDocument()
+  })
+
+  // Folded away, the waiting update must still be visible from the sidebar.
+  it('marks Verwaltung while an update waits and the group is closed', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await screen.findByRole('button', { name: /Update/, hidden: true })
+    const toggle = screen.getByRole('button', { name: 'Verwaltung' })
+    expect(toggle.querySelector('.update-dot')).not.toBeNull()
+    await user.click(toggle)
+    expect(toggle.querySelector('.update-dot')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Update' }).querySelector('.update-dot')).not.toBeNull()
   })
 
   // The manifest runs on every tablet in the club WLAN; only the machine the
@@ -457,7 +502,7 @@ describe('App und das Update', () => {
     vi.mocked(api.getUpdateStatus).mockResolvedValue(updateStatus({ allowed: false }))
     render(<App />)
     await screen.findByRole('button', { name: 'Manifest' })
-    expect(screen.queryByRole('button', { name: /Update/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Update/, hidden: true })).toBeNull()
   })
 
   it('says that the update went in after the restart', async () => {
@@ -500,7 +545,7 @@ describe('App und das Update', () => {
       updateStatus({ phase: 'up-to-date', latestVersion: '1.1.0' }),
     )
     render(<App />)
-    await screen.findByRole('button', { name: 'Update' })
+    await screen.findByRole('button', { name: 'Update', hidden: true })
     expect(screen.queryByText(/aktualisiert\./)).toBeNull()
     window.localStorage.removeItem('tandem.updateOutcome')
   })
@@ -542,7 +587,7 @@ describe('App und das Update', () => {
       updateStatus({ phase: 'up-to-date', latestVersion: '1.1.0' }),
     )
     render(<App />)
-    const tab = await screen.findByRole('button', { name: 'Update' })
+    const tab = await screen.findByRole('button', { name: 'Update', hidden: true })
     expect(tab.querySelector('.update-dot')).toBeNull()
   })
 
@@ -581,7 +626,7 @@ describe('App und das Update', () => {
       updateStatus({ phase: 'downloading', promptPending: true, downloadedBytes: 5, totalBytes: 10 }),
     )
     render(<App />)
-    await screen.findByRole('button', { name: /Update/ })
+    await screen.findByRole('button', { name: /Update/, hidden: true })
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
@@ -606,8 +651,9 @@ describe('App und das Update', () => {
   // Progress must not cost one request per percent.
   it('redraws from the pushed status', async () => {
     render(<App />)
-    await screen.findByRole('button', { name: /Update/ })
+    await screen.findByRole('button', { name: /Update/, hidden: true })
     fireUpdateEvent({ ...updateStatus({ phase: 'downloading', downloadedBytes: 5, totalBytes: 10 }) })
+    await userEvent.click(screen.getByRole('button', { name: 'Verwaltung' }))
     await userEvent.click(screen.getByRole('button', { name: /Update/ }))
     expect(await screen.findByRole('progressbar')).toBeInTheDocument()
   })
@@ -626,7 +672,7 @@ describe('App und das Update', () => {
     // must not be downgraded by a frame that claims otherwise.
     it('lässt den Sidebar-Eintrag stehen, auch wenn die Nachricht allowed: false behauptet', async () => {
       render(<App />)
-      expect(await screen.findByRole('button', { name: /Update/ })).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: /Update/, hidden: true })).toBeInTheDocument()
 
       fireUpdateEvent(updateStatus({ allowed: false }))
       // Flush the state update the frame triggers (via act, through
@@ -635,7 +681,7 @@ describe('App und das Update', () => {
       // surviving it.
       await userEvent.click(screen.getByRole('button', { name: 'Manifest' }))
 
-      expect(screen.getByRole('button', { name: /Update/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Update/, hidden: true })).toBeInTheDocument()
     })
 
     it('öffnet den Dialog nicht erneut, auch wenn die Nachricht promptPending: true behauptet', async () => {
@@ -654,9 +700,10 @@ describe('App und das Update', () => {
     // frames are being ignored outright.
     it('übernimmt trotzdem eine gewöhnliche Nachricht ohne die drei clientspezifischen Felder', async () => {
       render(<App />)
-      await screen.findByRole('button', { name: /Update/ })
+      await screen.findByRole('button', { name: /Update/, hidden: true })
 
       fireUpdateEvent(updateStatus({ phase: 'downloading', downloadedBytes: 5, totalBytes: 10 }))
+      await userEvent.click(screen.getByRole('button', { name: 'Verwaltung' }))
       await userEvent.click(screen.getByRole('button', { name: /Update/ }))
 
       expect(await screen.findByRole('progressbar')).toBeInTheDocument()

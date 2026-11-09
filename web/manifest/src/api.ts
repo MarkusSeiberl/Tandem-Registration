@@ -391,6 +391,34 @@ export async function saveDayManager(date: string, name: string): Promise<{ name
   return asJson<{ name: string }>(res)
 }
 
+// The Kassensturz of a day. null is "not counted", which is not the same as 0.
+export interface DayCloseDraft {
+  countedCash: number | null
+  countedCard: number | null
+  note: string
+}
+
+export interface DayCloseState extends DayCloseDraft {
+  /** When this day's Tagesabschluss last went through; null if never. */
+  exportedAt: string | null
+}
+
+export async function dayClose(date: string): Promise<DayCloseState> {
+  const res = await fetch(apiUrl(`/api/day-close/${encodeURIComponent(date)}`))
+  if (!res.ok) throw new Error(await errorMessage(res, 'Kassensturz konnte nicht geladen werden'))
+  return asJson<DayCloseState>(res)
+}
+
+export async function saveDayClose(date: string, draft: DayCloseDraft): Promise<DayCloseState> {
+  const res = await fetch(apiUrl(`/api/day-close/${encodeURIComponent(date)}`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(draft),
+  })
+  if (!res.ok) throw new Error(await errorMessage(res, 'Kassensturz speichern fehlgeschlagen'))
+  return asJson<DayCloseState>(res)
+}
+
 // Copies today's settings onto one day and re-prices its registrations, apart
 // from those carrying a manual correction.
 export async function repriceDay(date: string): Promise<{ updated: number }> {

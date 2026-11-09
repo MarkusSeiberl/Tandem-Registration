@@ -53,6 +53,16 @@ export function openDb(path: string, nativeBinding?: string): Database.Database 
       jump_date TEXT PRIMARY KEY,
       exported_at TEXT NOT NULL
     );
+    -- The Kassensturz of a day: what was counted in the cash box and read off
+    -- the card terminal at closing, and why it differs if it does. NULL means
+    -- the till was not counted, which is not the same as counting 0.
+    CREATE TABLE IF NOT EXISTS day_close (
+      jump_date TEXT PRIMARY KEY,
+      counted_cash REAL,
+      counted_card REAL,
+      note TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS day_tables (
       jump_date TEXT PRIMARY KEY,
       prices TEXT NOT NULL,

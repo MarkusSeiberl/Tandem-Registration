@@ -436,6 +436,7 @@ describe('review fixes', () => {
   // A double-click on Weiter lands its second click on the button that takes
   // Weiter's place; that must not close the day unseen.
   it('ignores the second click of a double-click on Tagesabschluss durchführen', async () => {
+    vi.mocked(api.exportDay).mockImplementation(() => new Promise(() => {}))
     await goToManager()
     fireEvent.click(next())
     const run = await screen.findByRole('button', { name: 'Tagesabschluss durchführen' })

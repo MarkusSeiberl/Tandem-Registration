@@ -150,3 +150,64 @@ test('a row without a note leaves a blank cell', async () => {
   const index = headers.indexOf('Anmerkungen') + 1
   expect(ws.getRow(2).getCell(index).value ?? '').toBe('')
 })
+
+// --- Kassensturz block ---------------------------------------------------
+
+async function cashBlock(cashCount: Parameters<typeof buildWorkbook>[5]) {
+  const totals = [{ label: 'Summe Bar', amount: 1295 }]
+  const payouts = [{ title: 'Vergütung Tandemmaster', entries: [], total: 0 }]
+  const buf = await buildWorkbook([{ first_name: 'A' }], DEFAULT_COLUMNS, [], totals, payouts as any, cashCount)
+  const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf as any)
+  const ws = wb.worksheets[0]
+  const lines: { label: unknown; value: unknown; numFmt: string | undefined; row: number }[] = []
+  ws.eachRow((r, n) => lines.push({ label: r.getCell(1).value, value: r.getCell(2).value, numFmt: r.getCell(2).numFmt, row: n }))
+  const start = lines.findIndex((l) => l.label === 'Kassensturz')
+  return { lines, start }
+}
+
+test('the Kassensturz block lists counted, difference and reason under the totals', async () => {
+  const { lines, start } = await cashBlock({
+    expectedCash: 1295, expectedCard: 548, countedCash: 1300, countedCard: 548,
+    note: 'Trinkgeld in der Kasse',
+  })
+  expect(start).toBeGreaterThan(-1)
+  const block = lines.slice(start, start + 6).map((l) => [l.label, l.value])
+  expect(block).toEqual([
+    ['Kassensturz', null],
+    ['Gezählt Bar', 1300],
+    ['Differenz Bar', 5],
+    ['Gezählt Karte', 548],
+    ['Differenz Karte', 0],
+    ['Begründung', 'Trinkgeld in der Kasse'],
+  ])
+  expect(lines[start + 1].numFmt).toBe(EURO_FORMAT)
+  expect(lines[start + 2].numFmt?.startsWith('+')).toBe(true)
+  // After the totals, before the payouts, with a blank spacer in front.
+  const totalsRow = lines.find((l) => l.label === 'Summe Bar')!.row
+  const payoutRow = lines.find((l) => l.label === 'Vergütung Tandemmaster')!.row
+  expect(lines[start].row).toBe(totalsRow + 2)
+  expect(lines[start].row).toBeLessThan(payoutRow)
+})
+
+test('a till nobody counted says so and gets no difference line', async () => {
+  const { lines, start } = await cashBlock({
+    expectedCash: 1295, expectedCard: 548, countedCash: null, countedCard: 548, note: '',
+  })
+  const labels = lines.slice(start).map((l) => l.label)
+  expect(lines[start + 1].label).toBe('Gezählt Bar')
+  expect(lines[start + 1].value).toBe('nicht gezählt')
+  expect(labels).not.toContain('Differenz Bar')
+  expect(labels).toContain('Differenz Karte')
+})
+
+test('an empty reason writes no Begründung line', async () => {
+  const { lines, start } = await cashBlock({
+    expectedCash: 10, expectedCard: 0, countedCash: 10, countedCard: 0, note: '',
+  })
+  expect(lines.slice(start).map((l) => l.label)).not.toContain('Begründung')
+})
+
+test('without a Kassensturz the sheet has no such block', async () => {
+  const { start } = await cashBlock(undefined)
+  expect(start).toBe(-1)
+})

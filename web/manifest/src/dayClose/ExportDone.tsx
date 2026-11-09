@@ -37,11 +37,12 @@ export default function ExportDone({ date, result, diffs, note, openLeft }: Expo
     )],
   ]
   if (openLeft > 0) {
+    // Fragment, not a wrapping span: the dd's flex gap is what spaces the two.
     lines.push(['Offen geblieben', (
-      <span key="o">
-        {openLeft} {plural(openLeft, 'Tandem', 'Tandems')}
+      <>
+        <span>{openLeft} {plural(openLeft, 'Tandem', 'Tandems')}</span>{' '}
         <span className="dc-sub">wird beim nächsten Export nachgetragen, sobald kassiert</span>
-      </span>
+      </>
     )])
   }
 

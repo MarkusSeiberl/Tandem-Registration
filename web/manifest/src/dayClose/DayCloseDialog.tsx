@@ -248,9 +248,14 @@ export default function DayCloseDialog({
       <header className="dc-head">
         <h2 id="dc-title">Tagesabschluss</h2>
         <span className="dc-date">{formatLongDate(date)}</span>
-        <button type="button" className="dc-x" aria-label="Schließen" disabled={locked} onClick={() => void close()}>
-          <CloseIcon size={20} />
-        </button>
+        {/* Once the day is closed the footer's Schließen is the only way out;
+            a second button of the same name would only make the reader ask
+            which one. */}
+        {!finished && (
+          <button type="button" className="dc-x" aria-label="Schließen" disabled={locked} onClick={() => void close()}>
+            <CloseIcon size={20} />
+          </button>
+        )}
       </header>
       {closedAt && (
         <div className="dc-closed">

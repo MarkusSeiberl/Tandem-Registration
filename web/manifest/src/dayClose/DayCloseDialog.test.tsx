@@ -375,7 +375,10 @@ describe('running the Tagesabschluss', () => {
     expect(screen.getByText('C:\\Export\\Tandem_2026-11-08.xlsx')).toBeInTheDocument()
     expect(screen.getByRole('definition', { name: 'Gutscheinliste' })).toHaveTextContent('3 eingetragen')
     expect(screen.getByRole('definition', { name: 'Gutscheinliste' })).toHaveTextContent('1 noch offen')
-    expect(screen.getByRole('definition', { name: 'Offen geblieben' })).toHaveTextContent('1 Tandem')
+    expect(screen.getByRole('definition', { name: 'Offen geblieben' }))
+      .toHaveTextContent('1 Tandem wird beim nächsten Export nachgetragen, sobald kassiert')
+    // One way out of a finished dialog, not two buttons of the same name.
+    expect(screen.getAllByRole('button', { name: 'Schließen' })).toHaveLength(1)
     expect(screen.queryByRole('button', { name: 'Abbrechen' })).not.toBeInTheDocument()
     const closeButtons = within(screen.getByRole('contentinfo')).getAllByRole('button')
     expect(closeButtons.map((b) => b.textContent)).toEqual(['Schließen'])

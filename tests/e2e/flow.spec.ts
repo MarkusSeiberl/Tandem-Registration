@@ -130,11 +130,10 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   // says why; upgrading to video+photo leaves 20 € that has to land somewhere.
   await voucherService.selectOption('jump_video')
   await expect(voucherTill).toBeDisabled()
-  await expect(page.locator('.voucher-status'))
-    .toHaveText('Gutschein deckt alles ab — nichts zu kassieren.')
+  await expect(page.getByText('Gutschein deckt alles ab — keine Zuzahlung.')).toBeVisible()
   await page.getByLabel('Gebuchte Leistung').selectOption('video_photo')
   await expect(voucherTill).toBeEnabled()
-  await expect(page.locator('.voucher-status')).toHaveText('Noch 20 € offen — bitte Kassa wählen.')
+  await expect(page.getByText('20 € Zuzahlung — Bar oder Karte wählen.')).toBeVisible()
   await expect(page.locator('.price-total .numeral')).toHaveText('20 €')
 
   // Leaving the voucher takes the whole block with it, in one visible step.
@@ -191,17 +190,30 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   await page.getByRole('button', { name: 'Manifest' }).click()
   await expect(paidTable.locator('tr.clickable-row', { hasText: fullName })).toBeVisible()
 
-  // --- Export the day and verify the real xlsx on disk ---
-  // A day without a Betriebsleiter stops Tagesabschluss at a warning panel
-  // instead of exporting, so the day gets one first.
-  await page.getByLabel('Betriebsleiter').fill('Max Muster')
+  // --- Close the day through the guided dialog and verify the real xlsx ---
+  await page.getByRole('button', { name: 'Tagesabschluss' }).click()
+  const closing = page.getByRole('dialog', { name: 'Tagesabschluss' })
+  await expect(closing.getByRole('heading', { name: 'Offene Tandems' })).toBeVisible()
+  await expect(closing.getByText('Alles erledigt')).toBeVisible()
+  await closing.getByRole('button', { name: 'Weiter' }).click()
+
+  // The guest paid 430 € by card; the card terminal says the same.
+  await closing.getByLabel('Gezählt Karte').fill('430')
+  await expect(closing.getByTestId('diff-card')).toContainText('stimmt')
+  await closing.getByRole('button', { name: 'Weiter' }).click()
+
+  await closing.getByLabel('Betriebsleiter').fill('Max Muster')
+  await closing.getByRole('button', { name: 'Weiter' }).click()
+  await expect(closing.getByRole('heading', { name: 'Zusammenfassung' })).toBeVisible()
+
   const [exportResponse] = await Promise.all([
     page.waitForResponse(
       (r) => r.url().includes('/api/export') && r.request().method() === 'POST'
     ),
-    page.getByRole('button', { name: 'Tagesabschluss' }).click(),
+    closing.getByRole('button', { name: 'Tagesabschluss durchführen' }).click(),
   ])
   expect(exportResponse.status()).toBe(200)
+  await expect(closing.getByRole('heading', { name: 'Tag abgeschlossen' })).toBeVisible()
   const exportJson = (await exportResponse.json()) as { path: string; count: number }
   expect(exportJson.count).toBeGreaterThan(0)
 
@@ -243,6 +255,15 @@ test('guest registration flows through to manifest and xlsx export', async ({ pa
   expect(totals.get('Summe Karte')).toBe(430)
   expect(totals.get('Summe ohne Zahlungsart')).toBe(0)
   expect(totals.get('Gesamt')).toBe(430)
+
+  // The Kassensturz typed into the dialog, under the totals: cash not
+  // counted, the card terminal matching to the cent.
+  const cashLines = new Map<unknown, unknown>()
+  ws.eachRow((r) => cashLines.set(r.getCell(1).value, r.getCell(2).value))
+  expect(cashLines.has('Kassensturz')).toBe(true)
+  expect(cashLines.get('Gezählt Bar')).toBe('nicht gezählt')
+  expect(cashLines.get('Gezählt Karte')).toBe(430)
+  expect(cashLines.get('Differenz Karte')).toBe(0)
 
   // What the club owes its crew, with the arithmetic beside each amount. Nobody
   // was assigned to this jump, so both lines are the "ohne …" reminders — the

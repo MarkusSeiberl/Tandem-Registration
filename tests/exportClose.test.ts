@@ -197,3 +197,17 @@ test('a failed export releases the lock too', async () => {
   await app.close()
   await app2.close()
 })
+
+// An open tandem can already name its till (Zahlungsart saved on the detail
+// screen before Kassieren). That money is not in the till yet, so the count is
+// held against collected money only — what the dialog and the toolbar show.
+test('an open tandem that already names its till is not expected in the till', async () => {
+  const { app, db, dir } = await setup()
+  db.prepare(`INSERT INTO registrations (first_name,last_name,price,payment_method,created_at,jump_date)
+    VALUES ('C','Offen',230,'cash','2026-07-09T10:00:00Z',?)`).run(DATE)
+  count(db, 1300, 548, '')
+  expect((await post(app)).statusCode).toBe(200)
+  const lines = await sheetLines(dir)
+  expect(lines).toContainEqual(['Differenz Bar', 0])
+  await app.close()
+})

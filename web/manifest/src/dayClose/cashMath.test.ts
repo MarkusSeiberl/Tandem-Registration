@@ -34,6 +34,7 @@ describe('expectedTills', () => {
       makeRow({ id: 3, price: 48, paid_at: PAID, payment_method: 'voucher', voucher_payment_method: 'card' }),
       makeRow({ id: 4, price: 259 }), // open: not in any till yet
       makeRow({ id: 5, price: 100, paid_at: PAID }), // collected, no till
+      makeRow({ id: 6, price: 230, payment_method: 'cash' }), // open, till named early: not in the box yet
     ]
     expect(expectedTills(rows)).toEqual({ cash: 1295, card: 548 })
   })

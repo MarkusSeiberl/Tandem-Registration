@@ -82,9 +82,15 @@ export function registerExportRoutes(
     ]
 
     const counted = readDayClose(db, date)
+    // What the tills should hold is collected money only. "Summe Bar" above
+    // also counts an open row that already names its till; that money is not
+    // in the box yet, and the closing dialog (dayClose/cashMath.ts) and the
+    // toolbar totals leave it out too, so the count is held against the same.
+    const collectedSum = (via: 'cash' | 'card') =>
+      Math.round(sum(r => r.paid_at != null && collectedVia(r) === via) * 100) / 100
     const cashCount: CashCount = {
-      expectedCash: totals[0].amount,
-      expectedCard: totals[1].amount,
+      expectedCash: collectedSum('cash'),
+      expectedCard: collectedSum('card'),
       countedCash: counted.countedCash,
       countedCard: counted.countedCard,
       note: counted.note,

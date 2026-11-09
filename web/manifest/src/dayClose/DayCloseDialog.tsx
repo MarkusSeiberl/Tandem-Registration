@@ -158,8 +158,27 @@ export default function DayCloseDialog({
   }
 
   async function close() {
-    if (result === null) await saveDraft(false)
+    if (result === null) {
+      await saveDraft(false)
+      // A name typed on step 3 lives in List's state only until it is saved;
+      // the toolbar field's blur never fires for it. Writes nothing when the
+      // name is unchanged; a failure shows in the list and does not keep the
+      // dialog open.
+      await saveManager()
+    }
     onClose()
+  }
+
+  // Chromium lets a second Esc close a <dialog> natively even though its
+  // cancel event was refused. While a run is under way that would hide the
+  // only view of it, so the dialog puts itself back; otherwise the browser's
+  // close is taken as Abbrechen.
+  function handleNativeClose() {
+    if (locked) {
+      ref.current?.showModal()
+      return
+    }
+    void close()
   }
 
   function handleCancel(event: SyntheticEvent<HTMLDialogElement>) {
@@ -244,7 +263,7 @@ export default function DayCloseDialog({
     (step === 'manager' && managerMissing)
 
   return (
-    <dialog ref={ref} className="dc" aria-labelledby="dc-title" onCancel={handleCancel}>
+    <dialog ref={ref} className="dc" aria-labelledby="dc-title" onCancel={handleCancel} onClose={handleNativeClose}>
       <header className="dc-head">
         <h2 id="dc-title">Tagesabschluss</h2>
         <span className="dc-date">{formatLongDate(date)}</span>
@@ -352,7 +371,14 @@ export default function DayCloseDialog({
                   Weiter
                 </button>
               ) : (
-                <button type="button" className="btn primary" disabled={locked} onClick={() => void runExport()}>
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={locked}
+                  // The second click of a double-click on Weiter lands here,
+                  // where Weiter stood; closing the day takes a click of its own.
+                  onClick={(e) => { if (e.detail <= 1) void runExport() }}
+                >
                   {running ? 'Wird abgeschlossen …' : exportError !== null ? 'Erneut versuchen' : 'Tagesabschluss durchführen'}
                 </button>
               )}

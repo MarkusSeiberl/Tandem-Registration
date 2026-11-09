@@ -416,3 +416,54 @@ describe('running the Tagesabschluss', () => {
     expect(await screen.findByText(/Tagesabschluss läuft bereits \(anderer Rechner\)/)).toBeInTheDocument()
   })
 })
+
+describe('review fixes', () => {
+  async function goToManager(props: Partial<Props> = {}) {
+    const utils = renderDialog(props)
+    const user = await goToCash()
+    await user.click(next())
+    await screen.findByRole('heading', { name: 'Betriebsleiter' })
+    return { ...utils, user }
+  }
+
+  // A double-click on Weiter lands its second click on the button that takes
+  // Weiter's place; that must not close the day unseen.
+  it('ignores the second click of a double-click on Tagesabschluss durchführen', async () => {
+    await goToManager()
+    fireEvent.click(next())
+    const run = await screen.findByRole('button', { name: 'Tagesabschluss durchführen' })
+    fireEvent.click(run, { detail: 2 })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(api.exportDay).not.toHaveBeenCalled()
+    fireEvent.click(run, { detail: 1 })
+    await waitFor(() => expect(api.exportDay).toHaveBeenCalledTimes(1))
+  })
+
+  // Chromium lets a second Esc close a <dialog> although cancel was refused.
+  it('reopens itself if the browser closes it while the export runs', async () => {
+    vi.mocked(api.exportDay).mockImplementation(() => new Promise(() => {}))
+    const { props, user } = await goToManager()
+    await user.click(next())
+    await user.click(await screen.findByRole('button', { name: 'Tagesabschluss durchführen' }))
+    await screen.findByRole('heading', { name: 'Tagesabschluss läuft' })
+    const showModal = vi.spyOn(HTMLDialogElement.prototype, 'showModal')
+    fireEvent(dialog(), new Event('close'))
+    expect(showModal).toHaveBeenCalled()
+    expect(props.onClose).not.toHaveBeenCalled()
+    showModal.mockRestore()
+  })
+
+  it('a browser close outside a run closes like Abbrechen', async () => {
+    const { props } = renderDialog()
+    fireEvent(dialog(), new Event('close'))
+    await waitFor(() => expect(props.onClose).toHaveBeenCalled())
+  })
+
+  it('Abbrechen keeps a Betriebsleiter typed in the dialog', async () => {
+    const saveManager = vi.fn(async () => true)
+    const { props, user } = await goToManager({ manager: 'Neu Name', saveManager })
+    await user.click(screen.getByRole('button', { name: 'Abbrechen' }))
+    await waitFor(() => expect(props.onClose).toHaveBeenCalled())
+    expect(saveManager).toHaveBeenCalled()
+  })
+})

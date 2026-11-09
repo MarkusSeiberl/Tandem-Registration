@@ -574,7 +574,7 @@ h2 {
 
 /* Opaque on purpose — it is sticky, and rows scroll underneath it. The ember
    frame is what "there is something here to press" looks like elsewhere on this
-   screen (.day-outdated, .export-warning) and the colour the open total already
+   screen (.day-outdated) and the colour the open total already
    carries, so the bar reads as part of that language instead of a new one. */
 .selection-bar-active {
   position: sticky;
@@ -1137,93 +1137,9 @@ col.col-action { width: 140px; }
   line-height: 1.45;
 }
 
-/* Raised by Tagesabschluss when the day is not ready to be written. A checklist,
-   not an alarm: the same ember frame as .day-outdated, which is what "there is
-   something here for you to press" looks like on this screen, around the plain
-   panel surface. A tinted wash read as an error. The buttons sit on their own
-   row because one of them changes every open tandem on the list. */
-.export-warning {
-  margin-bottom: 12px;
-  padding: 14px 16px;
-  border: 1px solid var(--ember);
-  border-radius: 8px;
-  background: var(--panel-bg);
-}
-
-.export-warning h2 {
-  margin: 0 0 8px;
-  font-size: 16px;
-}
-
-.export-checklist {
-  list-style: none;
-  margin: 0 0 10px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* An ember dot per open point, the same mark the voucher pill uses for "look
-   here"; the text stays body ink so it holds up in sunlight. */
-.export-checklist li {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.export-checklist li::before {
-  content: '';
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ember);
-}
-
-/* The fix stands right after its sentence, not at the far edge of the panel. */
-.export-checklist li > span {
-  flex: 0 1 auto;
-  min-width: 240px;
-}
-
-.export-why {
-  margin: 0 0 12px;
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.export-why summary {
-  cursor: pointer;
-  width: fit-content;
-  color: var(--text-h);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.export-why p {
-  margin: 6px 0 0;
-  max-width: 72ch;
-}
-
-.export-warning-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-/* The toolbar's Betriebsleiter field while the panel says it is missing: the
-   line's "Eintragen" sends the cursor here, and the edge shows where. */
-.manager-field.needs-entry input {
-  border-color: var(--warn-text);
-}
-
 /* Kassieren dialog: one payment method applied to every selected tandem at
-   once (Task 1-3). Panel tone matches .export-warning so it reads as the same
-   collect flow, not a foreign browser control. */
+   once (Task 1-3). Plain panel tone, so it reads as part of the collect flow,
+   not a foreign browser control. */
 .collect-dialog {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1292,8 +1208,7 @@ col.col-action { width: 140px; }
   background: rgba(11, 18, 32, 0.5);
 }
 
-/* Same size as .export-warning p: both are the small print under a dialog
-   heading, not body copy. */
+/* Small print under a dialog heading, not body copy. */
 .collect-dialog p {
   font-size: 13px;
   line-height: 1.45;

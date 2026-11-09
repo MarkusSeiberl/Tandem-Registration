@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  dayManager, dayTables, exportDay, list, masters as fetchMasters, patch, pendingRedemptions,
+  dayManager, dayTables, list, masters as fetchMasters, patch, pendingRedemptions,
   remove, repriceDay, saveDayManager,
 } from './api'
 import type { CollectedVia, DayTables, ManifestPatch, Registration } from './api'
@@ -10,6 +10,7 @@ import { collectedVia, formatEuro } from './pricing'
 import { today } from './date'
 import { voucherWarningText } from './voucher'
 import CollectDialog from './CollectDialog'
+import DayCloseDialog from './dayClose/DayCloseDialog'
 import SelectionBar from './SelectionBar'
 
 export interface ListProps {
@@ -190,127 +191,14 @@ function RegistrationTable({
   )
 }
 
-/**
- * What one press of Tagesabschluss found wrong with the day. Counted at the moment
- * of the press and held, so the panel keeps saying what the operator was asked
- * about even if another tablet adds a row while it stands.
- */
-interface ExportWarning {
-  open: number
-  openVoucher: number
-  noPayment: number
-  /**
-   * Of `open`, how many are also in `noPayment` — a fresh registration has
-   * neither a Zahlungsart nor a paid_at, so for most of the day these are the
-   * same tandems. Kept separate so the two counts can be reconciled into one
-   * honest sentence instead of reading as twice the problem.
-   */
-  noPaymentOpen: number
-}
-
-/**
- * The panel's checklist: what the day still has open, one line per group of
- * tandems. A follow-up that only makes sense after its line ("1 davon …")
- * stays on that line.
- */
-function warningCounts(w: ExportWarning): string[] {
-  const parts: string[] = []
-  // Rows without a Zahlungsart that are not among the open ones — the ones an
-  // "open" sentence cannot already be covering.
-  const collectedNoPayment = w.noPayment - w.noPaymentOpen
-
-  if (w.open > 0) {
-    const openSubject = w.open === 1 ? '1 Tandem' : `${w.open} Tandems`
-    const openVerb = w.open === 1 ? 'ist' : 'sind'
-    const voucher = w.openVoucher === 0
-      ? ''
-      : w.openVoucher === 1
-        ? ', davon 1 mit Gutschein'
-        : `, davon ${w.openVoucher} mit Gutschein`
-
-    if (w.noPaymentOpen === w.open) {
-      // Every open tandem is also a no-Zahlungsart tandem — the ordinary
-      // mid-day state. One sentence for one set of rows, or the reader counts
-      // each of them twice. The voucher clause goes last: put right after
-      // "kassiert", it reads as if "und haben" continues "davon N mit
-      // Gutschein" rather than the open subject.
-      const haveVerb = w.open === 1 ? 'hat' : 'haben'
-      parts.push(`${openSubject} ${openVerb} noch nicht kassiert und ${haveVerb} noch keine Zahlungsart${voucher}.`)
-    } else {
-      const openLine = `${openSubject} ${openVerb} noch nicht kassiert${voucher}.`
-      parts.push(w.noPaymentOpen === 0
-        ? openLine
-        : w.noPaymentOpen === 1
-          ? `${openLine} 1 davon hat auch keine Zahlungsart.`
-          : `${openLine} ${w.noPaymentOpen} davon haben auch keine Zahlungsart.`)
-    }
-  }
-
-  if (collectedNoPayment > 0) {
-    // Once an open sentence has already claimed a number, a bare "N Tandems"
-    // here would read as yet another group — so it is named as what it is
-    // once there is something else on the page to confuse it with.
-    if (w.open > 0) {
-      parts.push(collectedNoPayment === 1
-        ? '1 bereits kassiertes Tandem hat außerdem keine Zahlungsart.'
-        : `${collectedNoPayment} bereits kassierte Tandems haben außerdem keine Zahlungsart.`)
-    } else {
-      parts.push(collectedNoPayment === 1
-        ? '1 Tandem hat keine Zahlungsart.'
-        : `${collectedNoPayment} Tandems haben keine Zahlungsart.`)
-    }
-  }
-  return parts
-}
-
-/**
- * Why those counts matter, in terms of the two files the export writes. The
- * "nachgetragen" promise only holds once a row is collected: collecting is
- * what stamps voucher_redeemed_at, and the export's redemption sweep only ever
- * picks up rows that carry it. An open row that stays open is not queued for
- * anything, however many exports run in the meantime.
- */
-function warningExplanation(w: ExportWarning): string {
-  const parts: string[] = []
-  if (w.open > 0) {
-    parts.push('Nur kassierte Tandems mit Gutschein werden in die Gutscheinliste ' +
-      'eingetragen. Offene bleiben stehen; sobald sie kassiert sind, trägt sie der ' +
-      'nächste Export nach.')
-  }
-  if (w.noPayment > 0) {
-    parts.push('Tandems ohne Zahlungsart zählt der Export unter „Summe ohne Zahlungsart“.')
-  }
-  return parts.join(' ')
-}
-
-/**
- * The same counts as ExportWarning, taken from a plain row array instead of
- * component state — so a re-check that already has its own snapshot (a
- * bulk-collect loop's `freshRows`) can describe exactly that snapshot without
- * waiting for it to land back in `rows`.
- */
-function computeExportWarning(source: Registration[]): ExportWarning {
-  const open = source.filter((r) => r.paid_at == null)
-  const noPayment = source.filter((r) => collectedVia(r) === null && (r.price ?? 0) > 0)
-  return {
-    open: open.length,
-    openVoucher: open.filter((r) => r.payment_method === 'voucher').length,
-    noPayment: noPayment.length,
-    noPaymentOpen: noPayment.filter((r) => r.paid_at == null).length,
-  }
-}
-
 export default function List({ onSelect, date, onDateChange }: ListProps) {
   const [rows, setRows] = useState<Registration[]>([])
   const [masterNames, setMasterNames] = useState<Map<number, string>>(new Map())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [exportMessage, setExportMessage] = useState<string | null>(null)
-  const [exporting, setExporting] = useState(false)
-  // Set by Tagesabschluss when the day is not ready to be written; null while there
-  // is nothing to ask about.
-  const [exportWarning, setExportWarning] = useState<ExportWarning | null>(null)
   const [collecting, setCollecting] = useState(false)
+  // The Tagesabschluss dialog stands over the list while this is true.
+  const [closingOpen, setClosingOpen] = useState(false)
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
   // What the open dialog is about to collect: the checked rows ('selection'),
   // or the single row whose Kassieren button was pressed (its id). null while
@@ -363,11 +251,8 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
 
   // Cleared when the day changes so the banner cannot describe the day before;
   // refetched after every refresh so it reflects a reprice straight away. The
-  // export warning goes the same way: its counts were taken on the day being
-  // left, and standing over another day's list they would simply be wrong.
   useEffect(() => {
     setDay(null)
-    setExportWarning(null)
   }, [date])
 
   useEffect(() => {
@@ -448,14 +333,6 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     }
   }
 
-  // Whether the day currently has nobody named as Betriebsleiter. Read fresh on
-  // every render, so the panel's checklist line and the export button's label
-  // agree with whatever stands in the field right now.
-  const noManager = manager.trim() === ''
-  // The one Betriebsleiter field. The Tagesabschluss panel sends the cursor
-  // here rather than drawing a second copy of the same input.
-  const managerInput = useRef<HTMLInputElement>(null)
-
   const sortedRows = [...rows].sort((a, b) => (b.load_number ?? -1) - (a.load_number ?? -1))
   // Payment happens after the jump, so the open table is the working list and
   // the collected one is the archive of the day.
@@ -474,20 +351,6 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     ? selectedOpenRows
     : openRows.filter((r) => r.id === collectTarget)
   const collectSkippedCount = collectTarget === 'selection' ? selectedPaidCount : 0
-  // A voucher row reaches the club's Gutscheinliste only once it is collected —
-  // collecting is what stamps voucher_redeemed_at (see routes/registrations.ts),
-  // and the export sweep writes exactly the rows that carry it. So an open one
-  // misses the list without saying a word.
-  const openVoucherRows = openRows.filter((r) => r.payment_method === 'voucher')
-  // The predicate the export's "Summe ohne Zahlungsart" line uses, so the
-  // warning and the sheet cannot disagree — collected rows included, because a
-  // collected row without a method is exactly what that line flags. The price
-  // guard is there because a fully covered voucher moves no money and needs no
-  // method: it adds 0 € to that line, so counting it here would send the
-  // operator hunting for a field that has to stay empty.
-  const noPaymentRows = rows.filter((r) => collectedVia(r) === null && (r.price ?? 0) > 0)
-  // The overlap between openRows and noPaymentRows — see ExportWarning.noPaymentOpen.
-  const noPaymentOpenRows = noPaymentRows.filter((r) => r.paid_at == null)
   const sumOf = (items: Registration[]) => items.reduce((sum, r) => sum + (r.price ?? 0), 0)
   const paidVia = (via: 'cash' | 'card') =>
     sumOf(paidRows.filter((r) => collectedVia(r) === via))
@@ -524,6 +387,24 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
   }
 
   /**
+   * One tandem settled from the Tagesabschluss dialog: an open row is
+   * collected, a collected row without a till gets one. The till is written by
+   * the same rule as runCollect(): only where money is owed, and for a voucher
+   * row as the top-up's till. Throws, so the dialog can keep the row with its
+   * message.
+   */
+  async function settleRow(row: Registration, method: CollectedVia | null): Promise<void> {
+    const fields: ManifestPatch = {}
+    if (row.paid_at == null) fields.paid = true
+    if (method !== null && (row.price ?? 0) > 0) {
+      if (row.payment_method === 'voucher') fields.voucher_payment_method = method
+      else fields.payment_method = method
+    }
+    const updated = await patch(row.id, fields)
+    setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+  }
+
+  /**
    * Writes the field if it has been changed. Answers whether the day's name is
    * now safe on the server, so the export can refuse to write a sheet whose
    * Betriebsleiter line would be out of date.
@@ -539,37 +420,6 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Betriebsleiter speichern fehlgeschlagen')
       return false
-    }
-  }
-
-  async function runExport() {
-    setExportWarning(null)
-    setExportMessage(null)
-    // Clicking the button blurs the field, but the blur save is only started —
-    // the sheet has to carry what stands in the field, not the name from before
-    // the last keystroke. A failed save stops the export rather than writing a
-    // sheet with the wrong Betriebsleiter on it.
-    if (!(await saveManager())) return
-    setExporting(true)
-    try {
-      const result = await exportDay(date)
-      const parts = [`Export erstellt: ${result.path} (${result.count} Einträge)`]
-      if (result.redemptionsWritten > 0) {
-        parts.push(result.redemptionsWritten === 1
-          ? '1 Einlösung eingetragen'
-          : `${result.redemptionsWritten} Einlösungen eingetragen`)
-      }
-      if (result.redemptionsPending > 0) {
-        parts.push(`${result.redemptionsPending} noch offen`)
-      }
-      if (result.redemptionsInvalid > 0) {
-        parts.push(`${result.redemptionsInvalid} ungültig, nicht eingetragen`)
-      }
-      setExportMessage(parts.join(' · '))
-    } catch (err) {
-      setExportMessage(err instanceof Error ? err.message : 'Export fehlgeschlagen')
-    } finally {
-      setExporting(false)
     }
   }
 
@@ -678,72 +528,6 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
     clearCollected(target)
   }
 
-  // Collects every still-open row through the row button's own PATCH, then
-  // exports. Sequential on purpose: the rows are few, and a failure has to stop
-  // the run rather than leave the rest in flight. Each patch is folded into
-  // `rows` with the same functional setRows(prev => ...) handleSetPaid uses,
-  // so a refresh() landing mid-loop cannot be clobbered by the next iteration.
-  // `freshRows` stays a separate local snapshot for the re-check below (and for
-  // the failure path) to read — a local snapshot cannot be raced by a late
-  // refresh() the way reading back from `rows` could.
-  async function handleCollectAllAndExport() {
-    setCollecting(true)
-    setError(null)
-    setExportMessage(null)
-    let freshRows = rows
-    try {
-      for (const row of openRows) {
-        const updated = await patch(row.id, { paid: true })
-        freshRows = freshRows.map((r) => (r.id === updated.id ? updated : r))
-        setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
-      }
-    } catch (err) {
-      // A half-collected day must not reach the club's sheet — it would look
-      // finished while some of the money is still shown as outstanding.
-      // Reported through exportMessage rather than error: the rows collected
-      // before the failure have already broadcast, and an SSE-triggered
-      // refresh() clears error, which would erase this without a trace.
-      setExportMessage(err instanceof Error ? err.message : 'Kassieren fehlgeschlagen')
-      // The panel below is still open (it is what "Alle kassieren und
-      // exportieren" hangs off) and must describe what the table now shows,
-      // not the pre-collect count the operator originally pressed on.
-      setExportWarning(computeExportWarning(freshRows))
-      return
-    } finally {
-      setCollecting(false)
-    }
-    // The bulk PATCH only stamps paid_at, never a Zahlungsart — so the second
-    // problem the panel warned about can still stand after "collect all". Ask
-    // again rather than writing a sheet with the day's revenue parked under
-    // "Summe ohne Zahlungsart". The Betriebsleiter is deliberately left out of
-    // this re-check: collecting rows cannot have changed it, and the operator
-    // already saw the name warning and the field before pressing this button —
-    // going ahead without a name here is exactly the override the design grants.
-    const afterCollect = computeExportWarning(freshRows)
-    if (afterCollect.noPayment > 0) {
-      setExportWarning(afterCollect)
-      return
-    }
-    await runExport()
-  }
-
-  // Nothing is written until the operator has seen what the day is missing.
-  // That includes the Betriebsleiter save inside runExport: a press that ends in
-  // Abbrechen must leave the day exactly as it was.
-  function handleExport() {
-    if (openRows.length === 0 && noPaymentRows.length === 0 && !noManager) {
-      void runExport()
-      return
-    }
-    setExportMessage(null)
-    setExportWarning({
-      open: openRows.length,
-      openVoucher: openVoucherRows.length,
-      noPayment: noPaymentRows.length,
-      noPaymentOpen: noPaymentOpenRows.length,
-    })
-  }
-
   async function handleDelete() {
     if (checkedIds.size === 0) return
     const confirmed = window.confirm(
@@ -765,17 +549,6 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
       setDeleting(false)
     }
   }
-
-  // Evaluated once so the JSX below can use the exact same value both to
-  // decide whether to render something and to fill it in — the condition and
-  // the text it guards have to be one value, not two separate calls to
-  // warningCounts() / warningExplanation() that happen to agree.
-  const warningLines = exportWarning ? warningCounts(exportWarning) : []
-  const warningExplanationText = exportWarning ? warningExplanation(exportWarning) : ''
-  // Exporting skips something as long as anything the panel lists is still
-  // true — a missing name, or a line about open tandems or a missing
-  // Zahlungsart. Only once both are gone does the press stop being an override.
-  const exportOverrides = noManager || warningLines.length > 0
 
   return (
     <div className="list-screen">
@@ -828,12 +601,9 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         </button>
         {/* Beside the date, because it is the same kind of fact: what this day
             was. The export writes it into the Betriebsleiter (BL) line. */}
-        <label
-          className={exportWarning && noManager ? 'manager-field needs-entry' : 'manager-field'}
-        >
+        <label className="manager-field">
           Betriebsleiter
           <input
-            ref={managerInput}
             type="text"
             value={manager}
             onChange={(e) => setManager(e.target.value)}
@@ -845,10 +615,10 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         <button
           type="button"
           className="btn primary"
-          onClick={handleExport}
-          disabled={collecting || exporting}
+          onClick={() => setClosingOpen(true)}
+          disabled={collecting}
         >
-          {exporting ? 'Tagesabschluss…' : 'Tagesabschluss'}
+          Tagesabschluss
         </button>
         {/* Kassieren and the delete action used to stand here. They act on the
             checked rows, not on the day, and in a row of identical grey buttons
@@ -874,72 +644,6 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         </div>
       </div>
 
-      {exportWarning && (
-        <section className="export-warning" aria-labelledby="export-warning-title">
-          <h2 id="export-warning-title">Vor dem Tagesabschluss</h2>
-          {/* One line per thing the day is missing, each with the way to fix
-              it where there is one. The lines read live state, so a fix made
-              while the panel stands takes its line away. */}
-          <ul className="export-checklist">
-            {noManager && (
-              <li>
-                <span>Kein Betriebsleiter eingetragen. Die BL-Zeile im Blatt bliebe leer.</span>
-                <button
-                  type="button"
-                  className="btn secondary small"
-                  onClick={() => managerInput.current?.focus()}
-                  aria-label="Betriebsleiter eintragen"
-                >
-                  Eintragen
-                </button>
-              </li>
-            )}
-            {warningLines.map((line) => <li key={line}><span>{line}</span></li>)}
-          </ul>
-          {/* What the counts mean for the two files the export writes. Needed
-              once, not on every closing, so it waits behind a question. */}
-          {warningExplanationText && (
-            <details className="export-why">
-              <summary>Warum?</summary>
-              <p>{warningExplanationText}</p>
-            </details>
-          )}
-          <div className="export-warning-actions">
-            {/* Only when there is something to collect — a button that would do
-                nothing promises an action the day does not have. It settles
-                the panel's first line rather than skipping it, so it leads. */}
-            {exportWarning.open > 0 && (
-              <button
-                type="button"
-                className="btn primary"
-                onClick={() => { void handleCollectAllAndExport() }}
-                disabled={collecting || exporting}
-              >
-                {collecting ? 'Wird kassiert…' : 'Alle kassieren und exportieren'}
-              </button>
-            )}
-            {/* Filled only once it is no longer an override: an emphasised
-                "Trotzdem" would invite the very skip the panel warns about. */}
-            <button
-              type="button"
-              className={exportOverrides ? 'btn secondary' : 'btn primary'}
-              onClick={() => { void runExport() }}
-              disabled={collecting || exporting}
-            >
-              {exportOverrides ? 'Trotzdem exportieren' : 'Exportieren'}
-            </button>
-            <button
-              type="button"
-              className="btn secondary"
-              onClick={() => setExportWarning(null)}
-              disabled={collecting || exporting}
-            >
-              Abbrechen
-            </button>
-          </div>
-        </section>
-      )}
-
       {collectTarget !== null && (
         <CollectDialog
           rows={collectRows}
@@ -951,7 +655,19 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
         />
       )}
 
-      {exportMessage && <p className="hint">{exportMessage}</p>}
+      {closingOpen && (
+        <DayCloseDialog
+          date={date}
+          rows={rows}
+          masterNames={masterNames}
+          manager={manager}
+          onManagerChange={setManager}
+          saveManager={saveManager}
+          settleRow={settleRow}
+          onClose={() => { setClosingOpen(false); refresh() }}
+        />
+      )}
+
       {error && <p className="error">{error}</p>}
       {loading && rows.length === 0 && <p>Lädt…</p>}
 
@@ -965,7 +681,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
           <SelectionBar
             selectedCount={checkedIds.size}
             openCount={selectedOpenRows.length}
-            busy={collecting || exporting || deleting}
+            busy={collecting || deleting}
             onCollect={() => startCollect('selection')}
             onDelete={() => { void handleDelete() }}
             onClear={handleClearSelection}
@@ -981,7 +697,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
             onCollect={(row) => startCollect(row.id)}
             onSetPaid={handleSetPaid}
             pendingId={pendingId}
-            busy={collecting || exporting || deleting}
+            busy={collecting || deleting}
             variant="open"
           />
           <RegistrationTable
@@ -998,7 +714,7 @@ export default function List({ onSelect, date, onDateChange }: ListProps) {
             onCollect={(row) => startCollect(row.id)}
             onSetPaid={handleSetPaid}
             pendingId={pendingId}
-            busy={collecting || exporting || deleting}
+            busy={collecting || deleting}
             variant="paid"
           />
         </>

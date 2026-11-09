@@ -19,6 +19,8 @@ vi.mock('./api', () => ({
   repriceDay: vi.fn(),
   dayManager: vi.fn(),
   saveDayManager: vi.fn(),
+  dayClose: vi.fn(),
+  saveDayClose: vi.fn(),
 }))
 
 // The day is a prop now — App owns it, so it outlives a trip to another tab.
@@ -153,49 +155,6 @@ describe('List', () => {
       await user.tab()
 
       expect(api.saveDayManager).not.toHaveBeenCalled()
-    })
-
-    // Clicking Tagesabschluss blurs the field, and the sheet has to carry what is
-    // standing in it — not the name from before the last keystroke.
-    it('writes a pending name before the export runs', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([])
-      const calls: string[] = []
-      vi.mocked(api.saveDayManager).mockImplementation(async () => {
-        calls.push('save')
-        return { name: 'Max Muster' }
-      })
-      vi.mocked(api.exportDay).mockImplementation(async () => {
-        calls.push('export')
-        return {
-          path: 'C:/export/Tandem_2026-07-09.xlsx', count: 0,
-          redemptionsWritten: 0, redemptionsPending: 0, redemptionsInvalid: 0,
-        }
-      })
-      renderList({ date: '2026-07-09' })
-      await waitFor(() => expect(field()).toHaveValue(''))
-
-      await user.type(field(), 'Max Muster')
-      await user.click(screen.getByRole('button', { name: 'Tagesabschluss' }))
-
-      await screen.findByText(/Export erstellt/)
-      expect(calls).toEqual(['save', 'export'])
-    })
-
-    // A sheet whose Betriebsleiter line is out of date is worse than no sheet:
-    // it looks finished and names the wrong person.
-    it('does not export when the name could not be saved', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([])
-      vi.mocked(api.saveDayManager).mockRejectedValue(new Error('Betriebsleiter speichern fehlgeschlagen'))
-      renderList({ date: '2026-07-09' })
-      await waitFor(() => expect(field()).toHaveValue(''))
-
-      await user.type(field(), 'Max Muster')
-      await user.click(screen.getByRole('button', { name: 'Tagesabschluss' }))
-
-      expect(await screen.findByText('Betriebsleiter speichern fehlgeschlagen')).toBeInTheDocument()
-      expect(api.exportDay).not.toHaveBeenCalled()
     })
 
     it('reports a failed save instead of dropping it silently', async () => {
@@ -468,25 +427,6 @@ describe('List', () => {
     expect(screen.getByRole('button', { name: 'Heute' })).toBeDisabled()
   })
 
-  it('counts a single written redemption in the singular', async () => {
-    const user = userEvent.setup()
-    // A clean day with nobody named as Betriebsleiter would open the warning
-    // panel instead — not what this test is checking.
-    vi.mocked(api.dayManager).mockResolvedValue({ name: 'Max Muster' })
-    vi.mocked(api.list).mockResolvedValue([])
-    vi.mocked(api.exportDay).mockResolvedValue({
-      path: 'C:/export/Tandem_2026-07-09.xlsx', count: 1,
-      redemptionsWritten: 1, redemptionsPending: 0, redemptionsInvalid: 0,
-    })
-    renderList()
-    await screen.findByText('Keine Registrierungen für dieses Datum.')
-
-    await user.click(screen.getByRole('button', { name: 'Tagesabschluss' }))
-
-    expect(await screen.findByText(/1 Einlösung eingetragen/)).toBeInTheDocument()
-    expect(screen.queryByText(/1 Einlösungen/)).not.toBeInTheDocument()
-  })
-
   it('says beside Kassiert how many of the day\'s vouchers the club list is missing', async () => {
     vi.mocked(api.list).mockResolvedValue([makeRow({ paid_at: '2026-07-09T10:00:00.000Z' })])
     vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 2 })
@@ -574,581 +514,143 @@ describe('List', () => {
     })
   })
 
-  // Two things about a day can make an export misleading, and neither is
-  // visible from the button: a tandem that is not collected never reaches the
-  // club's Gutscheinliste, and one without a Zahlungsart lands in the sheet's
-  // "Summe ohne Zahlungsart" line. The panel says so before the sheet is
-  // written.
-  describe('Export-Warnung', () => {
-    const exportButton = () => screen.getByRole('button', { name: 'Tagesabschluss' })
-    // Scoped queries keep the panel and the toolbar apart where both carry
-    // similar text, without adding a test-only hook to the markup.
-    const panel = () => document.querySelector('.export-warning') as HTMLElement
-    const toolbar = () => document.querySelector('.list-toolbar') as HTMLElement
+  // The day closes through a guided dialog (dayClose/DayCloseDialog). What the
+  // list owns is the rows and the one write rule for collecting them, so these
+  // tests check that the dialog's buttons end up in exactly that PATCH.
+  describe('Tagesabschluss-Dialog', () => {
+    const PAID = '2026-07-09T12:00:00.000Z'
+    const closing = () => screen.getByRole('dialog', { name: 'Tagesabschluss' })
+    const openClosing = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByRole('button', { name: 'Tagesabschluss' }))
+      return closing()
+    }
 
     beforeEach(() => {
-      vi.clearAllMocks()
-      vi.mocked(api.masters).mockResolvedValue([])
-      vi.mocked(api.pendingRedemptions).mockResolvedValue({ count: 0 })
-      vi.mocked(api.dayTables).mockResolvedValue({
-        prices: PRICES, payouts: PAYOUTS, frozen: true,
-        current: { prices: PRICES, payouts: PAYOUTS },
-      })
-      vi.mocked(api.dayManager).mockResolvedValue({ name: '' })
-      vi.mocked(api.saveDayManager).mockImplementation(async (_d, name) => ({ name: name.trim() }))
-      vi.mocked(api.exportDay).mockResolvedValue({
-        path: 'C:/export/Tandem_2026-07-09.xlsx', count: 1,
-        redemptionsWritten: 0, redemptionsPending: 0, redemptionsInvalid: 0,
-      })
+      vi.mocked(api.dayClose).mockResolvedValue({ countedCash: null, countedCard: null, note: '', exportedAt: null })
+      vi.mocked(api.saveDayClose).mockImplementation(async (_d, draft) => ({ ...draft, exportedAt: null }))
     })
 
-    it('exports straight away when the day is collected and paid for', async () => {
+    it('opens the dialog instead of exporting', async () => {
       const user = userEvent.setup()
-      // A clean day still needs its Betriebsleiter — without one, this test's
-      // own point (straight-away export) would not hold any more.
+      vi.mocked(api.list).mockResolvedValue([])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Keine Registrierungen für dieses Datum.')
+      expect(await openClosing(user)).toBeInTheDocument()
+      expect(api.exportDay).not.toHaveBeenCalled()
+    })
+
+    it('Bar in the dialog collects the row into the cash till', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({ id: 7, first_name: 'Anna', last_name: 'Huber', price: 259 })
+      vi.mocked(api.list).mockResolvedValue([row])
+      vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: PAID, payment_method: 'cash' })
+      renderList({ date: '2026-07-09' })
+      await within(openTable()).findByText('Anna Huber')
+      const dialog = await openClosing(user)
+      await user.click(within(dialog).getByRole('button', { name: 'Anna Huber: Bar' }))
+      expect(api.patch).toHaveBeenCalledWith(7, { paid: true, payment_method: 'cash' })
+      await waitFor(() => expect(within(paidTable()).getByText('Anna Huber')).toBeInTheDocument())
+    })
+
+    it('Karte on a voucher top-up names the top-up\'s till', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({ id: 8, first_name: 'Lisa', last_name: 'Wagner', price: 30, payment_method: 'voucher' })
+      vi.mocked(api.list).mockResolvedValue([row])
+      vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: PAID, voucher_payment_method: 'card' })
+      renderList({ date: '2026-07-09' })
+      await within(openTable()).findByText('Lisa Wagner')
+      const dialog = await openClosing(user)
+      await user.click(within(dialog).getByRole('button', { name: 'Lisa Wagner: Karte' }))
+      expect(api.patch).toHaveBeenCalledWith(8, { paid: true, voucher_payment_method: 'card' })
+    })
+
+    it('a collected row without a till only gets its till', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({ id: 9, first_name: 'Tom', last_name: 'Lang', price: 259, paid_at: PAID })
+      vi.mocked(api.list).mockResolvedValue([row])
+      vi.mocked(api.patch).mockResolvedValue({ ...row, payment_method: 'card' })
+      renderList({ date: '2026-07-09' })
+      await within(paidTable()).findByText('Tom Lang')
+      const dialog = await openClosing(user)
+      await user.click(within(dialog).getByRole('button', { name: 'Tom Lang: Karte' }))
+      expect(api.patch).toHaveBeenCalledWith(9, { payment_method: 'card' })
+    })
+
+    it('Kassieren on a fully covered voucher collects without a till', async () => {
+      const user = userEvent.setup()
+      const row = makeRow({ id: 5, first_name: 'Eva', last_name: 'Bauer', price: 0, payment_method: 'voucher' })
+      vi.mocked(api.list).mockResolvedValue([row])
+      vi.mocked(api.patch).mockResolvedValue({ ...row, paid_at: PAID })
+      renderList({ date: '2026-07-09' })
+      await within(openTable()).findByText('Eva Bauer')
+      const dialog = await openClosing(user)
+      await user.click(within(dialog).getByRole('button', { name: 'Eva Bauer: Kassieren' }))
+      expect(api.patch).toHaveBeenCalledWith(5, { paid: true })
+    })
+
+    // The manifest's own PATCH echoes back as a `changed` event and refreshes
+    // the list under the dialog; the operator must not lose their place.
+    it('keeps its step and the typed count through a live refresh', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([])
+      renderList({ date: '2026-07-09' })
+      await screen.findByText('Keine Registrierungen für dieses Datum.')
+      const dialog = await openClosing(user)
+      await user.click(within(dialog).getByRole('button', { name: 'Weiter' }))
+      await within(dialog).findByRole('heading', { name: 'Kassensturz' })
+      await user.type(within(dialog).getByLabelText('Gezählt Bar'), '120')
+      const before = vi.mocked(api.list).mock.calls.length
+      fireChangedEvent()
+      await waitFor(() => expect(vi.mocked(api.list).mock.calls.length).toBeGreaterThan(before))
+      expect(within(closing()).getByRole('heading', { name: 'Kassensturz' })).toBeInTheDocument()
+      expect(within(closing()).getByLabelText('Gezählt Bar')).toHaveValue('120')
+    })
+
+    it('shares the Betriebsleiter with the toolbar field', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.list).mockResolvedValue([])
       vi.mocked(api.dayManager).mockResolvedValue({ name: 'Max Muster' })
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({
-          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
-        }),
-      ])
       renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-
-      expect(await screen.findByText(/Export erstellt/)).toBeInTheDocument()
-      expect(screen.queryByText(/noch nicht kassiert/)).not.toBeInTheDocument()
-      expect(screen.queryByText(/Kein Betriebsleiter/)).not.toBeInTheDocument()
+      await waitFor(() => expect(screen.getAllByLabelText('Betriebsleiter')[0]).toHaveValue('Max Muster'))
+      const dialog = await openClosing(user)
+      await user.click(within(dialog).getByRole('button', { name: 'Weiter' }))
+      await user.click(await within(dialog).findByRole('button', { name: 'Weiter' }))
+      const dialogField = await within(dialog).findByLabelText('Betriebsleiter')
+      expect(dialogField).toHaveValue('Max Muster')
+      await user.clear(dialogField)
+      await user.type(dialogField, 'Maria Berger')
+      const toolbarField = screen.getAllByLabelText('Betriebsleiter').find((el) => !dialog.contains(el))!
+      expect(toolbarField).toHaveValue('Maria Berger')
     })
 
-    // The third reason the panel opens: a clean, fully paid day with nobody
-    // named as Betriebsleiter still must not export silently, because the
-    // sheet's BL line would come out blank.
-    it('warns instead of exporting when the day has no Betriebsleiter', async () => {
+    it('Weiter on the Betriebsleiter step writes the name', async () => {
       const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({
-          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
-        }),
-      ])
+      vi.mocked(api.list).mockResolvedValue([])
       renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-
-      expect(await screen.findByText(
-        'Kein Betriebsleiter eingetragen. Die BL-Zeile im Blatt bliebe leer.'
-      )).toBeInTheDocument()
-      expect(api.exportDay).not.toHaveBeenCalled()
+      await screen.findByText('Keine Registrierungen für dieses Datum.')
+      const dialog = await openClosing(user)
+      await user.click(within(dialog).getByRole('button', { name: 'Weiter' }))
+      await user.click(await within(dialog).findByRole('button', { name: 'Weiter' }))
+      await user.type(await within(dialog).findByLabelText('Betriebsleiter'), 'Max Muster')
+      await user.click(within(dialog).getByRole('button', { name: 'Weiter' }))
+      await within(dialog).findByRole('heading', { name: 'Zusammenfassung' })
+      expect(api.saveDayManager).toHaveBeenCalledWith('2026-07-09', 'Max Muster')
     })
 
-    it('warns instead of exporting while tandems are still open', async () => {
+    it('closes on Abbrechen and leaves the list as it was', async () => {
       const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({ id: 1, payment_method: 'cash', price: 270 }),
-        makeRow({ id: 2, payment_method: 'card', price: 270 }),
-      ])
+      vi.mocked(api.list).mockResolvedValue([])
       renderList({ date: '2026-07-09' })
-      // Both rows default to the same name, so more than one "Anna Muster" is
-      // expected here — the wait is only for the list to have rendered.
-      await screen.findAllByText('Anna Muster')
-
-      await user.click(exportButton())
-
-      expect(await screen.findByText(/2 Tandems sind noch nicht kassiert\./))
-        .toBeInTheDocument()
-      expect(api.exportDay).not.toHaveBeenCalled()
-    })
-
-    // The voucher count is the point of the whole panel: those are the rows the
-    // club's list silently never hears about.
-    it('names how many of the open tandems are on a voucher', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({ id: 1, payment_method: 'cash', price: 270 }),
-        makeRow({
-          id: 2, payment_method: 'voucher', voucher_payment_method: 'cash',
-          voucher_number: 'G-1', price: 30,
-        }),
-      ])
-      renderList({ date: '2026-07-09' })
-      // Both rows default to the same name, so more than one "Anna Muster" is
-      // expected here — the wait is only for the list to have rendered.
-      await screen.findAllByText('Anna Muster')
-
-      await user.click(exportButton())
-
-      expect(await screen.findByText(
-        /2 Tandems sind noch nicht kassiert, davon 1 mit Gutschein\./
-      )).toBeInTheDocument()
-      expect(screen.getByText(/Nur kassierte Tandems mit Gutschein/)).toBeInTheDocument()
-    })
-
-    // A voucher row with an unpaid top-up is in both openVoucherRows and
-    // noPaymentOpenRows at once (see collectedVia in pricing.ts) — the case the
-    // merged sentence has to keep readable rather than letting "und haben"
-    // read as continuing "davon 1 mit Gutschein".
-    it('reads naturally when an open voucher row is also missing a Zahlungsart', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({ id: 1, payment_method: null, price: 270 }),
-        makeRow({
-          id: 2, payment_method: 'voucher', voucher_payment_method: null,
-          voucher_number: 'G-1', price: 30,
-        }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findAllByText('Anna Muster')
-
-      await user.click(exportButton())
-
-      expect(await screen.findByText(
-        /^2 Tandems sind noch nicht kassiert und haben noch keine Zahlungsart, davon 1 mit Gutschein\.$/
-      )).toBeInTheDocument()
-    })
-
-    it('gets the singular right for a single open tandem', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({ id: 1, payment_method: 'cash', price: 270 }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-
-      expect(await screen.findByText(/^1 Tandem ist noch nicht kassiert\./))
-        .toBeInTheDocument()
-    })
-
-    // A fresh registration is inserted with no payment_method at all, so for
-    // most of the day "open" and "no Zahlungsart" are the same tandems. Two
-    // independent sentences would count each of them twice.
-    it('does not count the same open tandems twice as also missing a Zahlungsart', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({ id: 1, payment_method: null, price: 270 }),
-        makeRow({ id: 2, payment_method: null, price: 270 }),
-        makeRow({ id: 3, payment_method: null, price: 270 }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findAllByText('Anna Muster')
-
-      await user.click(exportButton())
-
-      expect(await screen.findByText(
-        /^3 Tandems sind noch nicht kassiert und haben noch keine Zahlungsart\.$/
-      )).toBeInTheDocument()
-    })
-
-    // A collected row without a Zahlungsart is exactly what the sheet's
-    // "Summe ohne Zahlungsart" line flags, so it is worth catching while it can
-    // still be fixed.
-    it('counts a collected tandem that has no Zahlungsart', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({
-          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: null, price: 270,
-        }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-
-      expect(await screen.findByText(/1 Tandem hat keine Zahlungsart\./)).toBeInTheDocument()
-      expect(screen.getByText(/Summe ohne Zahlungsart/)).toBeInTheDocument()
-      expect(api.exportDay).not.toHaveBeenCalled()
-    })
-
-    // Nothing was paid, so there is no till the row could be missing from. The
-    // export's own total ignores it for the same reason.
-    it('leaves a fully covered voucher alone', async () => {
-      const user = userEvent.setup()
-      // Otherwise the missing Betriebsleiter would open the panel this test is
-      // not about.
-      vi.mocked(api.dayManager).mockResolvedValue({ name: 'Max Muster' })
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({
-          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'voucher',
-          voucher_payment_method: null, voucher_number: 'G-1', price: 0,
-        }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-
-      expect(await screen.findByText(/Export erstellt/)).toBeInTheDocument()
-      expect(screen.queryByText(/keine Zahlungsart/)).not.toBeInTheDocument()
-    })
-
-    it('exports anyway when the operator says so', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({ id: 1, payment_method: 'cash', price: 270 }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      await user.click(await screen.findByRole('button', { name: 'Trotzdem exportieren' }))
-
-      expect(await screen.findByText(/Export erstellt/)).toBeInTheDocument()
-      expect(api.exportDay).toHaveBeenCalledWith('2026-07-09')
-      expect(screen.queryByText(/noch nicht kassiert/)).not.toBeInTheDocument()
-    })
-
-    // The label reads the live field, not the snapshot the panel opened on —
-    // typing a name while the panel stands turns "Trotzdem exportieren" back
-    // into a plain "Exportieren".
-    it('drops the "Trotzdem" from the export button once a name is typed', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({
-          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
-        }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      expect(await screen.findByRole('button', { name: 'Trotzdem exportieren' })).toBeInTheDocument()
-
-      await user.type(within(toolbar()).getByLabelText('Betriebsleiter'), 'Max Muster')
-
-      expect(await screen.findByRole('button', { name: 'Exportieren' })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Trotzdem exportieren' })).not.toBeInTheDocument()
-    })
-
-    // A name in the toolbar does not make the day clean — with a tandem still
-    // open, "Trotzdem exportieren" is the one cue that the click skips
-    // something, and that must not disappear just because the Betriebsleiter
-    // field happens to be filled in.
-    it('keeps saying "Trotzdem exportieren" for an open tandem even with a Betriebsleiter set', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.dayManager).mockResolvedValue({ name: 'Max Muster' })
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({ id: 1, payment_method: 'cash', price: 270 }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-
-      expect(await screen.findByRole('button', { name: 'Trotzdem exportieren' })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Exportieren' })).not.toBeInTheDocument()
-    })
-
-    // The panel opened only because the name was missing — the override still
-    // has to write the sheet once the operator says so anyway.
-    it('exports anyway from a panel opened only for the missing Betriebsleiter', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({
-          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
-        }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      await user.click(await screen.findByRole('button', { name: 'Trotzdem exportieren' }))
-
-      expect(await screen.findByText(/Export erstellt/)).toBeInTheDocument()
-      expect(api.exportDay).toHaveBeenCalledWith('2026-07-09')
-    })
-
-    it('writes nothing when the operator cancels', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({ id: 1, payment_method: 'cash', price: 270 }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      await user.click(await screen.findByRole('button', { name: 'Abbrechen' }))
-
-      await waitFor(() =>
-        expect(screen.queryByText(/noch nicht kassiert/)).not.toBeInTheDocument())
-      expect(api.exportDay).not.toHaveBeenCalled()
-      expect(api.saveDayManager).not.toHaveBeenCalled()
-    })
-
-    // The loop goes through the same PATCH as a row's own Kassieren button.
-    // That handler is where a voucher row's redemption is queued for the export
-    // sweep, so a bulk route of its own would have to repeat that rule to stay
-    // correct.
-    it('collects every open tandem and then exports', async () => {
-      const user = userEvent.setup()
-      const a = makeRow({ id: 1, first_name: 'Anna', payment_method: 'cash', price: 270 })
-      const b = makeRow({ id: 2, first_name: 'Bruno', payment_method: 'card', price: 270 })
-      vi.mocked(api.list).mockResolvedValue([a, b])
-      const calls: string[] = []
-      vi.mocked(api.patch).mockImplementation(async (id) => {
-        calls.push(`patch:${id}`)
-        return { ...(id === 1 ? a : b), paid_at: '2026-07-09T12:00:00.000Z' }
-      })
-      vi.mocked(api.exportDay).mockImplementation(async () => {
-        calls.push('export')
-        return {
-          path: 'C:/export/Tandem_2026-07-09.xlsx', count: 2,
-          redemptionsWritten: 0, redemptionsPending: 0, redemptionsInvalid: 0,
-        }
-      })
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      await user.click(
-        await screen.findByRole('button', { name: 'Alle kassieren und exportieren' }))
-
-      expect(await screen.findByText(/Export erstellt/)).toBeInTheDocument()
-      expect(api.patch).toHaveBeenCalledWith(1, { paid: true })
-      expect(api.patch).toHaveBeenCalledWith(2, { paid: true })
-      expect(calls).toEqual(['patch:1', 'patch:2', 'export'])
-    })
-
-    // A half-collected day must not reach the club's sheet: it would look
-    // finished while some of the money still shows as outstanding.
-    it('does not export when one of the rows could not be collected', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({ id: 1, payment_method: 'cash', price: 270 }),
-      ])
-      vi.mocked(api.patch).mockRejectedValue(new Error('Speichern fehlgeschlagen'))
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      await user.click(
-        await screen.findByRole('button', { name: 'Alle kassieren und exportieren' }))
-
-      expect(await screen.findByText('Speichern fehlgeschlagen')).toBeInTheDocument()
-      expect(api.exportDay).not.toHaveBeenCalled()
-    })
-
-    // The bulk PATCH only stamps paid_at, never a Zahlungsart, so "collect all"
-    // can walk straight into the second problem the panel warned about. The
-    // operator must be asked again, not have the sheet written silently.
-    it('asks again instead of exporting when the collected rows still have no Zahlungsart', async () => {
-      const user = userEvent.setup()
-      const a = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', payment_method: null, price: 270 })
-      const b = makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', payment_method: null, price: 270 })
-      vi.mocked(api.list).mockResolvedValue([a, b])
-      vi.mocked(api.patch).mockImplementation(async (id) =>
-        ({ ...(id === 1 ? a : b), paid_at: '2026-07-09T12:00:00.000Z' }))
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      await user.click(
-        await screen.findByRole('button', { name: 'Alle kassieren und exportieren' }))
-
-      expect(await screen.findByText(/2 Tandems haben keine Zahlungsart\./)).toBeInTheDocument()
-      expect(api.exportDay).not.toHaveBeenCalled()
-      expect(screen.queryByRole('button', { name: 'Alle kassieren und exportieren' }))
-        .not.toBeInTheDocument()
-    })
-
-    // The comment in handleCollectAllAndExport names the half-collected day as
-    // the reason for the whole design — this is that day: one row lands, the
-    // next fails.
-    it('keeps a row that was collected before a later one failed', async () => {
-      const user = userEvent.setup()
-      const a = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', payment_method: 'cash', price: 270 })
-      const b = makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', payment_method: 'card', price: 270 })
-      vi.mocked(api.list).mockResolvedValue([a, b])
-      vi.mocked(api.patch).mockImplementation(async (id) => {
-        if (id === 1) return { ...a, paid_at: '2026-07-09T12:00:00.000Z' }
-        throw new Error('Speichern fehlgeschlagen')
-      })
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      await user.click(
-        await screen.findByRole('button', { name: 'Alle kassieren und exportieren' }))
-
-      expect(await screen.findByText('Speichern fehlgeschlagen')).toBeInTheDocument()
-      expect(api.exportDay).not.toHaveBeenCalled()
-      await waitFor(() => expect(within(paidTable()).getByText('Anna Muster')).toBeInTheDocument())
-      expect(within(openTable()).getByText('Bruno Beispiel')).toBeInTheDocument()
-    })
-
-    // Retrying after a partial failure is fine — openRows is re-derived at
-    // click time and the PATCH is idempotent — but the panel must not go on
-    // describing the day from before the row that already landed.
-    it('updates the panel counts after a partial collect failure', async () => {
-      const user = userEvent.setup()
-      const a = makeRow({ id: 1, first_name: 'Anna', last_name: 'Muster', payment_method: 'cash', price: 270 })
-      const b = makeRow({ id: 2, first_name: 'Bruno', last_name: 'Beispiel', payment_method: 'card', price: 270 })
-      vi.mocked(api.list).mockResolvedValue([a, b])
-      vi.mocked(api.patch).mockImplementation(async (id) => {
-        if (id === 1) return { ...a, paid_at: '2026-07-09T12:00:00.000Z' }
-        throw new Error('Speichern fehlgeschlagen')
-      })
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      expect(await screen.findByText(/^2 Tandems sind noch nicht kassiert\.$/)).toBeInTheDocument()
-
-      await user.click(
-        await screen.findByRole('button', { name: 'Alle kassieren und exportieren' }))
-
-      await screen.findByText('Speichern fehlgeschlagen')
-      expect(await screen.findByText(/^1 Tandem ist noch nicht kassiert\.$/)).toBeInTheDocument()
-      expect(screen.queryByText(/^2 Tandems sind noch nicht kassiert\.$/)).not.toBeInTheDocument()
-    })
-
-    // Nothing is open, so there is nothing to collect — offering the button
-    // would promise an action that does nothing.
-    it('offers no bulk collect when only the Zahlungsart is missing', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({
-          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: null, price: 270,
-        }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-
-      expect(await screen.findByText(/keine Zahlungsart/)).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Alle kassieren und exportieren' }))
-        .not.toBeInTheDocument()
-    })
-
-    // Counts belong to the day they were taken on. Left standing across a date
-    // change, the panel would describe yesterday over today's list.
-    it('drops the warning when the operator switches days', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({ id: 1, payment_method: 'cash', price: 270 }),
-      ])
-      const { rerender } = render(
-        <List onSelect={() => {}} date="2026-07-09" onDateChange={() => {}} />
-      )
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      expect(await screen.findByText(/noch nicht kassiert/)).toBeInTheDocument()
-
-      rerender(<List onSelect={() => {}} date="2026-07-10" onDateChange={() => {}} />)
-
-      await waitFor(() =>
-        expect(screen.queryByText(/noch nicht kassiert/)).not.toBeInTheDocument())
-    })
-
-    // The day has one Betriebsleiter field, in the toolbar. The panel points
-    // at it instead of offering a second copy of the same input.
-    it('has no Betriebsleiter field of its own', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({
-          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
-        }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      await screen.findByText(/Kein Betriebsleiter/)
-
-      expect(within(panel()).queryAllByLabelText('Betriebsleiter')).toHaveLength(0)
-    })
-
-    // "Eintragen" takes the operator straight to the one field that fixes it.
-    it('puts the cursor in the toolbar field from the missing-name line', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({
-          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
-        }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      await user.click(await within(panel()).findByRole('button', { name: 'Betriebsleiter eintragen' }))
-
-      expect(within(toolbar()).getByLabelText('Betriebsleiter')).toHaveFocus()
-    })
-
-    // Pressing the panel's export button has to carry the name the operator
-    // just typed — runExport() saves through the same saveManager() the
-    // toolbar's onBlur uses, so there is nothing left to write on top of it.
-    it('saves the typed name before exporting', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({
-          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
-        }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      await user.type(within(toolbar()).getByLabelText('Betriebsleiter'), 'Max Muster')
-      await user.click(within(panel()).getByRole('button', { name: 'Exportieren' }))
-
-      await waitFor(() =>
-        expect(api.saveDayManager).toHaveBeenCalledWith('2026-07-09', 'Max Muster'))
-      expect(await screen.findByText(/Export erstellt/)).toBeInTheDocument()
-      expect(
-        vi.mocked(api.saveDayManager).mock.invocationCallOrder[0]
-      ).toBeLessThan(vi.mocked(api.exportDay).mock.invocationCallOrder[0])
-    })
-
-    // The checklist only lists what is still wrong: a name typed while the
-    // panel stands takes its line away.
-    it('drops the missing-name line once a name is typed', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({
-          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
-        }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      await user.type(within(toolbar()).getByLabelText('Betriebsleiter'), 'Max Muster')
-
-      expect(screen.queryByText(
-        'Kein Betriebsleiter eingetragen. Die BL-Zeile im Blatt bliebe leer.'
-      )).not.toBeInTheDocument()
-    })
-
-    // Once nothing the panel listed is still true, exporting is no longer an
-    // override, and the button says so by becoming the primary action.
-    it('makes the export the primary action only once nothing is left to override', async () => {
-      const user = userEvent.setup()
-      vi.mocked(api.list).mockResolvedValue([
-        makeRow({
-          id: 1, paid_at: '2026-07-09T12:00:00.000Z', payment_method: 'cash', price: 270,
-        }),
-      ])
-      renderList({ date: '2026-07-09' })
-      await screen.findByText('Anna Muster')
-
-      await user.click(exportButton())
-      expect(await screen.findByRole('button', { name: 'Trotzdem exportieren' }))
-        .not.toHaveClass('primary')
-
-      await user.type(within(toolbar()).getByLabelText('Betriebsleiter'), 'Max Muster')
-
-      expect(within(panel()).getByRole('button', { name: 'Exportieren' })).toHaveClass('primary')
+      await screen.findByText('Keine Registrierungen für dieses Datum.')
+      const dialog = await openClosing(user)
+      await user.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Tagesabschluss' })).not.toBeInTheDocument())
     })
   })
 
   // The selection bar's button collects the checked rows from both tables in one
   // payment method through CollectDialog, using the same PATCH the row
-  // button and "Alle kassieren und exportieren" already go through.
+  // button already goes through.
   describe('Sammel-Kassieren', () => {
     const checkbox = (name: string) => screen.getByLabelText(`${name} auswählen`)
     // Carries the open count — `Kassieren (3)` — which also keeps it apart from

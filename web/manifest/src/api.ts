@@ -319,8 +319,15 @@ export function urkundePdfUrl(id: number): string {
   return apiUrl(`/api/registrations/${id}/urkunde.pdf`)
 }
 
-export async function exportDay(date: string): Promise<ExportResult> {
-  const res = await fetch(apiUrl(`/api/export?date=${encodeURIComponent(date)}`), {
+// What the server reports while a Tagesabschluss runs, matched on `run`.
+export type ExportProgress =
+  | { run: string; date: string; phase: 'vouchers'; done: number; total: number }
+  | { run: string; date: string; phase: 'sheet' }
+
+/** `runId` makes the server report this run's progress over /api/events. */
+export async function exportDay(date: string, runId?: string): Promise<ExportResult> {
+  const run = runId === undefined ? '' : `&run=${encodeURIComponent(runId)}`
+  const res = await fetch(apiUrl(`/api/export?date=${encodeURIComponent(date)}${run}`), {
     method: 'POST',
   })
   if (!res.ok) throw new Error(await errorMessage(res, 'Export fehlgeschlagen'))
@@ -389,6 +396,34 @@ export async function saveDayManager(date: string, name: string): Promise<{ name
   })
   if (!res.ok) throw new Error(await errorMessage(res, 'Betriebsleiter speichern fehlgeschlagen'))
   return asJson<{ name: string }>(res)
+}
+
+// The Kassensturz of a day. null is "not counted", which is not the same as 0.
+export interface DayCloseDraft {
+  countedCash: number | null
+  countedCard: number | null
+  note: string
+}
+
+export interface DayCloseState extends DayCloseDraft {
+  /** When this day's Tagesabschluss last went through; null if never. */
+  exportedAt: string | null
+}
+
+export async function dayClose(date: string): Promise<DayCloseState> {
+  const res = await fetch(apiUrl(`/api/day-close/${encodeURIComponent(date)}`))
+  if (!res.ok) throw new Error(await errorMessage(res, 'Kassensturz konnte nicht geladen werden'))
+  return asJson<DayCloseState>(res)
+}
+
+export async function saveDayClose(date: string, draft: DayCloseDraft): Promise<DayCloseState> {
+  const res = await fetch(apiUrl(`/api/day-close/${encodeURIComponent(date)}`), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(draft),
+  })
+  if (!res.ok) throw new Error(await errorMessage(res, 'Kassensturz speichern fehlgeschlagen'))
+  return asJson<DayCloseState>(res)
 }
 
 // Copies today's settings onto one day and re-prices its registrations, apart

@@ -43,6 +43,16 @@ const CONTRACT_PDF_FILENAME = '2026.07.09_B-A.pdf'
 const HEADER_ROW = 5
 const FIRST_DATA_ROW = 6
 
+// The export refuses a day without a Betriebsleiter. These tests are about
+// what the sheet says, not about that rule (see exportClose.test.ts), so every
+// day that gets a registration is given one the moment it does.
+function testDb() {
+  const db = openDb(':memory:')
+  db.exec(`CREATE TEMP TRIGGER test_name_a_manager AFTER INSERT ON registrations
+    BEGIN INSERT OR IGNORE INTO day_manager (jump_date, name) VALUES (NEW.jump_date, 'Max Muster'); END`)
+  return db
+}
+
 function seed(db: ReturnType<typeof openDb>, date: string) {
   const masterId = db.prepare('INSERT INTO tandem_masters (name,active) VALUES (?,1)').run('Hans').lastInsertRowid
   const flyerId = db.prepare('INSERT INTO camera_flyers (name,active) VALUES (?,1)').run('Peter').lastInsertRowid
@@ -59,7 +69,7 @@ function seed(db: ReturnType<typeof openDb>, date: string) {
 }
 
 test('POST /api/export writes an xlsx file with resolved names, no contract_pdf_filename', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-07-09'
   seed(db, date)
 
@@ -102,8 +112,8 @@ test('POST /api/export writes an xlsx file with resolved names, no contract_pdf_
   await app.close()
 })
 
-test('POST /api/export writes Datum/Ort/Betriebsleiter meta rows, BL left blank', async () => {
-  const db = openDb(':memory:')
+test('POST /api/export writes Datum/Ort/Betriebsleiter meta rows', async () => {
+  const db = testDb()
   const date = '2026-07-09'
   seed(db, date)
 
@@ -122,16 +132,15 @@ test('POST /api/export writes Datum/Ort/Betriebsleiter meta rows, BL left blank'
   expect(ws.getRow(2).getCell(1).value).toBe('Ort')
   expect(ws.getRow(2).getCell(2).value).toBe('Freistadt')
   expect(ws.getRow(3).getCell(1).value).toBe('Betriebsleiter (BL)')
-  expect(ws.getRow(3).getCell(2).value ?? '').toBe('')
 
   await app.close()
 })
 
 test('POST /api/export writes the Betriebsleiter named for that day', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-07-09'
   seed(db, date)
-  db.prepare('INSERT INTO day_manager (jump_date,name) VALUES (?,?)').run(date, 'Max Muster')
+  db.prepare('INSERT OR REPLACE INTO day_manager (jump_date,name) VALUES (?,?)').run(date, 'Max Muster')
   // A neighbouring day's name must not leak into this sheet.
   db.prepare('INSERT INTO day_manager (jump_date,name) VALUES (?,?)').run('2026-07-10', 'Maria Berger')
 
@@ -152,7 +161,7 @@ test('POST /api/export writes the Betriebsleiter named for that day', async () =
 })
 
 test('POST /api/export defaults to today and creates the export dir if missing', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const today = localToday()
   seed(db, today)
 
@@ -174,7 +183,7 @@ test('POST /api/export defaults to today and creates the export dir if missing',
 })
 
 test('POST /api/export overwrites an existing file for the same date', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-07-09'
   seed(db, date)
 
@@ -196,7 +205,7 @@ test('POST /api/export overwrites an existing file for the same date', async () 
 })
 
 test('POST /api/export leaves master/flyer as empty string when unmatched', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-07-09'
   db.prepare(`INSERT INTO registrations
     (first_name,last_name,gender,age,height_cm,weight_kg,
@@ -230,7 +239,7 @@ test('POST /api/export leaves master/flyer as empty string when unmatched', asyn
 })
 
 test('POST /api/export writes German labels, never raw enum values', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-07-09'
   seed(db, date) // gender 'female', payment 'cash', extra 'video'
 
@@ -262,7 +271,7 @@ test('POST /api/export writes German labels, never raw enum values', async () =>
 })
 
 test('POST /api/export leaves an unknown enum value as an empty cell', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-07-09'
   // NULL payment/extra/gender is normal for a freshly registered guest the
   // manifest has not touched yet.
@@ -292,7 +301,7 @@ test('POST /api/export leaves an unknown enum value as an empty cell', async () 
 })
 
 test('POST /api/export labels the voucher service and the weight surcharge', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-07-09'
   db.prepare(`INSERT INTO registrations
     (first_name,last_name,age,weight_kg,street,postal_code,city,email,phone,
@@ -327,7 +336,7 @@ test('POST /api/export labels the voucher service and the weight surcharge', asy
 })
 
 test('POST /api/export sums the takings by the till the money landed in', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-07-09'
   const insert = db.prepare(`INSERT INTO registrations
     (first_name,last_name,age,weight_kg,street,postal_code,city,email,phone,
@@ -377,7 +386,7 @@ test('POST /api/export sums the takings by the till the money landed in', async 
 })
 
 test('POST /api/export labels the till a voucher top-up was paid into', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-07-09'
   db.prepare(`INSERT INTO registrations
     (first_name,last_name,age,weight_kg,street,postal_code,city,email,phone,
@@ -405,7 +414,7 @@ test('POST /api/export labels the till a voucher top-up was paid into', async ()
 })
 
 test('POST /api/export appends what each tandemmaster and camera flyer earned', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-07-09'
   const hans = db.prepare('INSERT INTO tandem_masters (name,active) VALUES (?,1)').run('Hans').lastInsertRowid
   const anna = db.prepare('INSERT INTO tandem_masters (name,active) VALUES (?,1)').run('Anna').lastInsertRowid
@@ -445,7 +454,7 @@ test('POST /api/export appends what each tandemmaster and camera flyer earned', 
 })
 
 test('POST /api/export rejects a path-traversal date and touches no file outside the export dir', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const dir = await makeTmpDir()
   const app = Fastify()
   registerExportRoutes(app, db, makeCfgRef(dir))
@@ -461,7 +470,7 @@ test('POST /api/export rejects a path-traversal date and touches no file outside
 })
 
 test('POST /api/export still works with a valid ?date=YYYY-MM-DD', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-07-09'
   seed(db, date)
 
@@ -483,7 +492,7 @@ test('the export writes redemptions that could not be written earlier', async ()
   const voucherListPath = await writeVoucherFile([
     { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
   ])
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-08-10'
 
   // A row collected while the file was locked: redeemed for us, not yet written.
@@ -512,7 +521,7 @@ test('the export leaves another day\'s redemption for that day\'s export', async
   const voucherListPath = await writeVoucherFile([
     { lfdNr: '26-002', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
   ])
-  const db = openDb(':memory:')
+  const db = testDb()
 
   // Collected on Saturday while the file was locked. Closing Sunday writes
   // Sunday; Saturday's Kassiert note keeps counting the row until Saturday is
@@ -528,8 +537,10 @@ test('the export leaves another day\'s redemption for that day\'s export', async
   const app = Fastify()
   registerExportRoutes(app, db, makeCfgRef(dir, 'Freistadt', voucherListPath))
   const row = () => db.prepare('SELECT voucher_redeem_synced_at FROM registrations').get() as any
+  // Sunday has no registration of its own to name a Betriebsleiter through.
+  db.prepare('INSERT INTO day_manager (jump_date,name) VALUES (?,?)').run('2026-08-09', 'Max Muster')
 
-  const sunday = await app.inject({ method: 'POST', url: '/api/export?date=2026-08-09' })
+  const sunday =await app.inject({ method: 'POST', url: '/api/export?date=2026-08-09' })
   expect(sunday.json().redemptionsWritten).toBe(0)
   expect(sunday.json().redemptionsPending).toBe(0)
   expect(row().voucher_redeem_synced_at).toBeNull()
@@ -541,7 +552,7 @@ test('the export leaves another day\'s redemption for that day\'s export', async
 })
 
 test('a redemption that throws on its way to the file still leaves an export behind', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-08-10'
   db.prepare(`INSERT INTO registrations
     (first_name,last_name,payment_method,voucher_number,price,
@@ -575,7 +586,7 @@ test('a voucher that turned invalid leaves the queue instead of blocking it', as
   const voucherListPath = await writeVoucherFile([
     { lfdNr: '26-007', einzahlDat: null, art: 'Tandem' },
   ])
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-08-10'
 
   db.prepare(`INSERT INTO registrations
@@ -604,7 +615,7 @@ test('a number the list does not carry keeps its redemption and stays in the que
   const voucherListPath = await writeVoucherFile([
     { lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' },
   ])
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-08-10'
 
   db.prepare(`INSERT INTO registrations
@@ -632,7 +643,7 @@ test('a number the list does not carry keeps its redemption and stays in the que
 })
 
 test('POST /api/export pays the tandemmaster the weight bonus in the same line', async () => {
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-09-02'
   const hans = db.prepare('INSERT INTO tandem_masters (name,active) VALUES (?,1)')
     .run('Hans').lastInsertRowid
@@ -679,7 +690,7 @@ test('a redemption on a later sheet of the list is written, not taken back', asy
     { name: '2025', rows: [{ lfdNr: '25-001', einzahlDat: new Date('2025-01-14'), art: 'Tandem' }] },
     { name: '2026', rows: [{ lfdNr: '26-001', einzahlDat: new Date('2026-01-14'), art: 'Tandem' }] },
   ])
-  const db = openDb(':memory:')
+  const db = testDb()
   const date = '2026-08-10'
 
   db.prepare(`INSERT INTO registrations

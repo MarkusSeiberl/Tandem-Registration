@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { getApiBase } from './api'
-import type { UpdateStatus } from './api'
+import type { ExportProgress, UpdateStatus } from './api'
 
 /**
  * Opens an EventSource on /api/events (absolute root path — see api.ts) and calls
@@ -50,4 +50,36 @@ export function useUpdateEvents(
       source.close()
     }
   }, [enabled])
+}
+
+/**
+ * Progress of one Tagesabschluss this client started. Every manifest gets the
+ * events of every export, so they are matched on the run id the closing dialog
+ * chose; the connection only stands while that run does.
+ */
+export function useExportProgress(
+  runId: string | null,
+  onProgress: (progress: ExportProgress) => void,
+): void {
+  const onProgressRef = useRef(onProgress)
+  onProgressRef.current = onProgress
+
+  useEffect(() => {
+    if (runId === null) return
+    const source = new EventSource(`${getApiBase()}/api/events`)
+    const handle = (event: MessageEvent) => {
+      try {
+        const progress = JSON.parse(event.data) as ExportProgress
+        if (progress.run === runId) onProgressRef.current(progress)
+      } catch {
+        // A frame we cannot read moves nothing on screen; the answer of the
+        // export itself still decides how the run ends.
+      }
+    }
+    source.addEventListener('export-progress', handle)
+    return () => {
+      source.removeEventListener('export-progress', handle)
+      source.close()
+    }
+  }, [runId])
 }

@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tagesabschluss Mockup</title>
+<style>
+:root {
+  --ink: #0b1220; --ember: #ff6a3d; --sky: #123a6b;
+  --text: #2b2b33; --text-h: #08060d; --bg: #f3f5f8; --panel-bg: #ffffff;
+  --border: #dde2e8; --control-border: #848e9c;
+  --accent: #137a45; --accent-contrast: #ffffff;
+  --accent-wash: rgba(19,122,69,.08);
+  --error: #b3261e; --error-text: #b3261e;
+  --disabled-bg: #dde2e8; --disabled-text: #5f6773;
+  --warn-text: #c2410c; --warn-wash: rgba(255,106,61,.10);
+  --rule: #8a94a3; --text-quiet: #5b6270;
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font: 16px/150% var(--sans); color: var(--text); background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+:root[data-theme="dark"] {
+  --text: #e4e2ea; --text-h: #f7f6fb; --bg: #12161d; --panel-bg: #1b212c;
+  --border: #2b323d; --control-border: #687384;
+  --accent: #34c77b; --accent-contrast: #06150d; --accent-wash: rgba(52,199,123,.10);
+  --warn-text: #ff8a63; --warn-wash: rgba(255,106,61,.14);
+  --rule: #5d6878; --error-text: #f2766b;
+  --disabled-bg: #2b323d; --disabled-text: #9aa3b2; --text-quiet: #a7aebb;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: var(--bg); }
+::selection { background: var(--accent); color: var(--accent-contrast); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* --- mockup chrome (not part of the design) --- */
+.mock-bar { position: fixed; inset: 0 0 auto 0; z-index: 10; display: flex; gap: 6px; flex-wrap: wrap;
+  align-items: center; padding: 8px 16px; background: #0b1220; color: #fff; font-size: 13px; }
+.mock-bar b { margin-right: 6px; }
+.mock-bar button { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid #5d6878;
+  background: transparent; color: #fff; cursor: pointer; }
+.mock-bar button[aria-pressed="true"] { background: #34c77b; color: #06150d; border-color: #34c77b; }
+.mock-bar .sep { width: 1px; height: 20px; background: #5d6878; margin: 0 6px; }
+
+/* Fake manifest behind the backdrop */
+.fake-page { padding: 72px 32px; display: grid; gap: 10px; }
+.fake-page div { height: 36px; border-radius: 6px; background: var(--panel-bg); border: 1px solid var(--border); }
+.backdrop { position: fixed; inset: 0; background: rgba(11,18,32,.5); display: grid; place-items: center; padding: 64px 16px 16px; }
+
+/* --- the dialog --- */
+.dc { width: 880px; max-width: 100%; height: min(680px, calc(100vh - 96px)); display: grid; grid-template-columns: 248px 1fr;
+  grid-template-rows: auto auto 1fr; background: var(--panel-bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  box-shadow: 0 24px 60px -12px rgba(11,18,32,.45), 0 4px 12px rgba(11,18,32,.18); }
+
+.dc-head { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 14px;
+  padding: 18px 20px 16px 24px; border-bottom: 1px solid var(--border); }
+.dc-head h2 { margin: 0; font-size: 20px; color: var(--text-h); letter-spacing: -0.01em; }
+.dc-date { color: var(--text-quiet); font-size: 14px; white-space: nowrap; }
+[hidden] { display: none !important; }
+.dc-closed { grid-column: 1 / -1; font-size: 13px; color: var(--text); display: flex; gap: 8px; align-items: center;
+  padding: 8px 24px; background: var(--accent-wash); border-bottom: 1px solid var(--border); }
+.dc-closed svg { color: var(--accent); }
+.icon-btn { align-self: center; margin-left: 8px; width: 36px; height: 36px; display: grid; place-items: center;
+  border-radius: 8px; border: 0; background: transparent; color: var(--text-quiet); cursor: pointer; }
+.icon-btn:hover:not(:disabled) { background: var(--bg); color: var(--text-h); }
+.icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+.dc-head .icon-btn { margin-left: auto; }
+
+/* Rail: the steps as a live checklist */
+.rail { background: var(--bg); border-right: 1px solid var(--border); padding: 20px 0 20px 0; margin: 0; list-style: none; }
+.rail li { position: relative; }
+.rail li:not(:last-child)::after { content: ''; position: absolute; left: 37px; top: 46px; bottom: -6px;
+  width: 2px; background: var(--border); }
+.rail li.done:not(:last-child)::after, .rail li.warn:not(:last-child)::after { background: var(--accent); }
+.step { width: 100%; display: grid; grid-template-columns: 30px 1fr; column-gap: 12px; align-items: start;
+  text-align: left; font: inherit; color: inherit; background: transparent; border: 0;
+  padding: 12px 16px 14px 24px; cursor: default; }
+.step[data-reachable="true"] { cursor: pointer; }
+.step[data-reachable="true"]:hover .step-label { text-decoration: underline; text-underline-offset: 3px; }
+.rail li.current .step { background: var(--panel-bg); box-shadow: inset 3px 0 0 var(--accent); }
+.marker { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  font: 700 13px/1 var(--mono); border: 2px solid var(--control-border); color: var(--text-quiet);
+  background: var(--panel-bg); position: relative; z-index: 1; }
+.current .marker { border-color: var(--accent); color: var(--accent); }
+.done .marker { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.warn .marker { background: var(--panel-bg); border-color: var(--ember); color: var(--warn-text); }
+.step-label { font-size: 15px; font-weight: 600; color: var(--text-h); line-height: 30px; }
+.step-status { grid-column: 2; font-size: 13px; line-height: 1.35; color: var(--text-quiet); }
+.warn .step-status { color: var(--warn-text); font-weight: 600; }
+.step-status .numeral { font-size: 12.5px; }
+
+/* Content column */
+.rail, .pane { grid-row: 3; }
+.pane { display: grid; grid-template-rows: 1fr auto; min-height: 0; }
+.pane-body { scrollbar-width: thin; scrollbar-color: var(--control-border) transparent; }
+.pane-body { padding: 24px 28px 8px; overflow-y: auto; min-height: 0; }
+.pane-body h3 { margin: 0 0 4px; font-size: 22px; color: var(--text-h); letter-spacing: -0.015em; }
+.lede { margin: 0 0 20px; color: var(--text-quiet); font-size: 14px; max-width: 60ch; }
+.pane-foot { display: flex; gap: 8px; align-items: center; padding: 14px 28px 18px; border-top: 1px solid var(--border); }
+.pane-foot .spacer { flex: 1; }
+.foot-note { font-size: 13px; color: var(--text-quiet); }
+
+.numeral { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: inherit; font-size: 15px;
+  padding: 9px 18px; border-radius: 8px; border: 2px solid var(--accent); cursor: pointer; min-height: 42px; }
+.btn.primary { background: var(--accent); color: var(--accent-contrast); }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn.secondary { background: transparent; color: var(--text); border-color: var(--control-border); }
+.btn.secondary:hover:not(:disabled) { background: var(--bg); }
+.btn.primary:disabled { background: var(--disabled-bg); border-color: var(--disabled-bg); color: var(--disabled-text); cursor: not-allowed; }
+.btn.secondary:disabled { opacity: .5; cursor: not-allowed; }
+.btn.small { font-size: 14px; padding: 4px 14px; min-height: 34px; }
+.btn.link { border: 0; background: none; padding: 0; min-height: 0; color: var(--text-h); font-size: 13px;
+  text-decoration: underline; text-underline-offset: 3px; }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px 2px 7px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 600; background: var(--bg); border: 1px solid var(--border); }
+.pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--ember); }
+
+/* Step 1 */
+.group { margin: 0 0 22px; }
+.group-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 6px; }
+.group-head h4 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-h); }
+.group-head .count { font-size: 13px; color: var(--text-quiet); }
+.group-head .sum { margin-left: auto; font-size: 14px; color: var(--text-quiet); }
+.rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.row { display: grid; grid-template-columns: 1fr auto 92px 168px; gap: 14px; align-items: center;
+  padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 15px; }
+.row .name { color: var(--text-h); font-weight: 500; }
+.row .name small { display: block; color: var(--text-quiet); font-size: 12.5px; font-weight: 400; }
+.row .price { text-align: right; }
+.row .acts { display: flex; gap: 6px; justify-content: flex-end; }
+.row .acts .btn { flex: 1; }
+.row.leaving { animation: leave .32s cubic-bezier(.16,1,.3,1) forwards; }
+@keyframes leave { to { opacity: 0; transform: translateX(16px); } }
+
+.allclear { display: grid; justify-items: start; gap: 6px; padding: 18px 20px; border-radius: 8px;
+  background: var(--accent-wash); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+.allclear b { color: var(--text-h); font-size: 16px; display: inline-flex; gap: 8px; align-items: center; }
+.allclear b svg { color: var(--accent); }
+.allclear span { font-size: 14px; color: var(--text-quiet); }
+
+/* Step 2: the till ledger */
+.ledger { display: grid; grid-template-columns: 120px 1fr 1fr; border-top: 1px solid var(--rule); }
+.ledger > * { padding: 12px 0; border-bottom: 1px solid var(--border); display: flex; align-items: center; }
+.ledger .hd { font-size: 13px; font-weight: 700; color: var(--text-h); text-transform: none; padding: 10px 0 8px; }
+.ledger .hd.till { font-size: 16px; }
+.ledger .lab { font-size: 14px; color: var(--text-quiet); }
+.ledger .val { font-size: 17px; color: var(--text-h); padding-right: 24px; }
+.money-field { position: relative; width: 100%; max-width: 200px; }
+.money-field input { width: 100%; height: 44px; font: 600 17px var(--mono); font-variant-numeric: tabular-nums;
+  text-align: right; padding: 0 34px 0 12px; border: 2px solid var(--control-border); border-radius: 8px;
+  background: var(--panel-bg); color: var(--text-h); caret-color: var(--accent); }
+.money-field input::placeholder { color: var(--text-quiet); font-weight: 400; font-family: var(--sans); font-size: 14px; }
+.money-field input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-wash); }
+.money-field::after { content: '€'; position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  color: var(--text-quiet); font-size: 15px; }
+.diff { font-weight: 700; display: inline-flex; gap: 8px; align-items: baseline; }
+.diff.ok { color: var(--accent); }
+.diff.off { color: var(--warn-text); }
+.diff.none { color: var(--text-quiet); font-weight: 400; font-family: var(--sans); font-size: 14px; }
+.diff small { font-family: var(--sans); font-weight: 600; font-size: 12.5px; }
+.reason { margin-top: 20px; display: grid; gap: 6px; max-width: 520px; }
+.reason label { font-size: 14px; font-weight: 600; color: var(--text-h); }
+.reason label span { color: var(--warn-text); font-weight: 600; }
+.reason textarea, .text-field { font: inherit; font-size: 15px; padding: 10px 12px; border: 2px solid var(--control-border);
+  border-radius: 8px; background: var(--panel-bg); color: var(--text-h); resize: vertical; min-height: 64px; caret-color: var(--accent); }
+.reason textarea:focus, .text-field:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-wash); }
+.reason .hint { font-size: 13px; color: var(--text-quiet); }
+
+/* Step 3 */
+.bl { display: grid; gap: 8px; max-width: 420px; }
+.bl label { font-size: 14px; font-weight: 600; color: var(--text-h); }
+.text-field { min-height: 0; height: 48px; font-size: 17px; }
+.bl .hint { font-size: 13px; color: var(--text-quiet); }
+
+/* Step 4: summary */
+.summary { display: grid; grid-template-columns: 160px 1fr; border-top: 1px solid var(--rule); margin: 0 0 18px; }
+.summary dt, .summary dd { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 15px; }
+.summary dt { color: var(--text-quiet); font-size: 14px; }
+.summary dd { color: var(--text-h); display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+.summary dd .sub { color: var(--text-quiet); font-size: 13px; }
+.summary dd .off { color: var(--warn-text); font-weight: 700; }
+.summary dd .ok { color: var(--accent); font-weight: 700; }
+.leftover { list-style: none; margin: 0; padding: 12px 16px; border: 1px solid var(--ember); border-radius: 8px; display: grid; gap: 6px; }
+.leftover li { display: flex; gap: 12px; align-items: center; font-size: 14px; }
+.leftover li::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--ember); flex: none; }
+.error-box { margin: 0 0 16px; padding: 12px 16px; border: 2px solid var(--error-text); border-radius: 8px; font-size: 14px; color: var(--text-h); }
+.error-box b { color: var(--error-text); display: block; margin-bottom: 2px; }
+
+/* Running */
+.phases { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 0; max-width: 480px; }
+.phase { display: grid; grid-template-columns: 30px 1fr auto; gap: 14px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.phase:first-child { border-top: 1px solid var(--rule); }
+.phase .marker { width: 26px; height: 26px; }
+.phase.done .marker { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.phase.active .marker { border-color: var(--border); border-top-color: var(--accent); animation: spin .9s linear infinite; }
+.phase .t { font-size: 15px; color: var(--text-h); font-weight: 500; }
+.phase.pending .t { color: var(--text-quiet); font-weight: 400; }
+.phase .p { font-size: 14px; color: var(--text-quiet); }
+.bar { grid-column: 2 / -1; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-top: -4px; }
+.bar i { display: block; height: 100%; width: 66%; background: var(--accent); transition: width .4s cubic-bezier(.16,1,.3,1); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.wait { margin-top: 18px; font-size: 14px; color: var(--text-quiet); }
+
+/* Done */
+.finish { display: grid; gap: 18px; }
+.finish-head { display: flex; gap: 14px; align-items: center; }
+.seal { width: 48px; height: 48px; border-radius: 50%; background: var(--accent); color: var(--accent-contrast); display: grid; place-items: center;
+  animation: seal .5s cubic-bezier(.16,1,.3,1) both; }
+@keyframes seal { from { transform: scale(.6); opacity: 0; } }
+.finish-head h3 { margin: 0; }
+.finish-head p { margin: 2px 0 0; color: var(--text-quiet); font-size: 14px; }
+.path { font: 14px var(--mono); padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text-h); word-break: break-all; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
+</style>
+</head>
+<body>
+<div class="mock-bar" role="toolbar" aria-label="Mockup-Zustand">
+  <b>Mockup</b>
+  <button data-s="t">1 Tandems</button>
+  <button data-s="t0">1 erledigt</button>
+  <button data-s="k">2 Kasse</button>
+  <button data-s="b">3 BL</button>
+  <button data-s="a">4 Abschluss</button>
+  <button data-s="r">läuft</button>
+  <button data-s="e">Fehler</button>
+  <button data-s="f">Fertig</button>
+  <span class="sep"></span>
+  <button id="theme">Dunkel</button>
+  <button id="closed">Bereits abgeschlossen</button>
+</div>
+<div class="fake-page" aria-hidden="true"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div>
+
+<div class="backdrop">
+  <section class="dc" role="dialog" aria-modal="true" aria-labelledby="dc-title">
+    <header class="dc-head">
+      <h2 id="dc-title">Tagesabschluss</h2>
+      <span class="dc-date">Samstag, 8. November 2026</span>
+      <button class="icon-btn" id="x" aria-label="Schließen">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </header>
+    <div class="dc-closed" id="closed-note" hidden>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Bereits abgeschlossen am 8.11., 18:42 · erneut abschließen überschreibt das Blatt. Die Werte von damals sind eingesetzt.
+    </div>
+    <ol class="rail" id="rail"></ol>
+    <div class="pane">
+      <div class="pane-body" id="body"></div>
+      <footer class="pane-foot" id="foot"></footer>
+    </div>
+  </section>
+</div>
+
+<script>
+const check = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const bang = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 6v7" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><circle cx="12" cy="17.5" r="1.6" fill="currentColor"/></svg>';
+const bigCheck = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+const STEPS = [
+  { label: 'Tandems' }, { label: 'Kasse' }, { label: 'Betriebsleiter' }, { label: 'Abschluss' },
+];
+
+// state per mock view: current step index + per-step status
+const VIEWS = {
+  t:  { cur: 0, st: ['cur','todo','todo','todo'], s: ['3 offen · 1 ohne Zahlungsart','','',''] },
+  t0: { cur: 0, st: ['cur','todo','todo','todo'], s: ['Alles kassiert','','',''] },
+  k:  { cur: 1, st: ['warn','cur','todo','todo'], s: ['1 bleibt offen','Differenz Bar <span class="numeral">+5,00 €</span>','',''] },
+  b:  { cur: 2, st: ['warn','done','cur','todo'], s: ['1 bleibt offen','Bar <span class="numeral">+5,00 €</span> · begründet','fehlt noch',''] },
+  a:  { cur: 3, st: ['warn','done','done','cur'], s: ['1 bleibt offen','Bar <span class="numeral">+5,00 €</span> · begründet','Max Muster',''] },
+  e:  { cur: 3, st: ['warn','done','done','cur'], s: ['1 bleibt offen','Bar <span class="numeral">+5,00 €</span> · begründet','Max Muster','Fehlgeschlagen'] },
+  r:  { cur: 3, st: ['warn','done','done','cur'], s: ['1 bleibt offen','Bar <span class="numeral">+5,00 €</span> · begründet','Max Muster','läuft …'], locked: true },
+  f:  { cur: 3, st: ['warn','done','done','done'], s: ['1 bleibt offen','Bar <span class="numeral">+5,00 €</span> · begründet','Max Muster','Abgeschlossen'], locked: true },
+};
+
+function rail(v) {
+  return STEPS.map((step, i) => {
+    const st = v.st[i];
+    const cls = st === 'cur' ? 'current' : st;
+    const marker = st === 'done' ? check : st === 'warn' ? bang : (i + 1);
+    const reachable = !v.locked && i < v.cur;
+    return `<li class="${cls}"><button class="step" data-reachable="${reachable}" ${reachable ? '' : 'tabindex="-1"'} ${st==='cur'?'aria-current="step"':''}>
+      <span class="marker">${marker}</span><span class="step-label">${step.label}</span>
+      <span class="step-status">${v.s[i] || '&nbsp;'}</span></button></li>`;
+  }).join('');
+}
+
+const row = (name, sub, price, voucherZero, pill) => `<li class="row">
+  <span class="name">${name}${sub ? `<small>${sub}</small>` : ''}</span>
+  <span>${pill ? '<span class="pill">Gutschein</span>' : ''}</span>
+  <span class="price numeral">${price}</span>
+  <span class="acts">${voucherZero
+    ? '<button class="btn secondary small">Kassieren</button>'
+    : '<button class="btn secondary small">Bar</button><button class="btn secondary small">Karte</button>'}</span></li>`;
+
+const BODIES = {
+  t: `<h3>Offene Tandems</h3>
+    <p class="lede">Was noch nicht kassiert ist oder keine Zahlungsart hat. Ein Druck auf Bar oder Karte kassiert sofort.</p>
+    <div class="group"><div class="group-head"><h4>Noch nicht kassiert</h4><span class="count">3</span><span class="sum numeral">578,00 €</span></div>
+      <ul class="rows">
+        ${row('Anna Huber','Load 7 · TM Gruber','259,00 €')}
+        ${row('Max Leitner','Load 7 · TM Berger','289,00 €')}
+        ${row('Lisa Wagner','Load 6 · Zuzahlung Video','30,00 €', false, true)}
+      </ul></div>
+    <div class="group"><div class="group-head"><h4>Kassiert, ohne Zahlungsart</h4><span class="count">1</span><span class="sum numeral">259,00 €</span></div>
+      <ul class="rows">${row('Tom Lang','Load 5 · TM Gruber','259,00 €')}</ul></div>
+    <div class="group"><div class="group-head"><h4>Gutschein, nichts zu zahlen</h4><span class="count">1</span></div>
+      <ul class="rows">${row('Eva Bauer','Load 6 · Gutschein deckt alles','0,00 €', true, true)}</ul></div>`,
+  t0: `<h3>Offene Tandems</h3>
+    <p class="lede">Was noch nicht kassiert ist oder keine Zahlungsart hat.</p>
+    <div class="allclear"><b>${check} Alles erledigt</b><span>Alle 16 Tandems sind kassiert und haben eine Zahlungsart.</span></div>`,
+  k: `<h3>Kassensturz</h3>
+    <p class="lede">Zähl die Kasse und lies die Tagessumme vom Kartenterminal ab. Leer lassen heißt: nicht gezählt.</p>
+    <div class="ledger">
+      <span class="hd"></span><span class="hd till">Bar</span><span class="hd till">Karte</span>
+      <span class="lab">Erwartet</span><span class="val numeral">1.295,00 €</span><span class="val numeral">548,00 €</span>
+      <span class="lab">Gezählt</span>
+      <span><span class="money-field"><input inputmode="decimal" value="1.300,00" aria-label="Gezählt Bar"></span></span>
+      <span><span class="money-field"><input inputmode="decimal" value="548,00" aria-label="Gezählt Karte"></span></span>
+      <span class="lab">Differenz</span>
+      <span><span class="diff off numeral">+5,00 € <small>zu viel</small></span></span>
+      <span><span class="diff ok numeral">0,00 € <small>stimmt</small></span></span>
+    </div>
+    <div class="reason">
+      <label for="why">Begründung <span>· nötig, weil Bar abweicht</span></label>
+      <textarea id="why">Trinkgeld in der Kasse</textarea>
+      <span class="hint">Steht im Excel-Blatt unter Kassensturz.</span>
+    </div>`,
+  b: `<h3>Betriebsleiter</h3>
+    <p class="lede">Wer hat den Tag geführt? Der Name steht im Blatt in der Zeile Betriebsleiter (BL).</p>
+    <div class="bl"><label for="bl">Betriebsleiter</label><input id="bl" class="text-field" placeholder="Vor- und Nachname">
+      <span class="hint">Gleiches Feld wie oben in der Liste.</span></div>`,
+  a: summary(''),
+  e: summary(`<div class="error-box" role="alert"><b>Tagesabschluss fehlgeschlagen</b>Der Export-Ordner ist nicht erreichbar (OneDrive\\Tandem). Der Tag ist noch nicht abgeschlossen. Prüf den Ordner und versuch es erneut.</div>`),
+  r: `<h3>Tagesabschluss läuft</h3>
+    <p class="lede">Gutscheinliste und Excel-Blatt werden geschrieben.</p>
+    <ol class="phases">
+      <li class="phase done"><span class="marker">${check}</span><span class="t">Kassensturz gespeichert</span><span></span></li>
+      <li class="phase active"><span class="marker"></span><span class="t">Gutscheinliste</span><span class="p numeral">2 von 3</span><span class="bar"><i></i></span></li>
+      <li class="phase pending"><span class="marker"></span><span class="t">Excel-Blatt</span><span></span></li>
+    </ol>
+    <p class="wait">Bitte warten, nicht schließen. Das dauert ein paar Sekunden.</p>`,
+  f: `<div class="finish">
+      <div class="finish-head"><span class="seal">${bigCheck}</span><div><h3>Tag abgeschlossen</h3><p>Samstag, 8. November 2026 · 16 Tandems</p></div></div>
+      <div class="path">C:\\Users\\Manifest\\OneDrive\\Tandem\\Tandem_2026-11-08.xlsx</div>
+      <dl class="summary">
+        <dt>Gutscheinliste</dt><dd><span class="ok">3 eingetragen</span></dd>
+        <dt>Kassensturz</dt><dd>Bar <span class="numeral off">+5,00 €</span><span class="sub">Trinkgeld in der Kasse</span></dd>
+        <dt>Offen geblieben</dt><dd>1 Tandem<span class="sub">wird beim nächsten Export nachgetragen, sobald kassiert</span></dd>
+      </dl></div>`,
+};
+
+function summary(err) {
+  return `<h3>Zusammenfassung</h3>
+    <p class="lede">So wird der Tag geschrieben. Ein Klick auf einen Schritt links ändert ihn noch.</p>
+    ${err}
+    <dl class="summary">
+      <dt>Betriebsleiter</dt><dd>Max Muster</dd>
+      <dt>Tandems</dt><dd><span class="numeral">16</span><span class="sub">15 kassiert · 1 offen</span></dd>
+      <dt>Bar</dt><dd><span class="numeral">1.300,00 €</span><span class="sub numeral">erwartet 1.295,00 €</span><span class="numeral off">+5,00 €</span></dd>
+      <dt>Karte</dt><dd><span class="numeral">548,00 €</span><span class="sub numeral">erwartet 548,00 €</span><span class="ok">stimmt</span></dd>
+      <dt>Begründung</dt><dd>Trinkgeld in der Kasse</dd>
+    </dl>
+    <ul class="leftover"><li>1 Tandem ist noch nicht kassiert und fehlt in der Gutscheinliste. <button class="btn link">Zu Tandems</button></li></ul>`;
+}
+
+function foot(s) {
+  const back = '<button class="btn secondary">Zurück</button>';
+  const cancel = '<button class="btn secondary">Abbrechen</button>';
+  switch (s) {
+    case 't': case 't0': return `<span class="spacer"></span>${cancel}<button class="btn primary">Weiter</button>`;
+    case 'k': return `${back}<span class="spacer"></span>${cancel}<button class="btn primary">Weiter</button>`;
+    case 'b': return `${back}<span class="spacer"></span><span class="foot-note">Name fehlt</span>${cancel}<button class="btn primary" disabled>Weiter</button>`;
+    case 'a': return `${back}<span class="spacer"></span>${cancel}<button class="btn primary">Tagesabschluss durchführen</button>`;
+    case 'e': return `${back}<span class="spacer"></span>${cancel}<button class="btn primary">Erneut versuchen</button>`;
+    case 'r': return `<button class="btn secondary" disabled>Zurück</button><span class="spacer"></span><button class="btn secondary" disabled>Abbrechen</button><button class="btn primary" disabled>Wird abgeschlossen …</button>`;
+    case 'f': return `<span class="spacer"></span><button class="btn primary">Schließen</button>`;
+  }
+}
+
+function show(s) {
+  const v = VIEWS[s];
+  document.getElementById('rail').innerHTML = rail(v);
+  document.getElementById('body').innerHTML = BODIES[s];
+  document.getElementById('foot').innerHTML = foot(s);
+  document.getElementById('x').disabled = s === 'r';
+  document.querySelectorAll('.mock-bar [data-s]').forEach(b => b.setAttribute('aria-pressed', b.dataset.s === s));
+  document.querySelectorAll('.row .acts .btn').forEach(b => b.addEventListener('click', e => {
+    const li = e.target.closest('.row'); li.classList.add('leaving'); setTimeout(() => li.remove(), 330);
+  }));
+}
+document.querySelectorAll('.mock-bar [data-s]').forEach(b => b.addEventListener('click', () => show(b.dataset.s)));
+const root = document.documentElement;
+if (matchMedia('(prefers-color-scheme: dark)').matches) root.dataset.theme = 'dark';
+document.getElementById('theme').addEventListener('click', e => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+  e.target.setAttribute('aria-pressed', root.dataset.theme === 'dark');
+});
+document.getElementById('closed').addEventListener('click', e => {
+  const n = document.getElementById('closed-note'); n.hidden = !n.hidden; e.target.setAttribute('aria-pressed', !n.hidden);
+});
+const h = location.hash.slice(1).split(',');
+if (h.includes('dark')) root.dataset.theme = 'dark';
+if (h.includes('closed')) document.getElementById('closed-note').hidden = false;
+show(VIEWS[h[0]] ? h[0] : 'k');
+</script>
+</body>
+</html>

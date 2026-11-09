@@ -63,12 +63,27 @@ const THIN_BOTTOM_BORDER: Partial<ExcelJS.Borders> = {
 // are widened to fit both rather than clipping the arithmetic the block exists to show.
 const PAYOUT_COLUMN_WIDTHS = [26, 44, 14]
 
+/** What was counted at closing against what the sheet's own sums expect. */
+export interface CashCount {
+  expectedCash: number
+  expectedCard: number
+  /** null: the till was not counted. */
+  countedCash: number | null
+  countedCard: number | null
+  note: string
+}
+
+// A difference reads as a direction: "+5,00 €" is money too much in the till,
+// "-5,00 €" money missing. A plain euro format would drop the plus.
+export const SIGNED_EURO_FORMAT = '+#,##0.00 "€";-#,##0.00 "€";0.00 "€"'
+
 export async function buildWorkbook(
   rows: any[],
   columns: Column[] = DEFAULT_COLUMNS,
   meta: MetaRow[] = [],
   totals: TotalRow[] = [],
-  payouts: PayoutSection[] = []
+  payouts: PayoutSection[] = [],
+  cashCount?: CashCount
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Tandem')
@@ -108,6 +123,35 @@ export async function buildWorkbook(
       row.getCell(1).font = { bold: true }
       row.getCell(2).font = { bold: true }
       row.getCell(2).numFmt = EURO_FORMAT
+    }
+  }
+
+  // Kassensturz: what was actually in the till at closing, next to the sums
+  // above, so a difference is on paper with the reason someone gave for it.
+  if (cashCount) {
+    ws.addRow([])
+    ws.addRow(['Kassensturz']).getCell(1).font = { bold: true }
+    const tills = [
+      { name: 'Bar', counted: cashCount.countedCash, expected: cashCount.expectedCash },
+      { name: 'Karte', counted: cashCount.countedCard, expected: cashCount.expectedCard },
+    ]
+    for (const till of tills) {
+      if (till.counted === null) {
+        ws.addRow([`Gezählt ${till.name}`, 'nicht gezählt']).getCell(1).font = { bold: true }
+        continue
+      }
+      const counted = ws.addRow([`Gezählt ${till.name}`, till.counted])
+      counted.getCell(1).font = { bold: true }
+      counted.getCell(2).numFmt = EURO_FORMAT
+      // Rounded to cents: 0.1 + 0.2 summed up in the till must not print as a
+      // difference of 0,00 € with a minus sign in front.
+      const diff = Math.round((till.counted - till.expected) * 100) / 100
+      const difference = ws.addRow([`Differenz ${till.name}`, diff])
+      difference.getCell(1).font = { bold: true }
+      difference.getCell(2).numFmt = SIGNED_EURO_FORMAT
+    }
+    if (cashCount.note !== '') {
+      ws.addRow(['Begründung', cashCount.note]).getCell(1).font = { bold: true }
     }
   }
 

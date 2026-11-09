@@ -3,7 +3,7 @@ import type { Database } from 'better-sqlite3'
 import { promises as fs } from 'fs'
 import path from 'path'
 import { buildWorkbook, DEFAULT_COLUMNS } from '../excel'
-import type { TotalRow } from '../excel'
+import type { CashCount, TotalRow } from '../excel'
 import {
   extraBookingLabel, genderLabel, paymentLabel, voucherServiceLabel, weightSurchargeLabel,
 } from '../labels'
@@ -13,16 +13,45 @@ import { tablesForDay } from '../dayTables'
 import { redeemVoucher } from '../voucherRedeem'
 import type { Config } from '../config'
 import { today } from '../day'
+import { readDayClose } from './dayClose'
+import type { SseHub } from '../sse'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+// Chosen by the closing dialog so it can tell its own progress from another
+// PC's. It is echoed into every event, so it is kept to something harmless.
+const RUN_RE = /^[A-Za-z0-9-]{1,64}$/
 
-export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef: { current: Config }) {
+// Below a cent is float noise from summing prices, not money.
+const differs = (counted: number | null, expected: number) =>
+  counted !== null && Math.abs(counted - expected) >= 0.005
+
+export function registerExportRoutes(
+  app: FastifyInstance, db: Database, cfgRef: { current: Config }, sse?: SseHub,
+) {
+  // Days whose Tagesabschluss is running right now. Two runs of one day would
+  // both sweep the same redemptions into the club's voucher file and race each
+  // other writing the sheet, so the second press or PC is told to wait.
+  const running = new Set<string>()
+
   app.post('/api/export', async (req, reply) => {
     const rawDate = (req.query as any)?.date
     if (rawDate !== undefined && !DATE_RE.test(rawDate)) {
       return reply.code(400).send({ error: 'Datum ungültig' })
     }
+    const run = (req.query as any)?.run
+    if (run !== undefined && (typeof run !== 'string' || !RUN_RE.test(run))) {
+      return reply.code(400).send({ error: 'Lauf-Kennung ungültig' })
+    }
     const date = rawDate || today()
+    const progress = (data: object) => {
+      if (run !== undefined) sse?.broadcast('export-progress', { run, date, ...data })
+    }
+
+    // The closing dialog asks for both of these before it lets anyone press
+    // the button; this is the net under it for any other caller.
+    const manager = (db.prepare('SELECT name FROM day_manager WHERE jump_date=?')
+      .get(date) as { name: string } | undefined)?.name ?? ''
+    if (manager.trim() === '') return reply.code(400).send({ error: 'Betriebsleiter fehlt' })
     const rows = db.prepare('SELECT * FROM registrations WHERE jump_date=? ORDER BY id').all(date) as any[]
     const masters = new Map<number, string>(
       (db.prepare('SELECT id,name FROM tandem_masters').all() as any[]).map(m => [m.id, m.name]))
@@ -52,6 +81,23 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
       { label: 'davon Gutschein-Zuzahlung', amount: sum(r => r.payment_method === 'voucher') },
     ]
 
+    const counted = readDayClose(db, date)
+    const cashCount: CashCount = {
+      expectedCash: totals[0].amount,
+      expectedCard: totals[1].amount,
+      countedCash: counted.countedCash,
+      countedCard: counted.countedCard,
+      note: counted.note,
+    }
+    const tillDiffers = differs(cashCount.countedCash, cashCount.expectedCash) ||
+      differs(cashCount.countedCard, cashCount.expectedCard)
+    if (tillDiffers && cashCount.note === '') {
+      return reply.code(400).send({ error: 'Begründung für die Kassendifferenz fehlt' })
+    }
+
+    if (running.has(date)) return reply.code(409).send({ error: 'Tagesabschluss läuft bereits' })
+    running.add(date)
+    try {
     // Computed before the loop below, which overwrites the id columns with names —
     // the payout rule groups by id and reads the stored `extra_booking` and
     // `weight_surcharge` enums.
@@ -76,6 +122,10 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
     const owed = db.prepare(`SELECT id, voucher_number FROM registrations
       WHERE voucher_redeemed_at IS NOT NULL AND voucher_redeem_synced_at IS NULL
         AND voucher_number IS NOT NULL AND jump_date = ? ORDER BY id`).all(date) as any[]
+    // The slow part of a closing: each voucher is a read and a write of the
+    // club's workbook. The dialog shows how far it got.
+    progress({ phase: 'vouchers', done: 0, total: owed.length })
+    let done = 0
     for (const row of owed) {
       // One unwritable voucher must not cost the club the day's export, which is
       // built below and is what the operator actually asked for. Same reasoning
@@ -123,6 +173,8 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
           'Gutschein-Einlösung konnte beim Export nicht geschrieben werden')
         redemptionsPending += 1
       }
+      done += 1
+      progress({ phase: 'vouchers', done, total: owed.length })
     }
 
     for (const r of rows) {
@@ -136,8 +188,6 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
       r.weight_surcharge = weightSurchargeLabel(r.weight_surcharge)
       r.address = `${r.street}, ${r.postal_code}, ${r.city}`
     }
-    const manager = (db.prepare('SELECT name FROM day_manager WHERE jump_date=?')
-      .get(date) as { name: string } | undefined)?.name ?? ''
     const meta = [
       { label: 'Datum', value: date },
       { label: 'Ort', value: cfgRef.current.jumpLocation },
@@ -146,7 +196,8 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
       // it always was.
       { label: 'Betriebsleiter (BL)', value: manager },
     ]
-    const buf = await buildWorkbook(rows, DEFAULT_COLUMNS, meta, totals, payouts)
+    progress({ phase: 'sheet' })
+    const buf = await buildWorkbook(rows, DEFAULT_COLUMNS, meta, totals, payouts, cashCount)
     const dir = cfgRef.current.exportDir
     await fs.mkdir(dir, { recursive: true })
     const filePath = path.join(dir, `Tandem_${date}.xlsx`)
@@ -161,5 +212,8 @@ export function registerExportRoutes(app: FastifyInstance, db: Database, cfgRef:
       path: filePath, count: rows.length,
       redemptionsWritten, redemptionsPending, redemptionsInvalid,
     })
+    } finally {
+      running.delete(date)
+    }
   })
 }

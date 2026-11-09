@@ -212,6 +212,7 @@ test('the export pays the crew at the rates of the day it exports', async () => 
   await register(app)
   cfgRef.current.payouts = { ...cfgRef.current.payouts, tandem_master: 90 }
 
+  db.prepare('INSERT INTO day_manager (jump_date,name) VALUES (?,?)').run(today(), 'Max Muster')
   const res = await app.inject({ method: 'POST', url: `/api/export?date=${today()}` })
   expect(res.statusCode).toBe(200)
 

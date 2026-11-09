@@ -51,6 +51,7 @@ test('rejects a malformed month', async () => {
 test('says which days had their Tagesabschluss', async () => {
   const { app, db } = testServer()
   seed(db, ['2026-10-03', '2026-10-04'])
+  db.prepare('INSERT INTO day_manager (jump_date,name) VALUES (?,?)').run('2026-10-03', 'Max Muster')
   const res = await app.inject({ method: 'POST', url: '/api/export?date=2026-10-03' })
   expect(res.statusCode).toBe(200)
 
@@ -68,6 +69,7 @@ test('a Tagesabschluss that failed does not count as done', async () => {
   await fs.writeFile(blocker, '')
   const { app, db } = testServer({ exportDir: path.join(blocker, 'export') })
   seed(db, ['2026-10-03'])
+  db.prepare('INSERT INTO day_manager (jump_date,name) VALUES (?,?)').run('2026-10-03', 'Max Muster')
   const res = await app.inject({ method: 'POST', url: '/api/export?date=2026-10-03' })
   expect(res.statusCode).toBe(500)
 

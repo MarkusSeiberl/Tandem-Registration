@@ -45,7 +45,7 @@ export function buildServer(
   registerRegistrationRoutes(app, db, sse, cfgRef, contractTemplate, notify)
   registerUrkundeRoutes(app, db, urkundeTemplate)
   registerStammdatenRoutes(app, db)
-  registerExportRoutes(app, db, cfgRef)
+  registerExportRoutes(app, db, cfgRef, sse)
   registerDayManagerRoutes(app, db)
   registerDayCloseRoutes(app, db)
   registerCalendarRoutes(app, db)

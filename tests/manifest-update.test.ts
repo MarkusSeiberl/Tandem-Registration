@@ -1,3 +1,4 @@
+import { today } from '../src/server/day'
 import { test, expect } from 'vitest'
 import ExcelJS from 'exceljs'
 import { promises as fs } from 'fs'
@@ -601,6 +602,8 @@ async function voucherServer(voucherListPath: string) {
   })
   // The only thing that writes into the club's file. Several tests below need a
   // redemption that has actually reached it, and this is the one way to get one.
+  // A closing needs a Betriebsleiter; these tests are about the voucher sweep.
+  await app.inject({ method: 'PUT', url: `/api/day-manager/${today()}`, payload: { name: 'Max Muster' } })
   const runExport = () => app.inject({ method: 'POST', url: '/api/export' })
   const row = () => db.prepare('SELECT * FROM registrations WHERE id=?').get(id) as any
   return { app, id, collect, runExport, row }

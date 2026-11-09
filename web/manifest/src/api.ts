@@ -319,8 +319,15 @@ export function urkundePdfUrl(id: number): string {
   return apiUrl(`/api/registrations/${id}/urkunde.pdf`)
 }
 
-export async function exportDay(date: string): Promise<ExportResult> {
-  const res = await fetch(apiUrl(`/api/export?date=${encodeURIComponent(date)}`), {
+// What the server reports while a Tagesabschluss runs, matched on `run`.
+export type ExportProgress =
+  | { run: string; date: string; phase: 'vouchers'; done: number; total: number }
+  | { run: string; date: string; phase: 'sheet' }
+
+/** `runId` makes the server report this run's progress over /api/events. */
+export async function exportDay(date: string, runId?: string): Promise<ExportResult> {
+  const run = runId === undefined ? '' : `&run=${encodeURIComponent(runId)}`
+  const res = await fetch(apiUrl(`/api/export?date=${encodeURIComponent(date)}${run}`), {
     method: 'POST',
   })
   if (!res.ok) throw new Error(await errorMessage(res, 'Export fehlgeschlagen'))

@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import DayCloseDialog from './DayCloseDialog'
 import * as api from '../api'
 import { makeRow } from './testRows'
+import { fireRawEvent } from '../setupTests'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -57,6 +58,7 @@ async function goToCash(user = userEvent.setup()) {
 }
 
 beforeEach(() => {
+  vi.mocked(api.exportDay).mockReset()
   vi.mocked(api.dayClose).mockResolvedValue({ ...EMPTY })
   vi.mocked(api.saveDayClose).mockImplementation(async (_d, draft) => ({ ...draft, exportedAt: null }))
 })
@@ -289,3 +291,125 @@ describe('step Abschluss', () => {
   })
 })
 
+
+describe('running the Tagesabschluss', () => {
+  const RESULT = {
+    path: 'C:\\Export\\Tandem_2026-11-08.xlsx', count: 2,
+    redemptionsWritten: 3, redemptionsPending: 1, redemptionsInvalid: 0,
+  }
+
+  async function goToSummary(props: Partial<Props> = {}) {
+    const utils = renderDialog(props)
+    const user = await goToCash()
+    await user.click(next())
+    await screen.findByRole('heading', { name: 'Betriebsleiter' })
+    await user.click(next())
+    await screen.findByRole('heading', { name: 'Zusammenfassung' })
+    return { ...utils, user }
+  }
+  const run = () => screen.getByRole('button', { name: 'Tagesabschluss durchführen' })
+
+  function pendingExport() {
+    let resolve!: (r: typeof RESULT) => void
+    let reject!: (e: Error) => void
+    vi.mocked(api.exportDay).mockImplementation(() => new Promise((res, rej) => { resolve = res; reject = rej }))
+    return { resolve: (r = RESULT) => resolve(r), reject: (e: Error) => reject(e) }
+  }
+
+  it('saves the count first, then exports with its own run id, locked while it runs', async () => {
+    const pending = pendingExport()
+    const { user, props } = await goToSummary()
+    await user.click(run())
+    await waitFor(() => expect(api.exportDay).toHaveBeenCalledTimes(1))
+    const saveOrder = vi.mocked(api.saveDayClose).mock.invocationCallOrder.at(-1)!
+    expect(saveOrder).toBeLessThan(vi.mocked(api.exportDay).mock.invocationCallOrder[0])
+    const [date, runId] = vi.mocked(api.exportDay).mock.calls[0]
+    expect(date).toBe(DATE)
+    expect(runId).toMatch(/^[A-Za-z0-9-]{1,64}$/)
+
+    expect(await screen.findByRole('heading', { name: 'Tagesabschluss läuft' })).toBeInTheDocument()
+    expect(screen.getByText('Kassensturz gespeichert')).toBeInTheDocument()
+    expect(screen.getByText('Gutscheinliste')).toBeInTheDocument()
+    expect(screen.getByText('Excel-Blatt')).toBeInTheDocument()
+    expect(screen.getByText('Bitte warten, nicht schließen. Das dauert ein paar Sekunden.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Zurück' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Abbrechen' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Schließen' })).toBeDisabled()
+    expect(railStep(/Tandems/)).toBeDisabled()
+    fireEvent(dialog(), new Event('cancel', { cancelable: true }))
+    expect(props.onClose).not.toHaveBeenCalled()
+    pending.resolve()
+    await screen.findByRole('heading', { name: 'Tag abgeschlossen' })
+  })
+
+  it('shows its own run\'s progress and ignores another PC\'s', async () => {
+    pendingExport()
+    const { user } = await goToSummary()
+    await user.click(run())
+    await screen.findByRole('heading', { name: 'Tagesabschluss läuft' })
+    const runId = vi.mocked(api.exportDay).mock.calls[0][1]!
+    fireRawEvent('export-progress', JSON.stringify({ run: 'other', date: DATE, phase: 'vouchers', done: 1, total: 9 }))
+    expect(screen.queryByText('1 von 9')).not.toBeInTheDocument()
+    fireRawEvent('export-progress', JSON.stringify({ run: runId, date: DATE, phase: 'vouchers', done: 2, total: 3 }))
+    expect(await screen.findByText('2 von 3')).toBeInTheDocument()
+  })
+
+  it('starts one export however fast it is pressed twice', async () => {
+    pendingExport()
+    const { user } = await goToSummary()
+    const button = run()
+    await user.dblClick(button)
+    await waitFor(() => expect(api.exportDay).toHaveBeenCalledTimes(1))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(api.exportDay).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows Fertig only once the export answered, with what it wrote', async () => {
+    const pending = pendingExport()
+    const { user, props } = await goToSummary({ rows: [...collected, anna] })
+    await user.click(run())
+    await screen.findByRole('heading', { name: 'Tagesabschluss läuft' })
+    expect(screen.queryByRole('heading', { name: 'Tag abgeschlossen' })).not.toBeInTheDocument()
+    pending.resolve()
+    expect(await screen.findByRole('heading', { name: 'Tag abgeschlossen' })).toBeInTheDocument()
+    expect(screen.getByText('C:\\Export\\Tandem_2026-11-08.xlsx')).toBeInTheDocument()
+    expect(screen.getByRole('definition', { name: 'Gutscheinliste' })).toHaveTextContent('3 eingetragen')
+    expect(screen.getByRole('definition', { name: 'Gutscheinliste' })).toHaveTextContent('1 noch offen')
+    expect(screen.getByRole('definition', { name: 'Offen geblieben' })).toHaveTextContent('1 Tandem')
+    expect(screen.queryByRole('button', { name: 'Abbrechen' })).not.toBeInTheDocument()
+    const closeButtons = within(screen.getByRole('contentinfo')).getAllByRole('button')
+    expect(closeButtons.map((b) => b.textContent)).toEqual(['Schließen'])
+    await user.click(closeButtons[0])
+    expect(props.onClose).toHaveBeenCalled()
+  })
+
+  it('does not export when the count cannot be saved', async () => {
+    const { user } = await goToSummary()
+    vi.mocked(api.saveDayClose).mockRejectedValue(new Error('Kassensturz speichern fehlgeschlagen'))
+    await user.click(run())
+    expect(await screen.findByText(/Kassensturz speichern fehlgeschlagen/)).toBeInTheDocument()
+    expect(api.exportDay).not.toHaveBeenCalled()
+  })
+
+  it('goes back to the summary on failure and can try again', async () => {
+    const pending = pendingExport()
+    const { user } = await goToSummary()
+    await user.click(run())
+    await screen.findByRole('heading', { name: 'Tagesabschluss läuft' })
+    pending.reject(new Error('Export-Ordner nicht erreichbar.'))
+    expect(await screen.findByText('Tagesabschluss fehlgeschlagen')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Export-Ordner nicht erreichbar.')
+    expect(screen.getByRole('alert')).toHaveTextContent('Der Tag ist noch nicht abgeschlossen.')
+    expect(railStep(/Abschluss/)).toHaveTextContent('Fehlgeschlagen')
+    vi.mocked(api.exportDay).mockResolvedValue(RESULT)
+    await user.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
+    expect(await screen.findByRole('heading', { name: 'Tag abgeschlossen' })).toBeInTheDocument()
+  })
+
+  it('names the other PC when the day is already being closed', async () => {
+    vi.mocked(api.exportDay).mockRejectedValue(new Error('Tagesabschluss läuft bereits'))
+    const { user } = await goToSummary()
+    await user.click(run())
+    expect(await screen.findByText(/Tagesabschluss läuft bereits \(anderer Rechner\)/)).toBeInTheDocument()
+  })
+})

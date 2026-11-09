@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SyntheticEvent } from 'react'
-import { dayClose, saveDayClose } from '../api'
-import type { CollectedVia, Registration } from '../api'
+import { dayClose, exportDay, saveDayClose } from '../api'
+import type { CollectedVia, ExportProgress, ExportResult, Registration } from '../api'
+import { useExportProgress } from '../useEvents'
+import ExportDone from './ExportDone'
+import ExportRunning from './ExportRunning'
 import CheckIcon from '../CheckIcon'
 import CloseIcon from '../CloseIcon'
 import AlertIcon from './AlertIcon'
@@ -37,7 +40,15 @@ const STEPS: { id: StepId; label: string }[] = [
   { id: 'summary', label: 'Abschluss' },
 ]
 
-type Marker = 'todo' | 'current' | 'done' | 'warn'
+type Marker = 'todo' | 'current' | 'done' | 'warn' | 'failed'
+
+// The server's own wording for a day another PC is closing right now.
+const ALREADY_RUNNING = 'Tagesabschluss läuft bereits'
+
+function newRunId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return Date.now().toString(36) + Math.random().toString(36).slice(2)
+}
 
 export default function DayCloseDialog({
   date, rows, masterNames, manager, onManagerChange, saveManager, settleRow, onClose,
@@ -52,7 +63,19 @@ export default function DayCloseDialog({
   const [cashMessage, setCashMessage] = useState<string | null>(null)
   const [managerMessage, setManagerMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // The export run: its id while it runs, its answer once it succeeded, its
+  // failure for the summary to show. `starting` guards the button against a
+  // second press before React has re-rendered it disabled.
+  const [runId, setRunId] = useState<string | null>(null)
+  const [progress, setProgress] = useState<ExportProgress | null>(null)
+  const [result, setResult] = useState<ExportResult | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const starting = useRef(false)
+  const running = runId !== null
+  const locked = busy || running
   const step = STEPS[stepIndex].id
+
+  useExportProgress(runId, setProgress)
 
   // Mount-only, like CollectDialog: List unmounts this to close it.
   useEffect(() => {
@@ -96,23 +119,27 @@ export default function DayCloseDialog({
     setInputs(next)
   }
 
-  /** Writes the Kassensturz draft. Answers whether it is safe on the server. */
-  async function saveDraft(force: boolean): Promise<boolean> {
-    if (!force && !dirty.current) return true
-    if (invalid) return false
+  /**
+   * Writes the Kassensturz draft. Answers null once it is safe on the server,
+   * or why it is not.
+   */
+  async function saveDraft(force: boolean): Promise<string | null> {
+    if (!force && !dirty.current) return null
+    if (invalid) return 'Betrag ungültig'
     try {
       await saveDayClose(date, { countedCash: counted.cash, countedCard: counted.card, note: inputs.note.trim() })
       dirty.current = false
       setCashMessage(null)
-      return true
+      return null
     } catch (err) {
-      setCashMessage(err instanceof Error ? err.message : 'Kassensturz speichern fehlgeschlagen')
-      return false
+      const message = err instanceof Error ? err.message : 'Kassensturz speichern fehlgeschlagen'
+      setCashMessage(message)
+      return message
     }
   }
 
   async function goTo(index: number) {
-    if (step === 'cash' && !(await saveDraft(true))) return
+    if (step === 'cash' && (await saveDraft(true)) !== null) return
     setStepIndex(index)
   }
 
@@ -131,15 +158,43 @@ export default function DayCloseDialog({
   }
 
   async function close() {
-    await saveDraft(false)
+    if (result === null) await saveDraft(false)
     onClose()
   }
 
   function handleCancel(event: SyntheticEvent<HTMLDialogElement>) {
     // The dialog closes by being unmounted, never by the browser on its own.
     event.preventDefault()
-    if (busy) return
+    if (locked) return
     void close()
+  }
+
+  async function runExport() {
+    if (starting.current) return
+    starting.current = true
+    setExportError(null)
+    try {
+      // "Kassensturz gespeichert" is this write: the sheet is built from what
+      // the server has, so it has to have exactly what stands in the fields.
+      const saveFailure = await saveDraft(true)
+      if (saveFailure !== null) {
+        setExportError(saveFailure)
+        return
+      }
+      const id = newRunId()
+      setProgress(null)
+      setRunId(id)
+      try {
+        setResult(await exportDay(date, id))
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Export fehlgeschlagen'
+        setExportError(message === ALREADY_RUNNING ? `${ALREADY_RUNNING} (anderer Rechner).` : message)
+      } finally {
+        setRunId(null)
+      }
+    } finally {
+      starting.current = false
+    }
   }
 
   // --- the rail: each step's marker and one line of what it holds ---------
@@ -168,17 +223,23 @@ export default function DayCloseDialog({
         if (stepIndex < 2) return ''
         return managerMissing ? 'fehlt noch' : manager.trim()
       case 'summary':
+        if (result !== null) return 'Abgeschlossen'
+        if (running) return 'läuft …'
+        if (exportError !== null) return 'Fehlgeschlagen'
         return ''
     }
   }
   function marker(index: number): Marker {
+    if (STEPS[index].id === 'summary' && result !== null) return 'done'
+    if (STEPS[index].id === 'summary' && exportError !== null && !running) return 'failed'
     if (index === stepIndex) return 'current'
     if (index > stepIndex) return 'todo'
     if (STEPS[index].id === 'tandems' && open > 0) return 'warn'
     return 'done'
   }
 
-  const nextDisabled = busy ||
+  const finished = result !== null
+  const nextDisabled = locked ||
     (step === 'cash' && (invalid || reasonMissing)) ||
     (step === 'manager' && managerMissing)
 
@@ -187,7 +248,7 @@ export default function DayCloseDialog({
       <header className="dc-head">
         <h2 id="dc-title">Tagesabschluss</h2>
         <span className="dc-date">{formatLongDate(date)}</span>
-        <button type="button" className="dc-x" aria-label="Schließen" disabled={busy} onClick={() => void close()}>
+        <button type="button" className="dc-x" aria-label="Schließen" disabled={locked} onClick={() => void close()}>
           <CloseIcon size={20} />
         </button>
       </header>
@@ -201,9 +262,9 @@ export default function DayCloseDialog({
       <ol className="dc-rail" aria-label="Schritte">
         {STEPS.map((s, i) => {
           const m = marker(i)
-          const reachable = i < stepIndex && !busy
+          const reachable = i < stepIndex && !locked && !finished
           return (
-            <li key={s.id} className={m}>
+            <li key={s.id} className={i === stepIndex ? `current ${m}` : m}>
               <button
                 type="button"
                 className="dc-step"
@@ -212,7 +273,7 @@ export default function DayCloseDialog({
                 onClick={() => { if (reachable) void goTo(i) }}
               >
                 <span className="dc-marker" aria-hidden="true">
-                  {m === 'done' ? <CheckIcon size={16} /> : m === 'warn' ? <AlertIcon /> : i + 1}
+                  {m === 'done' ? <CheckIcon size={16} /> : m === 'warn' || m === 'failed' ? <AlertIcon /> : i + 1}
                 </span>
                 <span className="dc-step-label">{s.label}</span>
                 <span className="dc-step-status">{status(s.id) || ' '}</span>
@@ -224,7 +285,7 @@ export default function DayCloseDialog({
       <div className="dc-pane">
         <div className="dc-body">
           {step === 'tandems' && (
-            <StepTandems rows={rows} masterNames={masterNames} settleRow={settleRow} disabled={busy} />
+            <StepTandems rows={rows} masterNames={masterNames} settleRow={settleRow} disabled={locked} />
           )}
           {step === 'cash' && (
             <StepCash
@@ -233,43 +294,64 @@ export default function DayCloseDialog({
               onChange={changeInputs}
               onFieldBlur={() => void saveDraft(false)}
               message={cashMessage}
-              disabled={busy}
+              disabled={locked}
             />
           )}
           {step === 'manager' && (
-            <StepManager manager={manager} onManagerChange={onManagerChange} message={managerMessage} disabled={busy} />
+            <StepManager manager={manager} onManagerChange={onManagerChange} message={managerMessage} disabled={locked} />
           )}
-          {step === 'summary' && (
+          {step === 'summary' && running && <ExportRunning progress={progress} />}
+          {step === 'summary' && finished && (
+            <ExportDone
+              date={date}
+              result={result}
+              diffs={{ cash: difference(counted.cash, expected.cash), card: difference(counted.card, expected.card) }}
+              note={inputs.note}
+              openLeft={open}
+            />
+          )}
+          {step === 'summary' && !running && !finished && (
             <StepSummary
               rows={rows}
               manager={manager}
               counted={counted}
               expected={expected}
               note={inputs.note}
-              error={null}
+              error={exportError}
               onGoToTandems={() => setStepIndex(0)}
             />
           )}
         </div>
         <footer className="dc-foot">
-          {stepIndex > 0 && (
-            <button type="button" className="btn secondary" disabled={busy} onClick={() => void goTo(stepIndex - 1)}>
-              Zurück
-            </button>
-          )}
-          <span className="dc-spacer" />
-          {step === 'manager' && managerMissing && <span className="dc-foot-note">Name fehlt</span>}
-          <button type="button" className="btn secondary" disabled={busy} onClick={() => void close()}>
-            Abbrechen
-          </button>
-          {step !== 'summary' ? (
-            <button type="button" className="btn primary" disabled={nextDisabled} onClick={() => void handleNext()}>
-              Weiter
-            </button>
+          {finished ? (
+            <>
+              <span className="dc-spacer" />
+              <button type="button" className="btn primary" onClick={onClose}>Schließen</button>
+            </>
           ) : (
-            <button type="button" className="btn primary" disabled={busy}>
-              Tagesabschluss durchführen
-            </button>
+            <>
+              {stepIndex > 0 && (
+                <button type="button" className="btn secondary" disabled={locked}
+                  onClick={() => void goTo(stepIndex - 1)}>
+                  Zurück
+                </button>
+              )}
+              <span className="dc-spacer" />
+              {step === 'manager' && managerMissing && <span className="dc-foot-note">Name fehlt</span>}
+              <button type="button" className="btn secondary" disabled={locked} onClick={() => void close()}>
+                Abbrechen
+              </button>
+              {step !== 'summary' ? (
+                <button type="button" className="btn primary" disabled={nextDisabled}
+                  onClick={() => void handleNext()}>
+                  Weiter
+                </button>
+              ) : (
+                <button type="button" className="btn primary" disabled={locked} onClick={() => void runExport()}>
+                  {running ? 'Wird abgeschlossen …' : exportError !== null ? 'Erneut versuchen' : 'Tagesabschluss durchführen'}
+                </button>
+              )}
+            </>
           )}
         </footer>
       </div>

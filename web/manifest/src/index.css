@@ -3645,3 +3645,142 @@ html:has(.save-bar) {
 @media (prefers-reduced-motion: reduce) {
   .dc-row.leaving { animation: none; opacity: 0; }
 }
+
+/* Export running: three phases, the one at work spins ---------------------- */
+.dc-phases {
+  display: grid;
+  max-width: 480px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dc-phase {
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dc-phase:first-child {
+  border-top: 1px solid var(--rule);
+}
+
+.dc-phase .dc-marker {
+  width: 26px;
+  height: 26px;
+}
+
+.dc-phase.done .dc-marker {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.dc-phase.active .dc-marker {
+  border-color: var(--border);
+  border-top-color: var(--accent);
+  animation: dc-spin 0.9s linear infinite;
+}
+
+@keyframes dc-spin {
+  to { transform: rotate(360deg); }
+}
+
+.dc-phase-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+.dc-phase.pending .dc-phase-label {
+  font-weight: 400;
+  color: var(--text-quiet);
+}
+
+.dc-phase-detail {
+  font-size: 14px;
+  color: var(--text-quiet);
+}
+
+.dc-bar {
+  grid-column: 2 / -1;
+  height: 4px;
+  margin-top: -4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.dc-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dc-wait {
+  margin-top: 18px;
+  font-size: 14px;
+  color: var(--text-quiet);
+}
+
+/* Fertig: the one moment the dialog celebrates, once --------------------- */
+.dc-finish {
+  display: grid;
+  gap: 18px;
+}
+
+.dc-finish-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.dc-finish-head h3 {
+  margin: 0;
+}
+
+.dc-finish-head p {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: var(--text-quiet);
+}
+
+.dc-seal {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  animation: dc-seal 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes dc-seal {
+  from { transform: scale(0.6); opacity: 0; }
+}
+
+.dc-path {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 14px;
+  color: var(--text-h);
+  word-break: break-all;
+  user-select: all;
+}
+
+.dc-till-result {
+  margin-right: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dc-phase.active .dc-marker,
+  .dc-seal { animation: none; }
+  .dc-bar i { transition: none; }
+}

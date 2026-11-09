@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   difference, expectedTills, formatAmountInput, groupTandems, needsReason, openCount, parseAmount,
+  sanitizeAmountInput,
 } from './cashMath'
 import { makeRow } from './testRows'
 
@@ -95,5 +96,18 @@ describe('openCount', () => {
   it('counts every tandem not yet collected, whatever it costs', () => {
     expect(openCount([makeRow({ id: 1, price: 0 }), makeRow({ id: 2, price: 5 }),
       makeRow({ id: 3, paid_at: PAID })])).toBe(2)
+  })
+})
+
+describe('sanitizeAmountInput', () => {
+  it.each([
+    ['1.300,50', '1.300,50'],
+    ['abc', ''],
+    ['12a3', '123'],
+    ['-5', '5'],
+    ['1 300 €', '1300'],
+    ['', ''],
+  ])('keeps only digits, comma and dot: %j → %j', (input, expected) => {
+    expect(sanitizeAmountInput(input)).toBe(expected)
   })
 })

@@ -68,6 +68,15 @@ export function parseAmount(input: string): number | null | 'invalid' {
   return cents(Number(normalised))
 }
 
+/**
+ * What a Gezählt field keeps of a keystroke or a paste: digits, the decimal
+ * comma and the grouping dot. Whether the result is a valid amount is
+ * parseAmount's call; this only keeps letters and symbols out of the field.
+ */
+export function sanitizeAmountInput(raw: string): string {
+  return raw.replace(/[^0-9.,]/g, '')
+}
+
 /** An amount the way the field shows it and parseAmount reads it back. */
 export function formatAmountInput(value: number | null): string {
   if (value === null) return ''

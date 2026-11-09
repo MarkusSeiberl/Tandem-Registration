@@ -174,10 +174,17 @@ describe('step Kasse', () => {
     expect(next()).toBeEnabled()
   })
 
+  it('takes nothing but digits, comma and dot into a Gezählt field', async () => {
+    renderDialog()
+    const user = await goToCash()
+    await user.type(screen.getByLabelText('Gezählt Bar'), 'a1.2b00,5x0 €')
+    expect(screen.getByLabelText('Gezählt Bar')).toHaveValue('1.200,50')
+  })
+
   it('refuses something that is not an amount', async () => {
     renderDialog()
     const user = await goToCash()
-    await user.type(screen.getByLabelText('Gezählt Bar'), 'abc')
+    await user.type(screen.getByLabelText('Gezählt Bar'), '1,2,3')
     expect(screen.getByText('Betrag ungültig')).toBeInTheDocument()
     expect(next()).toBeDisabled()
   })

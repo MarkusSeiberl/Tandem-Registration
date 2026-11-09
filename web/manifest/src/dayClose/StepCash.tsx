@@ -1,4 +1,4 @@
-import { difference, parseAmount } from './cashMath'
+import { difference, parseAmount, sanitizeAmountInput } from './cashMath'
 import { formatMoney, formatSigned } from './format'
 
 export interface CashInputs {
@@ -80,7 +80,7 @@ export default function StepCash({ inputs, expected, onChange, onFieldBlur, mess
                   aria-invalid={invalid || undefined}
                   value={inputs[t]}
                   disabled={disabled}
-                  onChange={(e) => onChange({ ...inputs, [t]: e.target.value })}
+                  onChange={(e) => onChange({ ...inputs, [t]: sanitizeAmountInput(e.target.value) })}
                   onBlur={onFieldBlur}
                 />
               </span>

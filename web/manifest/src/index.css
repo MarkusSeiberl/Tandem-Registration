@@ -2988,3 +2988,660 @@ html:has(.save-bar) {
   margin: 0;
   text-align: right;
 }
+
+/* ------------------------------------------------------------------------
+   Tagesabschluss dialog (dayClose/). A rail of the four steps on the left that
+   doubles as a live checklist of the day, the step itself on the right. Same
+   tokens as everywhere else: green is done or go, ember is "look here", red
+   only for a run that failed. Approved mockup:
+   docs/superpowers/specs/2026-11-09-tagesabschluss-dialog-mockup.html
+   ------------------------------------------------------------------------ */
+.dc {
+  width: 880px;
+  max-width: calc(100vw - 32px);
+  height: min(680px, calc(100vh - 96px));
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-bg);
+  /* Top layer: without this the dialog keeps the UA's near-black text. */
+  color: var(--text);
+  overflow: hidden;
+  box-shadow: 0 24px 60px -12px rgba(11, 18, 32, 0.45), 0 4px 12px rgba(11, 18, 32, 0.18);
+}
+
+.dc[open] {
+  display: grid;
+  grid-template-columns: 248px 1fr;
+  grid-template-rows: auto auto 1fr;
+}
+
+/* --ink spelled out, as for .collect-dialog: custom properties are unreliable
+   inside ::backdrop. */
+.dc::backdrop {
+  background: rgba(11, 18, 32, 0.5);
+}
+
+.dc-head {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 18px 20px 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dc-head h2 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.dc-date {
+  color: var(--text-quiet);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.dc-x {
+  align-self: center;
+  margin-left: auto;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-quiet);
+  cursor: pointer;
+}
+
+.dc-x:hover:not(:disabled) {
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+.dc-x:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.dc-closed {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 24px;
+  font-size: 13px;
+  background: var(--row-hover);
+  border-bottom: 1px solid var(--border);
+}
+
+.dc-closed svg {
+  color: var(--accent);
+  flex: none;
+}
+
+/* Rail ------------------------------------------------------------------ */
+.dc-rail {
+  grid-row: 3;
+  margin: 0;
+  padding: 20px 0;
+  list-style: none;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.dc-rail li {
+  position: relative;
+}
+
+/* The line between two markers turns green once the step above is behind. */
+.dc-rail li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 37px;
+  top: 46px;
+  bottom: -6px;
+  width: 2px;
+  background: var(--border);
+}
+
+.dc-rail li.done:not(:last-child)::after,
+.dc-rail li.warn:not(:last-child)::after {
+  background: var(--accent);
+}
+
+.dc-step {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  column-gap: 12px;
+  align-items: start;
+  padding: 12px 16px 14px 24px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dc-step:disabled {
+  cursor: default;
+}
+
+.dc-rail li.current .dc-step {
+  cursor: default;
+  background: var(--panel-bg);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.dc-step:not(:disabled):not([aria-current]):hover .dc-step-label {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.dc-marker {
+  position: relative;
+  z-index: 1;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--control-border);
+  border-radius: 50%;
+  background: var(--panel-bg);
+  color: var(--text-quiet);
+  font: 700 13px/1 var(--mono);
+}
+
+.current .dc-marker {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.done .dc-marker {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.warn .dc-marker {
+  border-color: var(--ember);
+  color: var(--warn-text);
+}
+
+.failed .dc-marker {
+  border-color: var(--error-text);
+  color: var(--error-text);
+}
+
+.dc-step-label {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 30px;
+  color: var(--text-h);
+}
+
+.dc-step-status {
+  grid-column: 2;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-quiet);
+  font-variant-numeric: tabular-nums;
+}
+
+.warn .dc-step-status {
+  color: var(--warn-text);
+  font-weight: 600;
+}
+
+.failed .dc-step-status {
+  color: var(--error-text);
+  font-weight: 600;
+}
+
+/* Pane ------------------------------------------------------------------ */
+.dc-pane {
+  grid-row: 3;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-height: 0;
+}
+
+.dc-body {
+  padding: 24px 28px 8px;
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--control-border) transparent;
+}
+
+.dc-body h3 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  letter-spacing: -0.015em;
+  color: var(--text-h);
+}
+
+.dc-lede {
+  margin: 0 0 20px;
+  max-width: 60ch;
+  font-size: 14px;
+  color: var(--text-quiet);
+}
+
+.dc-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 28px 18px;
+  border-top: 1px solid var(--border);
+}
+
+.dc-spacer {
+  flex: 1;
+}
+
+.dc-foot-note {
+  font-size: 13px;
+  color: var(--text-quiet);
+}
+
+.dc-message,
+.dc-field-error,
+.dc-row-error {
+  color: var(--error-text);
+}
+
+.dc-message {
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dc-hint {
+  font-size: 13px;
+  color: var(--text-quiet);
+}
+
+/* Step 1: tandems --------------------------------------------------------- */
+.dc-group {
+  margin: 0 0 22px;
+}
+
+.dc-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 6px;
+}
+
+.dc-group-head h4 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+.dc-count,
+.dc-sum {
+  font-size: 13px;
+  color: var(--text-quiet);
+}
+
+.dc-sum {
+  margin-left: auto;
+  font-size: 14px;
+}
+
+.dc-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+
+.dc-row {
+  display: grid;
+  grid-template-columns: 1fr auto 96px 168px;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 15px;
+}
+
+.dc-name {
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+.dc-name small {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-quiet);
+}
+
+.dc-name small.dc-row-error {
+  color: var(--error-text);
+  font-weight: 600;
+}
+
+.dc-price {
+  text-align: right;
+}
+
+.dc-acts {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.dc-acts .btn {
+  flex: 1;
+  min-height: 34px;
+  font-size: 14px;
+}
+
+/* A settled row slides out instead of vanishing, so the eye sees it go. */
+.dc-row.leaving {
+  animation: dc-leave 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes dc-leave {
+  to { opacity: 0; transform: translateX(16px); }
+}
+
+.dc-allclear {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  padding: 18px 20px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--row-hover);
+}
+
+.dc-allclear b {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  color: var(--text-h);
+}
+
+.dc-allclear b svg {
+  color: var(--accent);
+}
+
+.dc-allclear span {
+  font-size: 14px;
+  color: var(--text-quiet);
+}
+
+/* Step 2: the till ledger ------------------------------------------------- */
+.dc-ledger {
+  display: grid;
+  grid-template-columns: 120px 1fr 1fr;
+  border-top: 1px solid var(--rule);
+}
+
+.dc-ledger > * {
+  display: flex;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dc-hd {
+  padding: 10px 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.dc-hd.dc-till {
+  font-size: 16px;
+}
+
+.dc-lab {
+  font-size: 14px;
+  color: var(--text-quiet);
+}
+
+.dc-val {
+  padding-right: 24px;
+  font-size: 17px;
+  color: var(--text-h);
+}
+
+.dc-ledger .dc-field-cell {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.dc-field-error {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.dc-money {
+  position: relative;
+  width: 100%;
+  max-width: 200px;
+}
+
+.dc-money input {
+  width: 100%;
+  height: 44px;
+  padding: 0 34px 0 12px;
+  border: 2px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text-h);
+  caret-color: var(--accent);
+  font: 600 17px var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.dc-money input[aria-invalid="true"] {
+  border-color: var(--error-text);
+}
+
+.dc-money::after {
+  content: "€";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 15px;
+  color: var(--text-quiet);
+}
+
+.dc-money input:focus,
+.dc-reason textarea:focus,
+.dc-text:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--row-hover);
+}
+
+.dc-diff {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.dc-diff small {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.dc-diff.ok { color: var(--accent); }
+.dc-diff.off { color: var(--warn-text); }
+
+.dc-diff.none {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-quiet);
+}
+
+.dc-reason {
+  display: grid;
+  gap: 6px;
+  max-width: 520px;
+  margin-top: 20px;
+}
+
+.dc-reason label,
+.dc-bl label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.dc-reason label span {
+  color: var(--warn-text);
+}
+
+.dc-reason textarea,
+.dc-text {
+  font: inherit;
+  font-size: 15px;
+  padding: 10px 12px;
+  border: 2px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--text-h);
+  caret-color: var(--accent);
+}
+
+.dc-reason textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+/* Step 3 ------------------------------------------------------------------ */
+.dc-bl {
+  display: grid;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.dc-text {
+  height: 48px;
+  font-size: 17px;
+}
+
+/* Step 4: summary --------------------------------------------------------- */
+.dc-summary {
+  margin: 0 0 18px;
+  border-top: 1px solid var(--rule);
+}
+
+.dc-summary-line {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  border-bottom: 1px solid var(--border);
+}
+
+.dc-summary dt,
+.dc-summary dd {
+  margin: 0;
+  padding: 10px 0;
+}
+
+.dc-summary dt {
+  font-size: 14px;
+  color: var(--text-quiet);
+}
+
+.dc-summary dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 14px;
+  font-size: 15px;
+  color: var(--text-h);
+}
+
+.dc-sub {
+  font-size: 13px;
+  color: var(--text-quiet);
+}
+
+.dc-ok {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.dc-off {
+  font-weight: 700;
+  color: var(--warn-text);
+}
+
+.dc-leftover {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 12px 16px;
+  list-style: none;
+  border: 1px solid var(--ember);
+  border-radius: 8px;
+}
+
+.dc-leftover li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.dc-leftover li::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ember);
+}
+
+.btn.link {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  color: var(--text-h);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.dc-error {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 2px solid var(--error-text);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+.dc-error b {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--error-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dc-row.leaving { animation: none; opacity: 0; }
+}
